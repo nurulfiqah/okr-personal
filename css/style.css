@@ -1,0 +1,808 @@
+/* OKR Module - Base Layout Styles */
+/* Custom classes use the okr- prefix. Visual language mirrors the ATEM module. */
+
+* {
+  font-family: "Inter", sans-serif;
+}
+
+body {
+  font-family: "Inter", sans-serif;
+  background-color: #f8f9fa;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+/* The shared ODB site-wide stylesheet centers body text by default, which
+   leaks into anything rendered outside .okr-container (Bootstrap modals are
+   appended straight to <body>). Force left alignment for modal content. */
+.modal-body,
+.modal-header,
+.modal-footer {
+  text-align: left;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+}
+
+input, select, textarea, button {
+  font-family: "Inter", sans-serif;
+}
+
+.headerH1 {
+  font-family: "Inter", sans-serif !important;
+  font-weight: 600 !important;
+}
+
+.okr-container,
+.okr-container * {
+  font-family: "Inter", sans-serif;
+}
+
+/* ---------------------------------------------------------------
+   Navigation Bar
+--------------------------------------------------------------- */
+.okr-nav {
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(19, 92, 170, 0.1);
+  padding: 0.5rem 1rem;
+}
+
+.okr-nav .navbar-nav {
+  gap: 0.5rem;
+}
+
+.okr-nav .nav-link {
+  display: inline-flex;
+  align-items: center;
+  height: 38px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #6c757d;
+  padding: 0 1rem;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.okr-nav .nav-link:hover {
+  color: #0d6efd;
+  background-color: rgba(13, 110, 253, 0.1);
+}
+
+.okr-nav .nav-link.active {
+  color: #0d6efd;
+  background-color: rgba(13, 110, 253, 0.1);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------
+   Main Container - ODB Integration
+--------------------------------------------------------------- */
+.okr-container {
+  display: flex;
+  flex-direction: column;
+  padding: 15px 25px 35px 15px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(19, 92, 170, 0.1);
+  /* The shared ODB site-wide stylesheet centers body text by default;
+     override it here at the container level so every page under okr/
+     defaults to left-aligned regardless of per-element overrides. */
+  text-align: left;
+}
+
+.okr-page-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #212529;
+  text-align: left;
+  margin-bottom: 0;
+}
+
+.okr-card {
+  background-color: #ffffff;
+  border-radius: 10px;
+  padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e9ecef;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  text-align: left;
+}
+
+.okr-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.okr-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #212529;
+  text-align: left;
+  margin: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.okr-card-title .bi {
+  color: #0a5aa8;
+  font-size: 16px;
+}
+
+.okr-card-hint {
+  font-size: 12px;
+  color: #6c757d;
+  margin: 6px 0 0;
+  text-align: left;
+}
+
+.okr-card-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.okr-card-title-row .okr-card-title {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+/* ---------------------------------------------------------------
+   Shared form / button styles
+--------------------------------------------------------------- */
+.btn {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.btn-primary {
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+  border-radius: 6px;
+}
+
+.btn-primary:hover {
+  background-color: #0b5ed7;
+  border-color: #0a58ca;
+}
+
+.btn-outline-secondary {
+  color: #6c757d;
+  border-color: #6c757d;
+  border-radius: 6px;
+}
+
+.btn-outline-secondary:hover {
+  background-color: #6c757d;
+  color: #fff;
+}
+
+.form-label {
+  font-weight: 500;
+  font-size: 12px;
+  color: #495057;
+  text-align: left;
+  display: block;
+}
+
+.form-control,
+.form-select {
+  border-radius: 6px;
+  border-color: #ced4da;
+  font-size: 14px;
+  font-weight: 400;
+  height: 38px;
+  padding: 0.375rem 0.75rem;
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: #86b7fe;
+  box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+.form-control[readonly],
+.form-control:disabled,
+.form-select:disabled {
+  background-color: #e9ecef;
+  color: #6c757d;
+}
+
+textarea.form-control {
+  height: auto;
+}
+
+/* ---------------------------------------------------------------
+   Filter row (dashboard) - compact, fits one row, wraps on small
+   screens instead of stretching each field to a grid column width.
+--------------------------------------------------------------- */
+.okr-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.4rem 0.6rem;
+}
+
+/* Grid-based filter card (list.php, mirrors atem-filter) - fixed number of
+   equal columns per row instead of the flex-grow layout above. */
+.okr-filter .form-select,
+.okr-filter .form-control,
+.okr-filter .btn {
+  font-size: 13px;
+}
+
+.okr-filter .form-label {
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+
+.okr-filter-item {
+  flex: 1 1 0;
+  min-width: 130px;
+}
+
+.okr-filter-item .form-label {
+  font-size: 11px;
+  margin-bottom: 2px;
+  white-space: nowrap;
+}
+
+.okr-filter-item .form-select,
+.okr-filter-item .form-control {
+  width: 100%;
+  height: 32px;
+  font-size: 13px;
+  padding: 0.25rem 0.5rem;
+}
+
+.okr-filter-item--dept {
+  min-width: 130px;
+}
+
+.okr-filter-item--btns {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.okr-filter-item--btns .btn {
+  height: 32px;
+  font-size: 13px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.okr-filter-btns-divider {
+  width: 1px;
+  height: 22px;
+  background-color: #dee2e6;
+  margin: 0 0.2rem;
+  align-self: center;
+}
+
+@media (max-width: 576px) {
+  .okr-filter-item .form-select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .okr-filter-item,
+  .okr-filter-item--dept,
+  .okr-filter-item--btns {
+    flex: 1 1 100%;
+  }
+}
+
+/* ---------------------------------------------------------------
+   Bento layout (create / view forms)
+--------------------------------------------------------------- */
+.okr-bento {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.okr-bento-item {
+  grid-column: span 12;
+  min-width: 0;
+}
+
+.okr-span-8 {
+  grid-column: span 8;
+}
+
+.okr-span-4 {
+  grid-column: span 4;
+}
+
+.okr-span-12 {
+  grid-column: span 12;
+}
+
+.okr-req {
+  color: #dc3545;
+  font-size: 12px;
+  line-height: 1;
+  vertical-align: baseline;
+}
+
+.okr-btn-add-owner2 {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+/* Inline form error (small red text instead of system dialogs) */
+.okr-form-error {
+  font-size: 12px;
+  color: #dc3545;
+  margin-top: 6px;
+  min-height: 0;
+}
+
+.okr-save-error-wrap {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.okr-save-bar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.okr-empty-state {
+  font-size: 12px;
+  color: #adb5bd;
+  font-style: italic;
+  padding: 6px 0;
+}
+
+/* ---------------------------------------------------------------
+   Activity log
+--------------------------------------------------------------- */
+.okr-activity-list {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.okr-activity-row {
+  border-left: 3px solid #dee2e6;
+  padding: 4px 0 4px 10px;
+  margin-bottom: 4px;
+  text-align: left;
+}
+
+.okr-activity-summary {
+  font-size: 12px;
+  color: #212529;
+}
+
+.okr-activity-meta {
+  font-size: 10px;
+  color: #6c757d;
+  margin-top: 1px;
+}
+
+/* ---------------------------------------------------------------
+   Dashboard stat cards
+--------------------------------------------------------------- */
+.okr-stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.okr-stat-value--blue   { color: #0d6efd; }
+.okr-stat-value--green  { color: #198754; }
+.okr-stat-value--red    { color: #dc3545; }
+.okr-stat-value--orange { color: #fd7e14; }
+
+/* ---------------------------------------------------------------
+   Timeline: "Extended?" checkbox — force left-aligned, checkbox
+   immediately next to its label regardless of the parent row width.
+--------------------------------------------------------------- */
+.okr-extended-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 0;
+}
+
+.okr-extended-check .form-check-input {
+  float: none;
+  margin-left: 0;
+}
+
+/* ---------------------------------------------------------------
+   Incentive paid tile (Incentive card, only when actually paid out)
+--------------------------------------------------------------- */
+.okr-incentive-tile {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #22c581, #0d8a53 55%, #0a6b40);
+  border-radius: 10px;
+  padding: 14px 18px;
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(13, 138, 83, 0.35);
+}
+
+.okr-incentive-tile::after {
+  content: '';
+  position: absolute;
+  top: -60%;
+  right: -20%;
+  width: 140px;
+  height: 140px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.18), transparent 70%);
+  pointer-events: none;
+}
+
+.okr-incentive-tile--blue {
+  background: linear-gradient(135deg, #2f8fe0, #0a5aa8 55%, #003b73);
+  box-shadow: 0 6px 16px rgba(10, 90, 168, 0.35);
+}
+
+.okr-incentive-tile--yellow {
+  background: linear-gradient(135deg, #f5b83d, #d98d0b 55%, #a86a06);
+  box-shadow: 0 6px 16px rgba(217, 141, 11, 0.35);
+}
+
+.okr-incentive-tile--red {
+  background: linear-gradient(135deg, #e5636f, #c9303f 55%, #99202c);
+  box-shadow: 0 6px 16px rgba(201, 48, 63, 0.35);
+}
+
+.okr-incentive-tile-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+
+.okr-incentive-tile-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin-top: 2px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+.okr-incentive-breakdown {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.okr-incentive-stat {
+  background-color: #f8f9fa;
+  border: 1px solid #eef0f2;
+  border-radius: 8px;
+  padding: 8px 10px;
+  /* Grid items default to min-width:auto, so a long unbreakable name would
+     force the track to expand instead of truncating - allow it to shrink. */
+  min-width: 0;
+}
+
+.okr-incentive-stat--full {
+  grid-column: 1 / -1;
+}
+
+.okr-incentive-stat-label {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 11px;
+  color: #6c757d;
+  line-height: 1.3;
+}
+
+.okr-incentive-stat-value {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  color: #212529;
+  margin-top: 2px;
+}
+
+.okr-stat-label {
+  font-size: 0.8rem;
+  color: #6c757d;
+  margin-top: 0.25rem;
+}
+
+/* ---------------------------------------------------------------
+   Dashboard closure bar chart
+--------------------------------------------------------------- */
+.okr-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.okr-bar-label {
+  width: 90px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.okr-bar-track {
+  flex: 1;
+  background: #e9ecef;
+  border-radius: 4px;
+  height: 20px;
+  overflow: hidden;
+}
+
+.okr-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.6s ease;
+}
+
+.okr-bar-count {
+  width: 35px;
+  text-align: right;
+  font-size: 0.85rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------
+   Attachment dropzone
+--------------------------------------------------------------- */
+.okr-dropzone {
+  border: 2px dashed #ced4da;
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+  background-color: #f9fafb;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+  margin-top: 12px;
+}
+
+.okr-dropzone:hover,
+.okr-dropzone-active {
+  border-color: #0a5aa8;
+  background-color: #f0f7ff;
+}
+
+.okr-dropzone-text {
+  font-size: 13px;
+  color: #495057;
+}
+
+.okr-dropzone-text a {
+  color: #0a5aa8;
+  text-decoration: underline;
+}
+
+.okr-dropzone-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #adb5bd;
+}
+
+.okr-file-list {
+  margin-top: 8px;
+}
+
+.okr-file-row,
+.okr-attachment-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+}
+
+.okr-file-name {
+  font-size: 13px;
+  color: #212529;
+  word-break: break-word;
+}
+
+.okr-file-size {
+  font-size: 11px;
+  color: #6c757d;
+  margin-left: auto;
+  margin-right: 6px;
+  white-space: nowrap;
+}
+
+.okr-file-remove {
+  color: #dc3545;
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------
+   Sidebar stack (create.php right column) - makes the last card
+   (Reference Link) grow to fill leftover vertical space, so its
+   bottom edge lines up with the bottom of the left column instead
+   of stopping short with dead whitespace beneath it.
+--------------------------------------------------------------- */
+.okr-sidebar-stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.okr-sidebar-stack .okr-sidebar-grow {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.okr-sidebar-stack .okr-sidebar-grow .okr-reflink-list {
+  flex: 1;
+}
+
+/* ---------------------------------------------------------------
+   Reference link rows
+--------------------------------------------------------------- */
+.okr-reflink-list {
+  margin-top: 4px;
+}
+
+.okr-reflink-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0;
+}
+
+.okr-reflink-row a {
+  color: #0a5aa8;
+  text-decoration: underline;
+  font-weight: 500;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.okr-reflink-remove {
+  color: #dc3545;
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------
+   Status / type pills
+--------------------------------------------------------------- */
+.okr-pill {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 12px;
+  line-height: 1.4;
+  color: #ffffff;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.okr-page-title .okr-pill {
+  margin-left: 8px;
+}
+
+.okr-pill-active { background-color: #0d6efd; }
+.okr-pill-complete { background-color: #198754; }
+.okr-pill-complete-excellence { background-color: #146c43; }
+.okr-pill-extend { background-color: #ffc107; color: #212529; }
+.okr-pill-suspended { background-color: #dc3545; }
+.okr-pill-fail { background-color: #dc3545; }
+
+.okr-deleted-banner {
+  background-color: #fdeaea;
+  border: 1px solid #f5c2c7;
+  color: #842029;
+}
+
+.okr-deleted-banner .okr-card-hint {
+  color: #842029;
+  opacity: 0.8;
+  display: block;
+  margin-top: 2px;
+}
+
+.okr-row-deleted {
+  opacity: 0.6;
+}
+
+.okr-row-locked {
+  --bs-table-bg: #d1e7dd;
+  background-color: #d1e7dd;
+}
+
+/* ---------------------------------------------------------------
+   Card list table
+--------------------------------------------------------------- */
+.okr-view-tbl th {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6c757d;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.okr-view-tbl td {
+  font-size: 13px;
+  vertical-align: middle;
+}
+
+/* ---------------------------------------------------------------
+   Quill rich text editor (Key Results)
+   .okr-bento uses align-items: stretch, and Quill's own CSS sets
+   .ql-container to height:100%. Combined, the editor tries to fill a
+   stretched ancestor height while its real content (toolbar + text
+   area) is taller, so it overflows past the card border. Force the
+   container back to an auto/content height instead.
+--------------------------------------------------------------- */
+#okr-key-results-editor.ql-container {
+  height: auto;
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+#okr-key-results-editor .ql-editor {
+  min-height: 260px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.okr-quill-readonly.ql-container {
+  background-color: #e9ecef;
+  min-height: 0;
+}
+
+.okr-quill-readonly .ql-editor {
+  min-height: 0;
+  color: #6c757d;
+}
+
+/* ---------------------------------------------------------------
+   Responsive
+--------------------------------------------------------------- */
+@media (max-width: 991.98px) {
+  .okr-span-8,
+  .okr-span-4 {
+    grid-column: span 12;
+  }
+}
+
+@media (max-width: 768px) {
+  .okr-card {
+    padding: 1rem;
+  }
+
+  .okr-container {
+    padding: 10px 15px 25px 10px;
+  }
+}
