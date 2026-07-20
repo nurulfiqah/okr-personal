@@ -161,6 +161,7 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
             $dept_id  = !empty($dept_ids) ? $dept_ids[0] : 0;
             if (!isset($by_dept[$dept_id])) {
                 $by_dept[$dept_id] = [
+                    'dept_id' => $dept_id,
                     'dept_name' => $dept_id > 0 && isset($dept_names[$dept_id]) ? $dept_names[$dept_id] : 'Unassigned',
                     'cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0,
                 ];

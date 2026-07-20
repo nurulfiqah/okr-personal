@@ -144,14 +144,24 @@
                 var forecast = l.level_id === 1 ? 'RM0' : formatRM(l.forecast);
                 html += '<tr>' +
                     '<td style="font-size:12px;font-weight:600;text-align:left;">' + l.label + '</td>' +
-                    '<td style="font-size:12px;text-align:left;">' + l.cards + '</td>' +
-                    '<td style="font-size:12px;color:#0d6efd;text-align:left;">' + l.complete + '</td>' +
-                    '<td style="font-size:12px;color:#198754;text-align:left;">' + l.excellence + '</td>' +
-                    '<td style="font-size:12px;color:#dc3545;text-align:left;">' + l.fail + '</td>' +
+                    '<td style="font-size:12px;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-level="' + l.level_id + '" data-nav-status="">' + l.cards + '</td>' +
+                    '<td style="font-size:12px;color:#0d6efd;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-level="' + l.level_id + '" data-nav-status="Complete">' + l.complete + '</td>' +
+                    '<td style="font-size:12px;color:#198754;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-level="' + l.level_id + '" data-nav-status="Complete with Excellence">' + l.excellence + '</td>' +
+                    '<td style="font-size:12px;color:#dc3545;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-level="' + l.level_id + '" data-nav-status="Fail">' + l.fail + '</td>' +
                     '<td style="font-size:12px;text-align:left;">' + forecast + '</td>' +
                     '</tr>';
             }
             tbody.innerHTML = html || '<tr><td colspan="6" class="text-muted" style="font-size:12px;">No data for the selected period.</td></tr>';
+            tbody.onclick = function (e) {
+                var td = e.target;
+                while (td && td !== tbody) {
+                    if (td.tagName === 'TD' && td.hasAttribute('data-nav-level')) {
+                        window.location.href = buildListUrl(td.getAttribute('data-nav-status'), [], false, td.getAttribute('data-nav-level'));
+                        return;
+                    }
+                    td = td.parentNode;
+                }
+            };
         }
 
         setWidth('bar-complete',   total > 0 ? Math.round((s.complete   || 0) / total * 100) : 0);
@@ -171,14 +181,24 @@
                     var type = data.by_type[t];
                     tHtml += '<tr>' +
                         '<td style="font-size:12px;font-weight:600;text-align:left;">' + type.okr_type + '</td>' +
-                        '<td style="font-size:12px;color:#0d6efd;text-align:left;">' + (type.complete || 0) + '</td>' +
-                        '<td style="font-size:12px;color:#198754;text-align:left;">' + (type.excellence || 0) + '</td>' +
-                        '<td style="font-size:12px;color:#fd7e14;text-align:left;">' + (type.extend || 0) + '</td>' +
-                        '<td style="font-size:12px;color:#dc3545;text-align:left;">' + (type.suspended || 0) + '</td>' +
-                        '<td style="font-size:12px;color:#dc3545;text-align:left;">' + (type.fail || 0) + '</td>' +
+                        '<td style="font-size:12px;color:#0d6efd;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-type="' + escapeHtml(type.okr_type) + '" data-nav-status="Complete">' + (type.complete || 0) + '</td>' +
+                        '<td style="font-size:12px;color:#198754;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-type="' + escapeHtml(type.okr_type) + '" data-nav-status="Complete with Excellence">' + (type.excellence || 0) + '</td>' +
+                        '<td style="font-size:12px;color:#fd7e14;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-type="' + escapeHtml(type.okr_type) + '" data-nav-status="Extend">' + (type.extend || 0) + '</td>' +
+                        '<td style="font-size:12px;color:#dc3545;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-type="' + escapeHtml(type.okr_type) + '" data-nav-status="Suspended">' + (type.suspended || 0) + '</td>' +
+                        '<td style="font-size:12px;color:#dc3545;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-type="' + escapeHtml(type.okr_type) + '" data-nav-status="Fail">' + (type.fail || 0) + '</td>' +
                         '</tr>';
                 }
                 typeTbody.innerHTML = tHtml;
+                typeTbody.onclick = function (e) {
+                    var td = e.target;
+                    while (td && td !== typeTbody) {
+                        if (td.tagName === 'TD' && td.hasAttribute('data-nav-type')) {
+                            window.location.href = buildListUrl(td.getAttribute('data-nav-status'), [], false, '', '', td.getAttribute('data-nav-type'));
+                            return;
+                        }
+                        td = td.parentNode;
+                    }
+                };
             } else {
                 typeTbody.innerHTML = '<tr><td colspan="6" class="text-muted" style="font-size:12px;">No data for the selected period.</td></tr>';
             }
@@ -194,17 +214,33 @@
                     var dCards    = dept.cards || 0;
                     var dFailRate = dCards > 0 ? (dFail / dCards * 100).toFixed(1) + '%' : '0%';
                     var dForecast = dept.forecast > 0 ? formatRM(dept.forecast) : 'RM0';
+                    var dId = dept.dept_id || '';
+                    // Unassigned (dept_id 0, no dept scope on the issuer) has
+                    // nothing valid to filter list.php by - render plain text.
+                    var dClickable = dId ? 'cursor:pointer;text-decoration:underline;' : '';
                     dHtml += '<tr>' +
-                        '<td style="font-size:12px;font-weight:600;text-align:left;">' + dept.dept_name + '</td>' +
-                        '<td style="font-size:12px;text-align:left;">' + dCards + '</td>' +
-                        '<td style="font-size:12px;color:#0d6efd;text-align:left;">' + (dept.complete || 0) + '</td>' +
-                        '<td style="font-size:12px;color:#198754;text-align:left;">' + (dept.excellence || 0) + '</td>' +
-                        '<td style="font-size:12px;color:#dc3545;text-align:left;">' + dFail + '</td>' +
+                        '<td style="font-size:12px;font-weight:600;text-align:left;">' + escapeHtml(dept.dept_name) + '</td>' +
+                        '<td style="font-size:12px;text-align:left;' + dClickable + '"' + (dId ? ' data-nav-dept="' + dId + '" data-nav-status=""' : '') + '>' + dCards + '</td>' +
+                        '<td style="font-size:12px;color:#0d6efd;text-align:left;' + dClickable + '"' + (dId ? ' data-nav-dept="' + dId + '" data-nav-status="Complete"' : '') + '>' + (dept.complete || 0) + '</td>' +
+                        '<td style="font-size:12px;color:#198754;text-align:left;' + dClickable + '"' + (dId ? ' data-nav-dept="' + dId + '" data-nav-status="Complete with Excellence"' : '') + '>' + (dept.excellence || 0) + '</td>' +
+                        '<td style="font-size:12px;color:#dc3545;text-align:left;' + dClickable + '"' + (dId ? ' data-nav-dept="' + dId + '" data-nav-status="Fail"' : '') + '>' + dFail + '</td>' +
                         '<td style="font-size:12px;text-align:left;">' + dFailRate + '</td>' +
                         '<td style="font-size:12px;text-align:left;">' + dForecast + '</td>' +
                         '</tr>';
                 }
                 deptTbody.innerHTML = dHtml;
+                deptTbody.onclick = function (e) {
+                    var td = e.target;
+                    while (td && td !== deptTbody) {
+                        if (td.tagName === 'TD' && td.hasAttribute('data-nav-dept')) {
+                            var navDept = td.getAttribute('data-nav-dept');
+                            if (!navDept) { return; }
+                            window.location.href = buildListUrl(td.getAttribute('data-nav-status'), [], false, '', navDept);
+                            return;
+                        }
+                        td = td.parentNode;
+                    }
+                };
             } else {
                 deptTbody.innerHTML = '<tr><td colspan="7" class="text-muted" style="font-size:12px;">No data for the selected period.</td></tr>';
             }
@@ -229,6 +265,49 @@
         if (deptTbody) {
             deptTbody.innerHTML = '<tr><td colspan="7" class="text-danger" style="font-size:12px;">' + msg + '</td></tr>';
         }
+    }
+
+    // Stat-card click navigation to list.php, mirrors atem/js/index.js's
+    // buildViewUrl. list.php has no Quarter field of its own, so a selected
+    // quarter is converted to a from/to date range same as atem does.
+    var QUARTER_RANGES = {
+        '1': ['01-01', '03-31'],
+        '2': ['04-01', '06-30'],
+        '3': ['07-01', '09-30'],
+        '4': ['10-01', '12-31']
+    };
+
+    // levelOverride/deptOverride/typeOverride let the breakdown-table row
+    // clicks (Type/Level/Department) target a specific value regardless of
+    // the dashboard's own filters; deptOverride falls back to the currently
+    // selected dash-filter-dept when not given, same as the plain stat cards.
+    function buildListUrl(statusOverride, statusesOverride, overdueOnly, levelOverride, deptOverride, typeOverride) {
+        var yearEl    = document.getElementById('dash-filter-year');
+        var monthEl   = document.getElementById('dash-filter-month');
+        var quarterEl = document.getElementById('dash-filter-quarter');
+        var deptEl    = document.getElementById('dash-filter-dept');
+
+        var year    = yearEl    ? yearEl.value    : '';
+        var month   = monthEl   ? monthEl.value   : '';
+        var quarter = quarterEl ? quarterEl.value : '';
+        var deptId  = deptOverride || (deptEl ? deptEl.value : '');
+
+        var params = [];
+        if (statusOverride) { params.push('status=' + encodeURIComponent(statusOverride)); }
+        if (statusesOverride && statusesOverride.length) { params.push('statuses=' + encodeURIComponent(statusesOverride.join(','))); }
+        if (overdueOnly) { params.push('overdue=1'); }
+        if (levelOverride) { params.push('level=' + encodeURIComponent(levelOverride)); }
+        if (typeOverride)  { params.push('type=' + encodeURIComponent(typeOverride)); }
+        if (year)  { params.push('year='  + encodeURIComponent(year)); }
+        if (month) { params.push('month=' + encodeURIComponent(month)); }
+        if (!month && quarter && year && QUARTER_RANGES[quarter]) {
+            var range = QUARTER_RANGES[quarter];
+            params.push('from=' + encodeURIComponent(year + '-' + range[0]));
+            params.push('to='   + encodeURIComponent(year + '-' + range[1]));
+        }
+        if (deptId) { params.push('dept=' + encodeURIComponent(deptId)); }
+
+        return 'okr/list.php' + (params.length ? '?' + params.join('&') : '');
     }
 
     function buildPayload() {
@@ -414,5 +493,18 @@
         }
 
         loadDashboard({ filter_year: 2026 });
+
+        var dashStats = document.querySelectorAll('.okr-dash-stat');
+        for (var si = 0; si < dashStats.length; si++) {
+            (function (card) {
+                card.addEventListener('click', function () {
+                    var status       = card.getAttribute('data-status')   || '';
+                    var statusesAttr = card.getAttribute('data-statuses') || '';
+                    var statuses     = statusesAttr ? statusesAttr.split(',') : [];
+                    var isOverdue    = card.getAttribute('data-overdue')  === '1';
+                    window.location.href = buildListUrl(status, statuses, isOverdue);
+                });
+            }(dashStats[si]));
+        }
     });
 }());

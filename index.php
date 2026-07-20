@@ -132,14 +132,14 @@ window.OKR_DASH = <?php echo json_encode([
 <!-- Stat Cards -->
 <div class="row g-3 mb-4">
     <div class="col-12 col-sm-6 col-xl">
-        <div class="okr-card okr-dash-stat h-100">
+        <div class="okr-card okr-dash-stat h-100" style="cursor:pointer;">
             <div class="okr-card-title mb-1">Total OKR Cards</div>
             <div class="okr-stat-value okr-stat-value--blue" id="dash-total">---</div>
             <div class="okr-stat-label">created in range</div>
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
-        <div class="okr-card okr-dash-stat h-100">
+        <div class="okr-card okr-dash-stat h-100" data-status="Active" style="cursor:pointer;">
             <div class="okr-card-title mb-1">Active / On Hand</div>
             <div class="okr-stat-value okr-stat-value--blue" id="dash-active">---</div>
             <div class="okr-stat-label">not yet closed</div>
@@ -147,28 +147,28 @@ window.OKR_DASH = <?php echo json_encode([
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
-        <div class="okr-card okr-dash-stat h-100">
+        <div class="okr-card okr-dash-stat h-100" data-statuses="Complete,Complete with Excellence" style="cursor:pointer;">
             <div class="okr-card-title mb-1">Complete + Excellence</div>
             <div class="okr-stat-value okr-stat-value--green" id="dash-closed">---</div>
             <div class="okr-stat-label">paid outcomes</div>
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
-        <div class="okr-card okr-dash-stat h-100">
+        <div class="okr-card okr-dash-stat h-100" data-status="Fail" style="cursor:pointer;">
             <div class="okr-card-title mb-1">Failed OKR</div>
             <div class="okr-stat-value okr-stat-value--red" id="dash-failed">---</div>
             <div class="okr-stat-label" id="dash-fail-rate">failure rate</div>
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
-        <div class="okr-card okr-dash-stat h-100">
+        <div class="okr-card okr-dash-stat h-100" data-overdue="1" data-statuses="Active,Extend" style="cursor:pointer;">
             <div class="okr-card-title mb-1">Overdue Cards</div>
             <div class="okr-stat-value okr-stat-value--red" id="dash-overdue">---</div>
             <div class="okr-stat-label">active/extended past end date</div>
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
-        <div class="okr-card okr-dash-stat h-100">
+        <div class="okr-card okr-dash-stat h-100" data-statuses="Complete,Complete with Excellence" style="cursor:pointer;">
             <div class="okr-card-title mb-1">Est. Incentive Forecast</div>
             <div class="okr-stat-value okr-stat-value--orange" id="dash-incentive">---</div>
             <div class="okr-stat-label">Complete + Excellence payout</div>

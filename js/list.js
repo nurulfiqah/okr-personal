@@ -12,6 +12,46 @@
     var endDateFilter = document.getElementById('okr-filter-end-date');
     var resetFilterBtn = document.getElementById('okr-filter-reset');
 
+    // Set when index.php's Overdue Cards stat tile deep-links here (?overdue=1) -
+    // applied as an extra predicate in render() alongside the Active/Extend
+    // statuses that link already pre-selects.
+    var deepLinkOverdueOnly = false;
+
+    // Set from a dashboard deep link's quarter-derived from/to range. Kept
+    // separate from the Start Date/End Date filter inputs above, which are
+    // exact-match (card.start_date === value) rather than a range - reusing
+    // them here would silently match nothing.
+    var deepLinkDateFrom = '';
+    var deepLinkDateTo = '';
+
+    // Pre-fills filters from a dashboard stat-card deep link (index.php's
+    // buildListUrl) - status/statuses, overdue, year, month, from/to and dept.
+    // Runs once on load, before the initial render().
+    function applyUrlParams() {
+        var params = new URLSearchParams(window.location.search);
+        if (!params.toString()) { return; }
+
+        var statusesParam = params.get('statuses');
+        var statusParam = params.get('status');
+        if (statusesParam || statusParam) {
+            var wanted = statusesParam ? statusesParam.split(',') : [statusParam];
+            var boxes = allStatusCheckboxes('okr-filter-status');
+            for (var i = 0; i < boxes.length; i++) {
+                boxes[i].checked = wanted.indexOf(boxes[i].value) !== -1;
+            }
+            updateStatusButtonLabel('okr-filter-status');
+        }
+
+        if (params.get('year'))  { yearFilter.value = params.get('year'); }
+        if (params.get('month')) { monthFilter.value = params.get('month'); }
+        if (params.get('from'))  { deepLinkDateFrom = params.get('from'); }
+        if (params.get('to'))    { deepLinkDateTo = params.get('to'); }
+        if (params.get('dept'))  { deptFilter.value = params.get('dept'); }
+        if (params.get('level')) { levelFilter.value = params.get('level'); }
+        if (params.get('type'))  { typeFilter.value = params.get('type'); }
+        if (params.get('overdue') === '1') { deepLinkOverdueOnly = true; }
+    }
+
     // Generic searchable single-select dropdown, mirrors ATEM's
     // vf-issuer-wrap/vf-s2-* widget (buildS2Dropdown in atem/js/view.js).
     // Wires open/close, type-to-filter search, and item selection for a
@@ -296,6 +336,14 @@
             if (month && card.start_date && String(parseInt(card.start_date.slice(5, 7), 10)) !== month) return false;
             if (startDate && card.start_date !== startDate) return false;
             if (endDate && card.end_date !== endDate) return false;
+            if (deepLinkDateFrom && (!card.start_date || card.start_date < deepLinkDateFrom)) return false;
+            if (deepLinkDateTo && (!card.start_date || card.start_date > deepLinkDateTo)) return false;
+            if (deepLinkOverdueOnly) {
+                var today = new Date().toISOString().slice(0, 10);
+                var isOverdue = card.end_date && card.end_date < today
+                    && (card.result_status === 'Active' || card.result_status === 'Extend');
+                if (!isOverdue) return false;
+            }
             if (search) {
                 var searchHay = ('okr' + card.id + ' ' + (card.objective || '')).toLowerCase();
                 if (searchHay.indexOf(search) === -1) return false;
@@ -371,8 +419,13 @@
         monthFilter.value = '';
         startDateFilter.value = '';
         endDateFilter.value = '';
+        deepLinkOverdueOnly = false;
+        deepLinkDateFrom = '';
+        deepLinkDateTo = '';
         render();
     });
+
+    applyUrlParams();
     render();
 
     // ---------------------------------------------------------------
