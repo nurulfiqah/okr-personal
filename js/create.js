@@ -4,33 +4,31 @@
     var referenceLinks = []; // { token, name, url }
     var stagedFiles = []; // { token, name, size }
 
-    // Warn on refresh/close/back navigation once the user has started filling
-    // in the form, same as ATEM's create page.
+    // Session-first draft lifecycle, mirrors ATEM's create page: every field
+    // change marks the form dirty and (debounced) silently autosaves it to
+    // the session via saveDraftState, so a refresh/reopen restores it. The
+    // actual Leave-modal/navigation-guard wiring lives in bindLeaveGuard()
+    // near the bottom, once saveOkr()/cancelOkr() exist to call into.
     var dirty = false;
     var leaving = false;
-    function markChanged() { dirty = true; }
+    var _syncTimer = null;
+
+    function scheduleSync() {
+        if (_syncTimer) { clearTimeout(_syncTimer); }
+        _syncTimer = setTimeout(function () {
+            var body = new URLSearchParams();
+            body.set('action', 'saveDraftState');
+            body.set('state', JSON.stringify(buildDraftState()));
+            fetch(CFG.apiUrl, { method: 'POST', body: body }).catch(function () {});
+        }, 500);
+    }
+
+    function markChanged() {
+        dirty = true;
+        scheduleSync();
+    }
     document.addEventListener('input', markChanged, true);
     document.addEventListener('change', markChanged, true);
-    window.addEventListener('beforeunload', function (e) {
-        if (dirty && !leaving) {
-            e.preventDefault();
-            e.returnValue = '';
-            return '';
-        }
-    });
-    document.addEventListener('click', function (e) {
-        if (!dirty || leaving) { return; }
-        var a = e.target.closest ? e.target.closest('a[href]') : null;
-        if (!a) { return; }
-        var href = a.getAttribute('href');
-        if (!href || href.charAt(0) === '#' || href.indexOf('javascript:') === 0) { return; }
-        if (a.getAttribute('target') === '_blank') { return; }
-        if (!confirm('Leave this page? Changes you made may not be saved.')) {
-            e.preventDefault();
-        } else {
-            leaving = true;
-        }
-    });
 
     function setError(id, msg) {
         var el = document.getElementById(id + '-error');
@@ -362,7 +360,7 @@
 
     var levelRubricEl = document.getElementById('okr-level-rubric');
     var levelRmEl = document.getElementById('okr-level-rm');
-    levelSelect.addEventListener('change', function () {
+    function updateLevelRubric() {
         var lv = CFG.levels.filter(function (l) { return String(l.level) === levelSelect.value; })[0];
         if (lv) {
             levelRubricEl.textContent = lv.rubric_text || '';
@@ -372,7 +370,8 @@
             levelRmEl.textContent = 'RM0.00';
         }
         refreshIncentiveRuleVisibility();
-    });
+    }
+    levelSelect.addEventListener('change', updateLevelRubric);
 
     // ---------------------------------------------------------------
     // Reference links
@@ -538,7 +537,10 @@
     // ---------------------------------------------------------------
     // Validation + save
     // ---------------------------------------------------------------
-    function validate() {
+    // mode 'draft' skips only the reference-link requirement (backend.php's
+    // one relaxed rule) - every other field stays required since okr_cards
+    // has them as NOT NULL columns regardless of status.
+    function validate(mode) {
         clearErrors();
         var ok = true;
 
@@ -548,7 +550,7 @@
         var keyResults = keyResultsHtml();
         if (!keyResults) { setError('okr-key-results', 'Key Results are required.'); ok = false; }
 
-        if (referenceLinks.length === 0) {
+        if (mode !== 'draft' && referenceLinks.length === 0) {
             setError('reflink-section', 'At least one reference link (e.g. the Trello board) is required.');
             ok = false;
         }
@@ -582,11 +584,59 @@
         return ok;
     }
 
-    document.getElementById('okr-save-btn').addEventListener('click', function () {
-        if (!validate()) {
-            scrollToFirstError();
-            return;
+    // ---------------------------------------------------------------
+    // Session draft autosave (survives refresh) + Save as Draft (a real,
+    // status=Draft okr_cards row) - mirrors ATEM's draft-save/draft-clear
+    // and saveAtem(mode, navUrl)/cancelAtem(navUrl).
+    // ---------------------------------------------------------------
+    function buildDraftState() {
+        return {
+            objective: document.getElementById('okr-objective').value,
+            key_results: keyResultsHtml(),
+            okr_type: document.getElementById('okr-type').value,
+            difficulty_level: levelSelect.value,
+            incentive_rule: incentiveRuleSelect.value,
+            owner2_purpose: document.getElementById('okr-owner2-purpose').value,
+            start_date: document.getElementById('okr-start').value,
+            end_date: document.getElementById('okr-end').value,
+            owner_state: ownerState
+        };
+    }
+
+    function hydrateDraftState(draft) {
+        if (!draft) { return; }
+        if (typeof draft.objective === 'string' && draft.objective) {
+            document.getElementById('okr-objective').value = draft.objective;
         }
+        if (draft.key_results && keyResultsEditor) { keyResultsEditor.root.innerHTML = draft.key_results; }
+        if (draft.okr_type) { document.getElementById('okr-type').value = draft.okr_type; }
+        if (draft.owner2_purpose) { document.getElementById('okr-owner2-purpose').value = draft.owner2_purpose; }
+        if (draft.start_date) { startDateInput.value = draft.start_date; }
+        if (draft.end_date) { endDateInput.value = draft.end_date; }
+        if (Array.isArray(draft.owner_state) && draft.owner_state.length) { ownerState = draft.owner_state; }
+        if (draft.difficulty_level) { levelSelect.value = draft.difficulty_level; }
+        if (draft.incentive_rule) { incentiveRuleSelect.value = draft.incentive_rule; }
+        updateLevelRubric();
+
+        if (Array.isArray(draft.reflinks) && draft.reflinks.length) {
+            referenceLinks = draft.reflinks;
+            renderReferenceLinks();
+        }
+        if (Array.isArray(draft.attachments) && draft.attachments.length) {
+            stagedFiles = draft.attachments;
+            renderFiles();
+        }
+
+        // Restored content is unsaved (no DB row yet), so leaving should still warn.
+        dirty = true;
+    }
+
+    function saveOkr(mode, navUrl) {
+        if (!validate(mode)) { scrollToFirstError(); return; }
+        setError('okr-save', '');
+
+        var btn = document.getElementById('okr-save-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
 
         var deptScopeIds = ownerState.map(function (m) { return m.dept_id; }).filter(function (v) { return !!v; });
         var deptScope = deptScopeIds.filter(function (v, i) { return deptScopeIds.indexOf(v) === i; }).join(',');
@@ -606,6 +656,7 @@
 
         var payload = new URLSearchParams();
         payload.set('action', 'createCard');
+        payload.set('mode', mode);
         payload.set('objective', document.getElementById('okr-objective').value.trim());
         payload.set('key_results', keyResultsHtml());
         payload.set('okr_type', document.getElementById('okr-type').value);
@@ -628,13 +679,88 @@
             .then(function (res) {
                 if (res.success) {
                     leaving = true;
-                    window.location.href = 'okr/view.php?id=' + res.id;
+                    window.location.href = navUrl || ('okr/view.php?id=' + res.id);
                 } else {
                     setError('okr-save', res.message || 'Failed to save OKR.');
+                    scrollToFirstError();
+                    if (btn) { btn.disabled = false; btn.textContent = 'Save OKR'; }
                 }
             })
             .catch(function () {
                 setError('okr-save', 'Network error. Please try again.');
+                scrollToFirstError();
+                if (btn) { btn.disabled = false; btn.textContent = 'Save OKR'; }
             });
+    }
+
+    function cancelOkr(navUrl) {
+        var body = new URLSearchParams();
+        body.set('action', 'clearDraftState');
+        fetch(CFG.apiUrl, { method: 'POST', body: body }).then(function () {
+            leaving = true;
+            window.location.href = navUrl || 'okr/list.php';
+        }).catch(function () {
+            leaving = true;
+            window.location.href = navUrl || 'okr/list.php';
+        });
+    }
+
+    // ------------------------------------------------------------ leave guard
+    var pendingNavUrl = 'okr/list.php';
+    var leaveModalEl = document.getElementById('okr-leave-modal');
+    var leaveModal = leaveModalEl ? new bootstrap.Modal(leaveModalEl) : null;
+
+    function showLeaveModal(navUrl) {
+        pendingNavUrl = navUrl || 'okr/list.php';
+        if (leaveModal) { leaveModal.show(); }
+    }
+
+    function bindLeaveGuard() {
+        var cancelBtn = document.getElementById('okr-cancel-btn');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', function () { showLeaveModal('okr/list.php'); });
+        }
+        var leaveCancelBtn = document.getElementById('okr-leave-cancel');
+        if (leaveCancelBtn) {
+            leaveCancelBtn.addEventListener('click', function () {
+                if (leaveModal) { leaveModal.hide(); }
+                cancelOkr(pendingNavUrl);
+            });
+        }
+        var leaveDraftBtn = document.getElementById('okr-leave-draft');
+        if (leaveDraftBtn) {
+            leaveDraftBtn.addEventListener('click', function () {
+                if (leaveModal) { leaveModal.hide(); }
+                saveOkr('draft', pendingNavUrl);
+            });
+        }
+
+        // Intercept in-app navigation links while there are unsaved changes.
+        document.addEventListener('click', function (e) {
+            if (!dirty || leaving) { return; }
+            var a = e.target.closest ? e.target.closest('a[href]') : null;
+            if (!a) { return; }
+            var href = a.getAttribute('href');
+            if (!href || href.charAt(0) === '#' || href.indexOf('javascript:') === 0) { return; }
+            if (a.getAttribute('target') === '_blank') { return; }
+            e.preventDefault();
+            showLeaveModal(a.href);
+        });
+
+        // Tab close / refresh: only a generic browser prompt is possible.
+        window.addEventListener('beforeunload', function (e) {
+            if (dirty && !leaving) {
+                e.preventDefault();
+                e.returnValue = '';
+                return '';
+            }
+        });
+    }
+    bindLeaveGuard();
+
+    document.getElementById('okr-save-btn').addEventListener('click', function () {
+        saveOkr('final');
     });
+
+    hydrateDraftState(CFG.draft);
 })();

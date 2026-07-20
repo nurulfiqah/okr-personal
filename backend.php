@@ -358,12 +358,36 @@ if ($action === 'getCard' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     exit;
 }
 
+// Silently autosaves the in-progress create form to the session (debounced
+// client-side) so a refresh/reopen restores it, mirrors ATEM's draft-save.
+// Never touches the database - just scratch state for this user's session.
+if ($action === 'saveDraftState' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if ($requester_grade < 3 && !$requester_is_admin) {
+        echo json_encode(['success' => false, 'message' => 'Unauthorized.']);
+        exit;
+    }
+    $state = json_decode($_POST['state'] ?? '', true);
+    $_SESSION['okr_draft_state'] = is_array($state) ? $state : [];
+    echo json_encode(['success' => true]);
+    exit;
+}
+
+// Discards the in-progress create form entirely: staged attachments,
+// reference links, and the autosaved field state. Used both by the Leave
+// modal's "Cancel OKR" and after a successful save (draft or final).
+if ($action === 'clearDraftState' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    okrClearDraftSession();
+    echo json_encode(['success' => true]);
+    exit;
+}
+
 if ($action === 'createCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($requester_grade < 3 && !$requester_is_admin) {
         echo json_encode(['success' => false, 'message' => 'Only senior management or above can issue an OKR.']);
         exit;
     }
 
+    $mode        = trim($_POST['mode'] ?? 'final');
     $objective   = trim($_POST['objective'] ?? '');
     $key_results = trim($_POST['key_results'] ?? '');
     $okr_type    = trim($_POST['okr_type'] ?? '');
@@ -381,7 +405,10 @@ if ($action === 'createCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['success' => false, 'message' => 'Objective and Key Results are required.']);
         exit;
     }
-    if (empty($_SESSION['okr_draft_reflinks'])) {
+    // A draft doesn't need its reference link lined up yet (e.g. the Trello
+    // board isn't created) - every other field below is still required
+    // because okr_cards has them as NOT NULL columns regardless of status.
+    if ($mode !== 'draft' && empty($_SESSION['okr_draft_reflinks'])) {
         echo json_encode(['success' => false, 'message' => 'At least one reference link (name + URL) is required.']);
         exit;
     }
@@ -442,19 +469,30 @@ if ($action === 'createCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $owner2_purpose_sql = $owner2_id > 0 ? "'$owner2_purpose_e'" : 'NULL';
     $incentivised_owner_sql = $incentivised_owner_id > 0 ? $incentivised_owner_id : 'NULL';
 
+    // Final submissions rely on okr_cards.result_status's own DEFAULT (Active,
+    // id 1) same as always; a draft explicitly inserts the Draft status instead.
+    $status_column = '';
+    $status_value  = '';
+    if ($mode === 'draft') {
+        $draft_status_id = okrStatusIdByValue($conn, 'Draft');
+        $status_column = ', result_status';
+        $status_value  = ', ' . ($draft_status_id > 0 ? $draft_status_id : 1);
+    }
+
     $insert = "INSERT INTO okr_cards
         (objective, key_results, okr_type, difficulty_level,
          owner_staff_id, owner2_staff_id, owner2_purpose, incentive_rule, incentivised_owner_staff_id,
-         issuer_staff_id, dept_scope, start_date, end_date)
+         issuer_staff_id, dept_scope, start_date, end_date$status_column)
         VALUES ('$objective_e', '$key_results_e', '$okr_type_e', $level,
                 $owner_id, $owner2_sql, $owner2_purpose_sql, $incentive_rule, $incentivised_owner_sql,
-                $requester_id, '$dept_scope_safe', '$start_date', '$end_date')";
+                $requester_id, '$dept_scope_safe', '$start_date', '$end_date'$status_value)";
 
     if (mysqli_query($conn, $insert)) {
         $new_id = mysqli_insert_id($conn);
         okrFinalizeStagedAttachments($conn, $new_id, $requester_id);
         okrFinalizeStagedReferenceLinks($conn, $new_id, $requester_id);
-        okrLogAudit($conn, $new_id, $requester_id, 'created', null, 'OKR card created.');
+        unset($_SESSION['okr_draft_state']);
+        okrLogAudit($conn, $new_id, $requester_id, 'created', null, $mode === 'draft' ? 'OKR card saved as draft.' : 'OKR card created.');
         echo json_encode(['success' => true, 'id' => $new_id]);
     } else {
         echo json_encode(['success' => false, 'message' => 'Database error: ' . mysqli_error($conn)]);

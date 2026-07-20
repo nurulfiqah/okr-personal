@@ -654,6 +654,20 @@ function okrRemoveStagedAttachment($token) {
     return true;
 }
 
+// Fully discards an in-progress create-form draft: removes any staged
+// attachment tmp files, clears staged reference links, and clears the
+// autosaved form-field state (okr_draft_state). Used by the clearDraftState
+// action and after a successful createCard, mirrors ATEM's draft-clear.
+function okrClearDraftSession() {
+    if (!empty($_SESSION['okr_draft_files'])) {
+        foreach (array_keys($_SESSION['okr_draft_files']) as $token) {
+            okrRemoveStagedAttachment($token);
+        }
+    }
+    $_SESSION['okr_draft_reflinks'] = [];
+    unset($_SESSION['okr_draft_state']);
+}
+
 // Uploads every attachment staged in the session to the NAS and links it to
 // the newly-created card. Called right after createCard succeeds.
 function okrFinalizeStagedAttachments($conn, $card_id, $uploaded_by) {

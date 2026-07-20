@@ -1,5 +1,6 @@
 <?php
 $page_title = 'OKR Dashboard';
+$page_title_actions = '<a href="atem/index.php" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-left-right"></i> Switch to ATEM Dashboard</a>';
 include('header.php');
 require_once(__DIR__ . '/lib.php');
 

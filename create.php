@@ -66,6 +66,22 @@ if ($rule_res) {
     }
 }
 
+// Hydrate any in-progress draft saved to the session (survives refresh).
+// Reference links/attachments are already staged in the session by their own
+// stage* actions regardless of okr_draft_state - included here so they don't
+// go silently invisible after a refresh either.
+$session_draft = is_array($_SESSION['okr_draft_state'] ?? null) ? $_SESSION['okr_draft_state'] : [];
+$session_reflinks = [];
+foreach (($_SESSION['okr_draft_reflinks'] ?? []) as $_token => $_link) {
+    $session_reflinks[] = ['token' => $_token, 'name' => $_link['name'], 'url' => $_link['url']];
+}
+$session_attachments = [];
+foreach (($_SESSION['okr_draft_files'] ?? []) as $_token => $_file) {
+    $session_attachments[] = ['token' => $_token, 'name' => $_file['original_name'], 'size' => (int)$_file['size']];
+}
+$session_draft['reflinks'] = $session_reflinks;
+$session_draft['attachments'] = $session_attachments;
+
 $okr_config = [
     'apiUrl'          => 'okr/backend.php',
     'staff'           => $staff_list,
@@ -73,6 +89,7 @@ $okr_config = [
     'levels'          => $levels,
     'incentiveRules'  => $incentive_rules,
     'backdateEnabled' => okrBackdateEnabled($conn),
+    'draft'           => $session_draft,
 ];
 ?>
 
@@ -244,8 +261,28 @@ $okr_config = [
     <div class="okr-form-error" id="okr-save-error"></div>
 </div>
 <div class="okr-save-bar">
-    <a href="okr/list.php" class="btn btn-outline-secondary">Cancel</a>
+    <button type="button" class="btn btn-outline-secondary" id="okr-cancel-btn">Cancel</button>
     <button type="button" class="btn btn-primary" id="okr-save-btn">Save OKR</button>
+</div>
+
+<!-- Leave / cancel confirmation modal -->
+<div class="modal fade" id="okr-leave-modal" tabindex="-1" aria-labelledby="okr-leave-modal-title" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="okr-leave-modal-title">Leave this OKR?</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0">This OKR has not been saved. Do you want to cancel it, or keep it as a draft?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Continue editing</button>
+                <button type="button" class="btn btn-danger" id="okr-leave-cancel">Cancel OKR</button>
+                <button type="button" class="btn btn-primary" id="okr-leave-draft">Save as draft</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Add Reference Link modal -->

@@ -67,6 +67,9 @@ $show_performance   = ($okr_permission >= 4 || $okr_is_admin);
                     <a class="nav-link <?php echo $dashboard_active; ?>" href="okr/index.php">Dashboard</a>
                 </li>
                 <li class="nav-item">
+                    <a class="nav-link" href="atem/index.php">ATEM</a>
+                </li>
+                <li class="nav-item">
                     <a class="nav-link <?php echo $list_active; ?>" href="okr/list.php">OKR</a>
                 </li>
                 <?php if ($show_performance): ?>
