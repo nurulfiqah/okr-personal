@@ -21,6 +21,7 @@ $page_title = $page_title ?? 'OKR';
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title><?php echo htmlspecialchars($page_title); ?></title>
+    <link rel="icon" type="image/svg+xml" href="/odb/okr/css/logo.svg">
     <base href="/odb/">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -67,7 +68,7 @@ if ($okr_permission === 0 && !$okr_is_admin) {
     <?php include(dirname(__FILE__) . '/navbar.php'); ?>
     <div class="header" style="position: relative;">
         <b class="rtop"><b class="r1"></b><b class="r2"></b><b class="r3"></b><b class="r4"></b></b>
-        <h1 class="headerH1">OKR</h1>
+        <h1 class="headerH1"><img src='/odb/okr/css/logo.svg' width='20px'>OKR</h1>
         <b class="rbottom"><b class="r4"></b><b class="r3"></b><b class="r2"></b><b class="r1"></b></b>
     </div>
     <div class="okr-container mb-3">

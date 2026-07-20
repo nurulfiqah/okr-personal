@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0d6efd;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0a58ca;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Square background with rounded corners -->
+  <rect x="0" y="0" width="200" height="200" rx="24" ry="24" fill="url(#bgGrad)" />
+
+  <!-- Target/bullseye icon (Objective) centered in the upper half -->
+  <circle cx="100" cy="92" r="38" fill="none" stroke="#ffffff" stroke-width="7" opacity="0.55" />
+  <circle cx="100" cy="92" r="24" fill="none" stroke="#ffffff" stroke-width="7" opacity="0.75" />
+  <circle cx="100" cy="92" r="10" fill="#ffffff" />
+
+  <!-- Arrow hitting the center (Key Result achieved) -->
+  <line x1="146" y1="46" x2="106" y2="86" stroke="#ffffff" stroke-width="5" stroke-linecap="round" />
+  <polygon points="146,46 130,50 142,62" fill="#ffffff" />
+
+  <!-- Divider line -->
+  <line x1="30" y1="148" x2="170" y2="148" stroke="#ffffff" stroke-width="1" opacity="0.25" />
+
+  <!-- OKR wordmark -->
+  <text
+    x="100"
+    y="170"
+    text-anchor="middle"
+    font-family="Inter, Segoe UI, Arial, sans-serif"
+    font-size="36"
+    font-weight="700"
+    letter-spacing="4"
+    fill="#ffffff"
+  >OKR</text>
+
+  <!-- Tagline -->
+  <text
+    x="100"
+    y="188"
+    text-anchor="middle"
+    font-family="Inter, Segoe UI, Arial, sans-serif"
+    font-size="8"
+    font-weight="400"
+    letter-spacing="2"
+    fill="#c0d8ff"
+    opacity="0.85"
+  >OBJECTIVES &amp; KEY RESULTS</text>
+</svg>
