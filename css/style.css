@@ -139,6 +139,10 @@ input, select, textarea, button {
   text-align: left;
 }
 
+#okr-incentive-rule-hint {
+  font-size: 11px;
+}
+
 .okr-card-title-row {
   display: flex;
   justify-content: space-between;
@@ -337,9 +341,156 @@ textarea.form-control {
   vertical-align: baseline;
 }
 
-.okr-btn-add-owner2 {
+/* Owner(s) ARCI-style tagging widget (single "A - Accountable" role, max 2) */
+.okr-arci-add {
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0 16px;
+}
+
+.okr-arci-add-grid {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.okr-arci-add-grid > div {
+  display: flex;
+  flex-direction: column;
+}
+
+#okr-owner-dept-select {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 120px;
+  padding: 4px;
+}
+
+#okr-owner-dept-select option {
+  padding: 6px 8px;
+}
+
+.okr-arci-staff-list {
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  padding: 8px;
+  height: 150px;
+  overflow-y: auto;
+  background-color: #fff;
+}
+
+.okr-arci-staff-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.okr-arci-col {
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.okr-arci-col-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+  font-size: 13px;
+}
+
+.okr-arci-members {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 60px;
+}
+
+.okr-arci-member {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.okr-arci-member-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.okr-arci-member-dept {
+  font-size: 11px;
+  color: #6c757d;
+}
+
+.okr-arci-member-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #212529;
+  word-break: break-word;
+}
+
+.okr-arci-remove {
+  color: #dc3545;
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.okr-arci-empty {
   font-size: 12px;
-  padding: 4px 10px;
+  color: #adb5bd;
+  font-style: italic;
+  text-align: center;
+  padding: 12px 0;
+}
+
+.okr-arci-incentivised {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #6c757d;
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.okr-arci-incentivised input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+}
+
+.okr-arci-incentivised-badge {
+  display: inline-block;
+  font-size: 10px;
+  color: #198754;
+  border: 1px solid #198754;
+  border-radius: 3px;
+  padding: 1px 4px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .okr-arci-add-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Inline form error (small red text instead of system dialogs) */
@@ -665,7 +816,7 @@ textarea.form-control {
    Reference link rows
 --------------------------------------------------------------- */
 .okr-reflink-list {
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 .okr-reflink-row {
@@ -673,7 +824,7 @@ textarea.form-control {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 5px 0;
+  padding: 3px 0;
 }
 
 .okr-reflink-row a {

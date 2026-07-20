@@ -82,56 +82,22 @@ $okr_view_config = [
                     <label class="form-label">Department</label>
                     <input type="text" class="form-control" value="<?php echo htmlspecialchars(empty($dept_names) ? '-' : implode(', ', $dept_names)); ?>" readonly>
                 </div>
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <label class="form-label">OKR Type</label>
                     <input type="text" class="form-control" value="<?php echo htmlspecialchars($card['okr_type']); ?>" readonly>
                 </div>
-                <div class="col-md-6">
-                    <label class="form-label">Difficulty Level</label>
+                <div class="col-md-4">
+                    <label class="form-label">OKR Complexity Level</label>
                     <input type="text" class="form-control" value="<?php echo htmlspecialchars($card['level_label']); ?> (RM<?php echo number_format($card['level_rm'], 2); ?>)" readonly>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Incentive Rule</label>
+                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($card['incentive_rule_label']); ?>" readonly>
                 </div>
                 <div class="col-12">
                     <label class="form-label">Key Results</label>
                     <div id="okr-key-results-editor"><?php echo $card['key_results']; ?></div>
                 </div>
-            </div>
-        </div>
-
-        <div class="okr-card mt-3">
-            <h6 class="okr-card-title"><i class="bi bi-people"></i> Owner(s)</h6>
-            <div class="row g-3 mt-1">
-                <div class="col-md-6">
-                    <label class="form-label">Department</label>
-                    <input type="text" class="form-control" value="<?php echo htmlspecialchars(empty($dept_names) ? '-' : implode(', ', $dept_names)); ?>" readonly>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Owner</label>
-                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($card['owner_name']); ?>" readonly>
-                </div>
-                <?php if ($card['owner2_name']): ?>
-                <div class="col-md-6">
-                    <label class="form-label">Department</label>
-                    <input type="text" class="form-control" value="<?php echo htmlspecialchars(empty($dept_names2) ? '-' : implode(', ', $dept_names2)); ?>" readonly>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">2nd Owner</label>
-                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($card['owner2_name']); ?>" readonly>
-                </div>
-                <div class="col-12">
-                    <label class="form-label">Purpose of joint ownership</label>
-                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($card['owner2_purpose']); ?>" readonly>
-                </div>
-                <div class="col-12">
-                    <label class="form-label">Incentive Rule</label>
-                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($card['incentive_rule_label']); ?>" readonly>
-                </div>
-                <?php if ($card['incentive_rule_code'] === 'RULE1'): ?>
-                <div class="col-md-6">
-                    <label class="form-label">Incentivised Owner</label>
-                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($card['incentivised_owner_name']); ?>" readonly>
-                </div>
-                <?php endif; ?>
-                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -222,6 +188,49 @@ $okr_view_config = [
             <?php endif; ?>
         </div>
         <?php endif; ?>
+    </div>
+
+    <div class="okr-bento-item okr-span-12">
+        <div class="okr-card">
+            <h6 class="okr-card-title"><i class="bi bi-people"></i> Owner(s)</h6>
+            <div class="row g-3 mt-1">
+                <div class="col-md-6">
+                    <div class="okr-arci-col">
+                        <div class="okr-arci-col-head">
+                            <span><strong>A</strong> - Accountable (Owner)</span>
+                        </div>
+                        <div class="okr-arci-members">
+                            <div class="okr-arci-member">
+                                <div class="okr-arci-member-info">
+                                    <div class="okr-arci-member-dept">(<?php echo htmlspecialchars(empty($dept_names) ? '-' : implode(', ', $dept_names)); ?>)</div>
+                                    <div class="okr-arci-member-name"><?php echo htmlspecialchars($card['owner_name']); ?></div>
+                                </div>
+                                <?php if ($card['owner2_name'] && $card['incentive_rule_code'] === 'RULE1' && $card['incentivised_owner_staff_id'] === $card['owner_staff_id']): ?>
+                                <span class="okr-arci-incentivised-badge">Incentivised</span>
+                                <?php endif; ?>
+                            </div>
+                            <?php if ($card['owner2_name']): ?>
+                            <div class="okr-arci-member">
+                                <div class="okr-arci-member-info">
+                                    <div class="okr-arci-member-dept">(<?php echo htmlspecialchars(empty($dept_names2) ? '-' : implode(', ', $dept_names2)); ?>)</div>
+                                    <div class="okr-arci-member-name"><?php echo htmlspecialchars($card['owner2_name']); ?></div>
+                                </div>
+                                <?php if ($card['incentive_rule_code'] === 'RULE1' && $card['incentivised_owner_staff_id'] === $card['owner2_staff_id']): ?>
+                                <span class="okr-arci-incentivised-badge">Incentivised</span>
+                                <?php endif; ?>
+                            </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                <?php if ($card['owner2_name']): ?>
+                <div class="col-md-6">
+                    <label class="form-label">Purpose of joint ownership</label>
+                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($card['owner2_purpose']); ?>" readonly>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
     </div>
 </div>
 

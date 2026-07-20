@@ -4,6 +4,34 @@
     var referenceLinks = []; // { token, name, url }
     var stagedFiles = []; // { token, name, size }
 
+    // Warn on refresh/close/back navigation once the user has started filling
+    // in the form, same as ATEM's create page.
+    var dirty = false;
+    var leaving = false;
+    function markChanged() { dirty = true; }
+    document.addEventListener('input', markChanged, true);
+    document.addEventListener('change', markChanged, true);
+    window.addEventListener('beforeunload', function (e) {
+        if (dirty && !leaving) {
+            e.preventDefault();
+            e.returnValue = '';
+            return '';
+        }
+    });
+    document.addEventListener('click', function (e) {
+        if (!dirty || leaving) { return; }
+        var a = e.target.closest ? e.target.closest('a[href]') : null;
+        if (!a) { return; }
+        var href = a.getAttribute('href');
+        if (!href || href.charAt(0) === '#' || href.indexOf('javascript:') === 0) { return; }
+        if (a.getAttribute('target') === '_blank') { return; }
+        if (!confirm('Leave this page? Changes you made may not be saved.')) {
+            e.preventDefault();
+        } else {
+            leaving = true;
+        }
+    });
+
     function setError(id, msg) {
         var el = document.getElementById(id + '-error');
         if (el) el.textContent = msg || '';
@@ -63,6 +91,9 @@
             },
             placeholder: 'Write the measurable results in detail here....'
         });
+        keyResultsEditor.on('text-change', function (delta, old, source) {
+            if (source === 'user') { markChanged(); }
+        });
     }
 
     // ---------------------------------------------------------------
@@ -88,148 +119,14 @@
         return keyResultsEditor && keyResultsEditor.getText().trim() !== '' ? keyResultsEditor.root.innerHTML : '';
     }
 
-    var ownerSelect1 = document.getElementById('okr-owner1');
-    var ownerSelect2 = document.getElementById('okr-owner2');
-    var deptSelect = document.getElementById('okr-dept-scope');
-    var deptSelect2 = document.getElementById('okr-dept-scope-2');
     var levelSelect = document.getElementById('okr-level');
     var incentiveRuleSelect = document.getElementById('okr-incentive-rule');
-    var incentivisedOwnerSelect = document.getElementById('okr-incentivised-owner');
+    var owner2PurposeWrap = document.getElementById('okr-owner2-purpose-wrap');
+    var incentiveRuleHint = document.getElementById('okr-incentive-rule-hint');
 
-    fillSelect(deptSelect, CFG.departments, 'id', 'name');
-    fillSelect(deptSelect2, CFG.departments, 'id', 'name');
-
-    // ---------------------------------------------------------------
-    // Each owner has its own Department filter: pick department(s) there
-    // and only staff in those departments show up in that owner's dropdown.
-    // No department selected = everyone is eligible. Populated immediately
-    // (before any other feature wiring below) so a failure elsewhere on the
-    // page can never leave these selects empty.
-    // ---------------------------------------------------------------
-    function refreshOwnerOptionsFor(sel, deptSel, excludeId) {
-        var selectedDeptIds = Array.prototype.map.call(deptSel.selectedOptions, function (o) { return parseInt(o.value, 10); });
-        var eligible = selectedDeptIds.length === 0
-            ? CFG.staff
-            : CFG.staff.filter(function (s) {
-                return (s.deptIds || []).some(function (d) { return selectedDeptIds.indexOf(d) !== -1; });
-            });
-        if (excludeId) {
-            eligible = eligible.filter(function (s) { return s.id !== excludeId; });
-        }
-
-        var previous = sel.value;
-        var placeholder = sel.options[0];
-        sel.innerHTML = '';
-        sel.appendChild(placeholder);
-        fillSelect(sel, eligible, 'id', 'name');
-        if (eligible.some(function (s) { return String(s.id) === previous; })) {
-            sel.value = previous;
-        }
-    }
-
-    // Owner and 2nd Owner can never be the same person: each dropdown
-    // excludes whoever is currently selected in the other one.
-    function refreshOwnerOptions() {
-        refreshOwnerOptionsFor(ownerSelect1, deptSelect, parseInt(ownerSelect2.value, 10) || 0);
-        refreshOwnerOptionsFor(ownerSelect2, deptSelect2, parseInt(ownerSelect1.value, 10) || 0);
-    }
-
-    refreshOwnerOptions();
-
-    // Wires a department multi-select + its search box: typing filters the
-    // visible options, and the box shows the selected department names when
-    // not focused (clearing back to a live search on focus).
-    function wireDeptFilter(deptSel, searchInput, onChange) {
-        if (!searchInput) { return; }
-        var showingSelection = false;
-
-        searchInput.addEventListener('keyup', function () {
-            showingSelection = false;
-            var term = searchInput.value.toLowerCase();
-            var opts = deptSel.options;
-            for (var i = 0; i < opts.length; i++) {
-                opts[i].hidden = opts[i].textContent.toLowerCase().indexOf(term) < 0;
-            }
-        });
-
-        searchInput.addEventListener('focus', function () {
-            if (showingSelection) {
-                searchInput.value = '';
-                showingSelection = false;
-                var opts = deptSel.options;
-                for (var i = 0; i < opts.length; i++) { opts[i].hidden = false; }
-            }
-        });
-
-        function updateDisplay() {
-            var names = Array.prototype.map.call(deptSel.selectedOptions, function (o) { return o.textContent; });
-            if (document.activeElement !== searchInput) {
-                searchInput.value = names.join(', ');
-                showingSelection = names.length > 0;
-            }
-        }
-
-        deptSel.addEventListener('change', function () {
-            updateDisplay();
-            if (onChange) { onChange(); }
-        });
-    }
-
-    wireDeptFilter(deptSelect, document.getElementById('okr-dept-scope-search'), function () {
-        refreshOwnerOptionsFor(ownerSelect1, deptSelect, parseInt(ownerSelect2.value, 10) || 0);
-        refreshIncentiveRuleVisibility();
-    });
-    wireDeptFilter(deptSelect2, document.getElementById('okr-dept-scope-2-search'), function () {
-        refreshOwnerOptionsFor(ownerSelect2, deptSelect2, parseInt(ownerSelect1.value, 10) || 0);
-        owner2PurposeWrap.style.display = ownerSelect2.value ? 'block' : 'none';
-        refreshIncentiveRuleVisibility();
-    });
-
-    // Re-exclude the other owner whenever either selection changes.
-    ownerSelect1.addEventListener('change', function () {
-        refreshOwnerOptionsFor(ownerSelect2, deptSelect2, parseInt(ownerSelect1.value, 10) || 0);
-    });
-    ownerSelect2.addEventListener('change', function () {
-        refreshOwnerOptionsFor(ownerSelect1, deptSelect, parseInt(ownerSelect2.value, 10) || 0);
-    });
-
-    // ---------------------------------------------------------------
-    // 2nd Owner is opt-in: hidden behind an "Add 2nd Owner" toggle. Situation
-    // 1 (single owner) never shows the Incentive Rule picker at all — the
-    // backend defaults it to Rule 1 (100% to that one owner). Situation 2
-    // (2nd owner added) reveals its Department/Owner/Purpose block, and the
-    // Incentive Rule picker becomes relevant (wired further below).
-    // ---------------------------------------------------------------
-    var owner2ToggleWrap = document.getElementById('okr-owner2-toggle-wrap');
-    var owner2Section = document.getElementById('okr-owner2-section');
-    var addOwner2Btn = document.getElementById('okr-add-owner2-btn');
-    var removeOwner2Btn = document.getElementById('okr-remove-owner2-btn');
-
-    function clearOwner2() {
-        ownerSelect2.value = '';
-        Array.prototype.forEach.call(deptSelect2.options, function (opt) { opt.selected = false; });
-        document.getElementById('okr-owner2-purpose').value = '';
-        deptSelect2.dispatchEvent(new Event('change'));
-        ownerSelect2.dispatchEvent(new Event('change'));
-    }
-
-    if (addOwner2Btn) {
-        addOwner2Btn.addEventListener('click', function () {
-            owner2Section.style.display = 'block';
-            owner2ToggleWrap.style.display = 'none';
-            // Incentive Rule becomes relevant only once both owners are in
-            // place, so move it to the end of the section (after the 2nd
-            // owner block) instead of leaving it sitting above it.
-            owner2Section.parentNode.insertBefore(incentiveRuleWrap, owner2Section.nextSibling);
-        });
-    }
-    if (removeOwner2Btn) {
-        removeOwner2Btn.addEventListener('click', function () {
-            clearOwner2();
-            owner2Section.style.display = 'none';
-            owner2ToggleWrap.style.display = 'block';
-            // Move Incentive Rule back above the "Add 2nd Owner" button.
-            owner2ToggleWrap.parentNode.insertBefore(incentiveRuleWrap, owner2ToggleWrap);
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
         });
     }
 
@@ -247,72 +144,172 @@
     });
 
     // ---------------------------------------------------------------
-    // Two-owner incentive rule (framework doc §10): only relevant once a
-    // 2nd owner is picked. Rule 1 needs a single incentivised owner chosen
-    // out of the two; Rule 2 splits evenly, no picker needed.
+    // Owner(s): ATEM ARCI-style tagging widget, restricted to a single
+    // "A - Accountable" role capped at 2 members (OKR has no R/C/I). Whoever
+    // is ticked "Incentivised" receives the payout; the tick only appears
+    // once 2 owners are tagged and Rule 1 (single incentivised owner) is
+    // selected - Rule 2 splits 50/50 automatically and needs no ticking.
     // ---------------------------------------------------------------
-    var owner2PurposeWrap = document.getElementById('okr-owner2-purpose-wrap');
-    var incentiveRuleWrap = document.getElementById('okr-incentive-rule-wrap');
-    var incentivisedOwnerWrap = document.getElementById('okr-incentivised-owner-wrap');
-    var incentiveRuleHint = document.getElementById('okr-incentive-rule-hint');
+    var ownerState = []; // [{ staff_id, staff_name, dept_id, department_name, is_incentivised }]
 
-    function refreshIncentivisedOwnerOptions() {
-        var currentValue = incentivisedOwnerSelect.value;
-        incentivisedOwnerSelect.innerHTML = '<option value="">Select owner</option>';
-        [ownerSelect1, ownerSelect2].forEach(function (sel) {
-            if (!sel.value) { return; }
-            var label = sel.options[sel.selectedIndex].textContent;
-            var opt = document.createElement('option');
-            opt.value = sel.value;
-            opt.textContent = label;
-            incentivisedOwnerSelect.appendChild(opt);
-        });
-        incentivisedOwnerSelect.value = currentValue;
+    var ownerDeptSelect = document.getElementById('okr-owner-dept-select');
+    var ownerDeptSearch = document.getElementById('okr-owner-dept-search');
+    var ownerStaffSearch = document.getElementById('okr-owner-staff-search');
+    var ownerStaffList = document.getElementById('okr-owner-staff-list');
+    var ownerAddBtn = document.getElementById('okr-owner-add-btn');
+    var ownerMembersEl = document.getElementById('okr-owner-members');
+
+    // Only departments with at least one staff member are worth showing -
+    // an empty department would just lead to a dead-end staff picker.
+    var ownerDeptsWithStaff = (CFG.departments || []).filter(function (d) {
+        return (CFG.staff || []).some(function (s) { return (s.deptIds || []).indexOf(d.id) !== -1; });
+    });
+    fillSelect(ownerDeptSelect, ownerDeptsWithStaff, 'id', 'name');
+
+    function ownerAssignedIds() {
+        return ownerState.map(function (m) { return m.staff_id; });
     }
 
-    var incentiveRuleHadOwner2 = false;
+    function departmentName(deptId) {
+        var d = (CFG.departments || []).filter(function (x) { return String(x.id) === String(deptId); })[0];
+        return d ? d.name : '';
+    }
+
+    ownerDeptSearch.addEventListener('keyup', function () {
+        var term = ownerDeptSearch.value.toLowerCase();
+        var opts = ownerDeptSelect.options;
+        for (var i = 0; i < opts.length; i++) {
+            if (opts[i].value === '') { continue; }
+            opts[i].hidden = opts[i].textContent.toLowerCase().indexOf(term) < 0;
+        }
+    });
+
+    function renderOwnerStaffList() {
+        var deptId = ownerDeptSelect.value;
+        if (!deptId) {
+            ownerStaffList.innerHTML = '<div class="text-muted" style="font-size:13px;">Select a department to load staff</div>';
+            return;
+        }
+        var deptIdNum = parseInt(deptId, 10);
+        var assigned = ownerAssignedIds();
+        var term = ownerStaffSearch.value.toLowerCase();
+        var staff = (CFG.staff || []).filter(function (s) {
+            return (s.deptIds || []).indexOf(deptIdNum) !== -1;
+        });
+
+        var html = '';
+        staff.forEach(function (s) {
+            if (assigned.indexOf(s.id) !== -1) { return; }
+            if (term && s.name.toLowerCase().indexOf(term) < 0) { return; }
+            html += '<label class="okr-arci-staff-item">'
+                + '<input type="checkbox" value="' + s.id + '" data-name="' + escapeHtml(s.name) + '"> '
+                + '<span>' + escapeHtml(s.name) + '</span>'
+                + '</label>';
+        });
+        ownerStaffList.innerHTML = html || '<div class="text-muted" style="font-size:13px;">No staff available</div>';
+    }
+    ownerDeptSelect.addEventListener('change', renderOwnerStaffList);
+    ownerStaffSearch.addEventListener('keyup', renderOwnerStaffList);
+
+    function selectedIncentiveRule() {
+        return (CFG.incentiveRules || []).filter(function (r) { return String(r.id) === incentiveRuleSelect.value; })[0];
+    }
+
+    function countIncentivisedOwners() {
+        var n = 0;
+        ownerState.forEach(function (m) { if (m.is_incentivised) { n++; } });
+        return n;
+    }
+
+    function renderOwnerMembers() {
+        if (ownerState.length === 0) {
+            ownerMembersEl.innerHTML = '<div class="okr-arci-empty">No owners assigned</div>';
+        } else {
+            var rule = selectedIncentiveRule();
+            var showTick = ownerState.length === 2 && rule && rule.code === 'RULE1';
+            var incCount = countIncentivisedOwners();
+            var html = '';
+            ownerState.forEach(function (m) {
+                var tickHtml = '';
+                if (showTick) {
+                    var atMax = !m.is_incentivised && incCount >= 1;
+                    tickHtml = '<label class="okr-arci-incentivised">'
+                        + '<input type="checkbox" class="okr-owner-incentivised-chk" data-staff="' + m.staff_id + '"'
+                        + (m.is_incentivised ? ' checked' : '')
+                        + (atMax ? ' disabled' : '') + '> Incentivised</label>';
+                }
+                html += '<div class="okr-arci-member">'
+                    + '<div class="okr-arci-member-info">'
+                    + '<div class="okr-arci-member-dept">(' + escapeHtml(m.department_name || '') + ')</div>'
+                    + '<div class="okr-arci-member-name">' + escapeHtml(m.staff_name) + '</div>'
+                    + '</div>'
+                    + tickHtml
+                    + '<span class="okr-arci-remove" data-staff="' + m.staff_id + '" title="Remove">&times;</span>'
+                    + '</div>';
+            });
+            ownerMembersEl.innerHTML = html;
+        }
+        owner2PurposeWrap.style.display = ownerState.length === 2 ? 'block' : 'none';
+    }
+
+    ownerMembersEl.addEventListener('click', function (e) {
+        if (e.target.classList.contains('okr-arci-remove')) {
+            var staffId = parseInt(e.target.getAttribute('data-staff'), 10);
+            ownerState = ownerState.filter(function (m) { return m.staff_id !== staffId; });
+            markChanged();
+            refreshIncentiveRuleVisibility();
+        }
+    });
+    ownerMembersEl.addEventListener('change', function (e) {
+        if (e.target.classList.contains('okr-owner-incentivised-chk')) {
+            var staffId = parseInt(e.target.getAttribute('data-staff'), 10);
+            var checked = e.target.checked;
+            ownerState.forEach(function (m) {
+                if (m.staff_id === staffId) { m.is_incentivised = checked; }
+            });
+            refreshIncentiveRuleVisibility();
+        }
+    });
+
+    ownerAddBtn.addEventListener('click', function () {
+        setError('okr-owner', '');
+        var deptId = ownerDeptSelect.value;
+        var checks = ownerStaffList.querySelectorAll('input[type="checkbox"]:checked');
+        if (checks.length === 0) {
+            setError('okr-owner', 'Please select at least one staff member.');
+            return;
+        }
+        if (ownerState.length + checks.length > 2) {
+            setError('okr-owner', 'Owner (Accountable) supports up to 2 members.');
+            return;
+        }
+        var deptName = departmentName(deptId);
+        for (var i = 0; i < checks.length; i++) {
+            ownerState.push({
+                staff_id: parseInt(checks[i].value, 10),
+                staff_name: checks[i].getAttribute('data-name'),
+                dept_id: deptId ? parseInt(deptId, 10) : null,
+                department_name: deptName,
+                is_incentivised: false
+            });
+        }
+        ownerDeptSelect.value = '';
+        ownerStaffSearch.value = '';
+        markChanged();
+        refreshIncentiveRuleVisibility();
+    });
 
     function refreshIncentiveRuleVisibility() {
-        var hasOwner1 = !!ownerSelect1.value;
-        var hasOwner2 = !!ownerSelect2.value;
         var selectedLevel = (CFG.levels || []).filter(function (l) { return String(l.level) === levelSelect.value; })[0];
         var noPayout = !!(selectedLevel && Number(selectedLevel.base_rm) === 0);
 
-        if (!hasOwner1 || noPayout) {
-            // No owner picked yet, or Level 1 (RM0, no incentive at all):
-            // leave the field on its "Select rule" placeholder and locked,
-            // there's nothing to choose or pay out.
-            incentiveRuleSelect.value = '';
-            incentiveRuleSelect.disabled = true;
-        } else if (!hasOwner2) {
-            // Single owner: no choice to make, lock the field to Rule 1 (100%
-            // to that one owner) instead of hiding it.
-            var rule1 = (CFG.incentiveRules || []).filter(function (r) { return r.code === 'RULE1'; })[0];
-            if (rule1) { incentiveRuleSelect.value = String(rule1.id); }
-            incentiveRuleSelect.disabled = true;
-        } else {
-            if (!incentiveRuleHadOwner2) {
-                // Just gained a 2nd owner: reset to the placeholder so the
-                // issuer must explicitly pick Rule 1 or Rule 2, instead of
-                // silently keeping whatever Rule 1 auto-filled for one owner.
-                incentiveRuleSelect.value = '';
-            }
-            incentiveRuleSelect.disabled = false;
-        }
-        incentiveRuleHadOwner2 = hasOwner2;
+        incentiveRuleSelect.disabled = noPayout;
 
-        var rule = (CFG.incentiveRules || []).filter(function (r) { return String(r.id) === incentiveRuleSelect.value; })[0];
+        var rule = selectedIncentiveRule();
         incentiveRuleHint.textContent = rule ? rule.payout_logic : '';
 
-        var showPicker = !!(hasOwner2 && rule && rule.code === 'RULE1');
-        incentivisedOwnerWrap.style.display = showPicker ? 'block' : 'none';
-        if (showPicker) { refreshIncentivisedOwnerOptions(); }
-
-        // Full width on its own; shrinks to sit side-by-side with
-        // Incentivised Owner once that field appears.
-        incentiveRuleWrap.classList.toggle('col-12', !showPicker);
-        incentiveRuleWrap.classList.toggle('col-md-6', showPicker);
-
+        renderOwnerMembers();
+        renderOwnerStaffList();
         refreshIncentiveBreakdown();
     }
 
@@ -325,35 +322,32 @@
     var stat2ValueEl = document.getElementById('okr-incentive-stat2-value');
 
     function refreshIncentiveBreakdown() {
-        var hasOwner1 = !!ownerSelect1.value;
-        var hasOwner2 = !!ownerSelect2.value;
         var selectedLevel = (CFG.levels || []).filter(function (l) { return String(l.level) === levelSelect.value; })[0];
         var baseRm = selectedLevel ? Number(selectedLevel.base_rm) : 0;
 
-        if (!hasOwner1 || baseRm <= 0) {
+        if (ownerState.length === 0 || baseRm <= 0) {
             breakdownEl.style.display = 'none';
             return;
         }
 
-        stat1LabelEl.textContent = '1st Owner · ' + ownerSelect1.options[ownerSelect1.selectedIndex].textContent;
+        stat1LabelEl.textContent = '1st Owner · ' + ownerState[0].staff_name;
 
-        if (!hasOwner2) {
+        if (ownerState.length < 2) {
             stat1El.classList.add('okr-incentive-stat--full');
             stat1ValueEl.textContent = 'RM' + baseRm.toFixed(2);
             stat2El.style.display = 'none';
         } else {
             stat1El.classList.remove('okr-incentive-stat--full');
             stat2El.style.display = 'block';
-            stat2LabelEl.textContent = '2nd Owner · ' + ownerSelect2.options[ownerSelect2.selectedIndex].textContent;
+            stat2LabelEl.textContent = '2nd Owner · ' + ownerState[1].staff_name;
 
-            var rule = (CFG.incentiveRules || []).filter(function (r) { return String(r.id) === incentiveRuleSelect.value; })[0];
+            var rule = selectedIncentiveRule();
             if (rule && rule.code === 'RULE2') {
                 stat1ValueEl.textContent = 'RM' + (baseRm / 2).toFixed(2);
                 stat2ValueEl.textContent = 'RM' + (baseRm / 2).toFixed(2);
             } else if (rule && rule.code === 'RULE1') {
-                var incentivisedId = incentivisedOwnerSelect.value;
-                stat1ValueEl.textContent = incentivisedId === ownerSelect1.value ? 'RM' + baseRm.toFixed(2) : 'RM0.00';
-                stat2ValueEl.textContent = incentivisedId === ownerSelect2.value ? 'RM' + baseRm.toFixed(2) : 'RM0.00';
+                stat1ValueEl.textContent = ownerState[0].is_incentivised ? 'RM' + baseRm.toFixed(2) : 'RM0.00';
+                stat2ValueEl.textContent = ownerState[1].is_incentivised ? 'RM' + baseRm.toFixed(2) : 'RM0.00';
             } else {
                 stat1ValueEl.textContent = 'RM0.00';
                 stat2ValueEl.textContent = 'RM0.00';
@@ -364,13 +358,7 @@
 
     refreshIncentiveRuleVisibility();
 
-    ownerSelect2.addEventListener('change', function () {
-        owner2PurposeWrap.style.display = ownerSelect2.value ? 'block' : 'none';
-        refreshIncentiveRuleVisibility();
-    });
-    ownerSelect1.addEventListener('change', refreshIncentiveRuleVisibility);
     incentiveRuleSelect.addEventListener('change', refreshIncentiveRuleVisibility);
-    incentivisedOwnerSelect.addEventListener('change', refreshIncentiveBreakdown);
 
     var levelRubricEl = document.getElementById('okr-level-rubric');
     var levelRmEl = document.getElementById('okr-level-rm');
@@ -433,6 +421,7 @@
             .then(function (res) {
                 if (res.success) {
                     referenceLinks.push({ token: res.token, name: res.name, url: res.url });
+                    markChanged();
                     renderReferenceLinks();
                     setError('reflink-section', '');
                     reflinkModal.hide();
@@ -453,6 +442,7 @@
         body.set('token', token);
         fetch(CFG.apiUrl, { method: 'POST', body: body }).catch(function () {});
         referenceLinks = referenceLinks.filter(function (l) { return l.token !== token; });
+        markChanged();
         renderReferenceLinks();
     });
 
@@ -492,6 +482,7 @@
             .then(function (res) {
                 if (res.success) {
                     stagedFiles.push({ token: res.token, name: res.name, size: res.size });
+                    markChanged();
                     renderFiles();
                 } else {
                     setError('okr-file', res.message || 'Failed to upload file.');
@@ -537,6 +528,7 @@
             body.set('token', token);
             fetch(CFG.apiUrl, { method: 'POST', body: body }).catch(function () {});
             stagedFiles = stagedFiles.filter(function (f) { return f.token !== token; });
+            markChanged();
             renderFiles();
         }
     });
@@ -574,28 +566,15 @@
         if (!end) { setError('okr-end', 'End date is required.'); ok = false; }
         else if (start && end < start) { setError('okr-end', 'End date cannot be before start date.'); ok = false; }
 
-        var owner1 = ownerSelect1.value;
-        if (!owner1) { setError('okr-owner1', 'An owner is required.'); ok = false; }
+        if (ownerState.length === 0) { setError('okr-owner', 'An owner is required.'); ok = false; }
 
-        var owner2 = ownerSelect2.value;
-        if (owner2 && owner1 && owner2 === owner1) {
-            setError('okr-owner1', 'Owner and 2nd Owner must be different people.');
-            ok = false;
-        }
-
-        var owner2Purpose = document.getElementById('okr-owner2-purpose').value.trim();
-        if (owner2 && !owner2Purpose) {
-            setError('okr-owner2-purpose', 'State the purpose for a second (jointly-run) owner.');
-            ok = false;
-        }
-
-        if (owner2) {
-            var rule = (CFG.incentiveRules || []).filter(function (r) { return String(r.id) === incentiveRuleSelect.value; })[0];
+        if (ownerState.length === 2) {
+            var rule = selectedIncentiveRule();
             if (!rule) {
                 setError('okr-incentive-rule', 'Select an incentive rule.');
                 ok = false;
-            } else if (rule.code === 'RULE1' && !incentivisedOwnerSelect.value) {
-                setError('okr-incentivised-owner', 'Select which owner receives the incentive.');
+            } else if (rule.code === 'RULE1' && countIncentivisedOwners() !== 1) {
+                setError('okr-owner', 'Tick which owner receives the incentive.');
                 ok = false;
             }
         }
@@ -609,9 +588,21 @@
             return;
         }
 
-        var deptScopeIds = Array.prototype.map.call(deptSelect.selectedOptions, function (o) { return o.value; })
-            .concat(Array.prototype.map.call(deptSelect2.selectedOptions, function (o) { return o.value; }));
+        var deptScopeIds = ownerState.map(function (m) { return m.dept_id; }).filter(function (v) { return !!v; });
         var deptScope = deptScopeIds.filter(function (v, i) { return deptScopeIds.indexOf(v) === i; }).join(',');
+
+        var owner1 = ownerState[0] || {};
+        var owner2 = ownerState[1] || {};
+        var incentivisedOwnerId = '';
+        if (ownerState.length === 1) {
+            incentivisedOwnerId = owner1.staff_id;
+        } else if (ownerState.length === 2) {
+            var rule2 = selectedIncentiveRule();
+            if (rule2 && rule2.code === 'RULE1') {
+                var incMember = ownerState.filter(function (m) { return m.is_incentivised; })[0];
+                incentivisedOwnerId = incMember ? incMember.staff_id : '';
+            }
+        }
 
         var payload = new URLSearchParams();
         payload.set('action', 'createCard');
@@ -619,11 +610,11 @@
         payload.set('key_results', keyResultsHtml());
         payload.set('okr_type', document.getElementById('okr-type').value);
         payload.set('difficulty_level', levelSelect.value);
-        payload.set('owner_staff_id', ownerSelect1.value);
-        payload.set('owner2_staff_id', ownerSelect2.value);
+        payload.set('owner_staff_id', owner1.staff_id || '');
+        payload.set('owner2_staff_id', owner2.staff_id || '');
         payload.set('owner2_purpose', document.getElementById('okr-owner2-purpose').value.trim());
         payload.set('incentive_rule', incentiveRuleSelect.value);
-        payload.set('incentivised_owner_staff_id', incentivisedOwnerSelect.value);
+        payload.set('incentivised_owner_staff_id', incentivisedOwnerId);
         payload.set('dept_scope', deptScope);
         payload.set('start_date', document.getElementById('okr-start').value);
         payload.set('end_date', document.getElementById('okr-end').value);
@@ -632,6 +623,7 @@
             .then(function (r) { return r.json(); })
             .then(function (res) {
                 if (res.success) {
+                    leaving = true;
                     window.location.href = 'okr/view.php?id=' + res.id;
                 } else {
                     setError('okr-save', res.message || 'Failed to save OKR.');

@@ -400,10 +400,6 @@ if ($action === 'createCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['success' => false, 'message' => 'Owner and 2nd Owner must be different people.']);
         exit;
     }
-    if ($owner2_id > 0 && $owner2_purpose === '') {
-        echo json_encode(['success' => false, 'message' => 'State the purpose for a second (jointly-run) owner.']);
-        exit;
-    }
     if (!in_array($incentive_rule, [1, 2], true)) {
         echo json_encode(['success' => false, 'message' => 'Invalid incentive rule.']);
         exit;
@@ -766,8 +762,10 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     // Once an OKR has been extended, it can no longer go back to Draft/Active
     // or be marked Complete with Excellence — it can only resolve as
-    // Complete, Fail, or stay in Extend while still ongoing.
-    if ((bool)$card['extended'] && !in_array($status, ['Complete', 'Extend', 'Fail'], true)) {
+    // Complete, Fail, or stay in Extend while still ongoing. Admins are exempt
+    // from this restriction: they may set any status until the OKR is paid
+    // (incentive_locked), which is already enforced above.
+    if ((bool)$card['extended'] && !in_array($status, ['Complete', 'Extend', 'Fail'], true) && !$requester_is_admin) {
         echo json_encode(['success' => false, 'message' => 'This OKR has been extended, so it can now only resolve as Complete or Fail.']);
         exit;
     }
@@ -790,10 +788,6 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if ($owner2_id > 0 && $owner2_id === $owner_id) {
         echo json_encode(['success' => false, 'message' => 'Owner and 2nd Owner must be different people.']);
-        exit;
-    }
-    if ($owner2_id > 0 && $owner2_purpose === '') {
-        echo json_encode(['success' => false, 'message' => 'State the purpose for a second (jointly-run) owner.']);
         exit;
     }
     if (!in_array($incentive_rule, [1, 2], true)) {

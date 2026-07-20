@@ -98,7 +98,7 @@ $okr_config = [
                     <input type="text" class="form-control" id="okr-department"
                         value="<?php echo htmlspecialchars($issuer_department); ?>" readonly>
                 </div>
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <label for="okr-type" class="form-label">OKR Type <span class="okr-req">*</span></label>
                     <select class="form-select" id="okr-type">
                         <option value="">Select type</option>
@@ -108,12 +108,20 @@ $okr_config = [
                     </select>
                     <div class="okr-form-error" id="okr-type-error"></div>
                 </div>
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <label for="okr-level" class="form-label">OKR Complexity Level <span class="okr-req">*</span></label>
                     <select class="form-select" id="okr-level">
                         <option value="">Select level</option>
                     </select>
                     <div class="okr-form-error" id="okr-level-error"></div>
+                </div>
+                <div class="col-md-4" id="okr-incentive-rule-wrap">
+                    <label for="okr-incentive-rule" class="form-label">Incentive Rule <span class="okr-req">*</span></label>
+                    <select class="form-select" id="okr-incentive-rule">
+                        <option value="">Select rule</option>
+                    </select>
+                    <p class="okr-card-hint" id="okr-incentive-rule-hint"></p>
+                    <div class="okr-form-error" id="okr-incentive-rule-error"></div>
                 </div>
                 <div class="col-md-6">
                     <label for="okr-start" class="form-label">Start Date <span class="okr-req">*</span></label>
@@ -129,70 +137,6 @@ $okr_config = [
                     <label class="form-label">Key Results <span class="okr-req">*</span></label>
                     <div id="okr-key-results-editor"></div>
                     <div class="okr-form-error" id="okr-key-results-error"></div>
-                </div>
-            </div>
-        </div>
-
-        <div class="okr-card mt-3">
-            <h6 class="okr-card-title"><i class="bi bi-people"></i> Owner(s)</h6>
-            <p class="okr-card-hint">1 required, max 2. A 2nd owner is only for jointly-run OKRs.</p>
-            <div class="row g-3 mt-1">
-                <div class="col-md-6">
-                    <label for="okr-dept-scope" class="form-label">Department</label>
-                    <input type="text" class="form-control mb-1" id="okr-dept-scope-search" placeholder="Search department...">
-                    <select class="form-select" id="okr-dept-scope" multiple size="6" style="height: 130px;"></select>
-                    <p class="okr-card-hint">Select department(s) to filter the Owner lists below to staff in those departments. Leave empty to pick from everyone.</p>
-                </div>
-                <div class="col-md-6">
-                    <label for="okr-owner1" class="form-label">Owner <span class="okr-req">*</span></label>
-                    <select class="form-select" id="okr-owner1">
-                        <option value="">Select owner</option>
-                    </select>
-                    <div class="okr-form-error" id="okr-owner1-error"></div>
-                </div>
-                <div class="col-12" id="okr-incentive-rule-wrap">
-                    <label for="okr-incentive-rule" class="form-label">Incentive Rule <span class="okr-req">*</span></label>
-                    <select class="form-select" id="okr-incentive-rule">
-                        <option value="">Select rule</option>
-                    </select>
-                    <p class="okr-card-hint" id="okr-incentive-rule-hint"></p>
-                    <div class="okr-form-error" id="okr-incentive-rule-error"></div>
-                </div>
-                <div class="col-12 text-end" id="okr-owner2-toggle-wrap">
-                    <button type="button" class="btn btn-outline-primary btn-sm okr-btn-add-owner2" id="okr-add-owner2-btn">
-                        <i class="bi bi-plus-lg"></i> Add 2nd Owner (for jointly-run OKRs)
-                    </button>
-                </div>
-                <div class="col-12" id="okr-owner2-section" style="display:none;">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label for="okr-dept-scope-2" class="form-label">Department</label>
-                            <input type="text" class="form-control mb-1" id="okr-dept-scope-2-search" placeholder="Search department...">
-                            <select class="form-select" id="okr-dept-scope-2" multiple size="6" style="height: 130px;"></select>
-                            <p class="okr-card-hint">Filters the 2nd Owner list to staff in those departments. Leave empty to pick from everyone.</p>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <label for="okr-owner2" class="form-label mb-0">2nd Owner</label>
-                                <button type="button" class="btn btn-link btn-sm text-danger p-0" id="okr-remove-owner2-btn">Remove</button>
-                            </div>
-                            <select class="form-select mt-1" id="okr-owner2">
-                                <option value="">None</option>
-                            </select>
-                        </div>
-                        <div class="col-12" id="okr-owner2-purpose-wrap" style="display:none;">
-                            <label for="okr-owner2-purpose" class="form-label">Purpose of joint ownership <span class="okr-req">*</span></label>
-                            <input type="text" class="form-control" id="okr-owner2-purpose" placeholder="e.g. jointly run with trainee management team">
-                            <div class="okr-form-error" id="okr-owner2-purpose-error"></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-6" id="okr-incentivised-owner-wrap" style="display:none;">
-                    <label for="okr-incentivised-owner" class="form-label">Incentivised Owner <span class="okr-req">*</span></label>
-                    <select class="form-select" id="okr-incentivised-owner">
-                        <option value="">Select owner</option>
-                    </select>
-                    <div class="okr-form-error" id="okr-incentivised-owner-error"></div>
                 </div>
             </div>
         </div>
@@ -245,6 +189,52 @@ $okr_config = [
                 <div class="okr-empty-state">No Reference Link added.</div>
             </div>
             <div class="okr-form-error" id="reflink-section-error"></div>
+        </div>
+    </div>
+
+    <div class="okr-bento-item okr-span-12">
+        <div class="okr-card">
+            <h6 class="okr-card-title"><i class="bi bi-people"></i> Owner(s)</h6>
+            <p class="okr-card-hint">Tag the owner(s). A (Accountable) supports up to 2 members. A 2nd owner is only for jointly-run OKRs.</p>
+
+            <div class="okr-arci-add">
+                <div class="okr-arci-add-grid">
+                    <div>
+                        <label class="form-label">Department</label>
+                        <input type="text" class="form-control mb-1" id="okr-owner-dept-search" placeholder="Search department...">
+                        <select class="form-select" id="okr-owner-dept-select" size="6">
+                            <option value="">Select department</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Staff</label>
+                        <input type="text" class="form-control mb-1" id="okr-owner-staff-search" placeholder="Search staff...">
+                        <div id="okr-owner-staff-list" class="okr-arci-staff-list">
+                            <div class="text-muted" style="font-size:13px;">Select a department to load staff</div>
+                        </div>
+                        <button type="button" class="btn btn-primary btn-sm mt-2 w-100" id="okr-owner-add-btn">Add Selected</button>
+                    </div>
+                </div>
+                <div class="okr-form-error" id="okr-owner-error"></div>
+            </div>
+
+            <div class="row g-3 mt-1">
+                <div class="col-md-6">
+                    <div class="okr-arci-col">
+                        <div class="okr-arci-col-head">
+                            <span><strong>A</strong> - Accountable (Owner)</span>
+                        </div>
+                        <div class="okr-arci-members" id="okr-owner-members">
+                            <div class="okr-arci-empty">No owners assigned</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6" id="okr-owner2-purpose-wrap" style="display:none;">
+                    <label for="okr-owner2-purpose" class="form-label">Purpose of joint ownership</label>
+                    <input type="text" class="form-control" id="okr-owner2-purpose" placeholder="e.g. jointly run with trainee management team">
+                    <div class="okr-form-error" id="okr-owner2-purpose-error"></div>
+                </div>
+            </div>
         </div>
     </div>
 
