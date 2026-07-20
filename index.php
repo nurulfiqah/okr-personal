@@ -61,7 +61,7 @@ window.OKR_DASH = <?php echo json_encode([
 </script>
 
 <!-- Filter card -->
-<div class="okr-card mb-3">
+<div class="okr-card okr-filter mb-3">
     <h6 class="okr-card-title"><i class="bi bi-funnel"></i> Filter</h6>
     <div class="okr-filter-row mt-1">
         <div class="okr-filter-item">
@@ -109,12 +109,18 @@ window.OKR_DASH = <?php echo json_encode([
         </div>
         <div class="okr-filter-item" id="dash-staff-col"<?php if (empty($dash_staff_options)) { echo ' style="display:none;"'; } ?>>
             <label class="form-label">Staff</label>
-            <select id="dash-filter-staff" class="form-select form-select-sm">
-                <option value="">All Staff</option>
-            </select>
+            <div class="okr-s2-wrap" id="dash-staff-wrap">
+                <div class="okr-s2-selection" id="dash-staff-btn" tabindex="0">All Staff</div>
+                <div class="okr-s2-dropdown" id="dash-staff-dropdown">
+                    <div class="okr-s2-search-wrap">
+                        <input class="okr-s2-search" id="dash-staff-search" type="search" placeholder="Search name...">
+                    </div>
+                    <ul class="okr-s2-list" id="dash-staff-list"></ul>
+                </div>
+                <input type="hidden" id="dash-staff-value" value="0">
+            </div>
         </div>
         <div class="okr-filter-item okr-filter-item--btns">
-            <button class="btn btn-sm btn-primary" id="dash-apply-filter">Apply</button>
             <button class="btn btn-sm btn-outline-secondary" id="dash-reset-filter">Reset</button>
         </div>
     </div>

@@ -15,10 +15,12 @@ if ($result) {
 }
 
 $list_dept_options = [];
+$list_dept_names = [];
 $list_dept_res = mysqli_query($conn, 'SELECT id, depart_name FROM staff_department ORDER BY depart_name');
 if ($list_dept_res) {
     while ($drow = mysqli_fetch_assoc($list_dept_res)) {
         $list_dept_options[] = ['id' => (int)$drow['id'], 'name' => $drow['depart_name']];
+        $list_dept_names[(int)$drow['id']] = $drow['depart_name'];
     }
 }
 
@@ -34,23 +36,37 @@ foreach ($cards as $c) {
 $list_year_options = array_keys($list_years);
 rsort($list_year_options);
 
-// Owner/Issuer options are staff actually appearing in the visible cards
-// (not the full staff table) - keyed by staff_id since names alone can
-// collide.
-$list_owners  = [];
-$list_issuers = [];
-foreach ($cards as $c) {
-    if ($c['owner_staff_id'] > 0) { $list_owners[$c['owner_staff_id']] = $c['owner_name']; }
-    if ($c['owner2_staff_id'] > 0) { $list_owners[$c['owner2_staff_id']] = $c['owner2_name']; }
-    if ($c['issuer_staff_id'] > 0) { $list_issuers[$c['issuer_staff_id']] = $c['issuer_name']; }
+// Owner/Issuer options are the full staff directory (same scoping as
+// index.php's Staff filter), not just staff who happen to own/issue a
+// visible card - senior management filtering ahead of a first OKR for
+// someone should still be able to find that staff member.
+$list_dept_ids = okrDeptIdsFromCsv($department ?? '');
+if ($okr_permission >= 4 || $okr_is_admin) {
+    $staff_dir_where = '1=1';
+} elseif ($okr_permission === 3 && !empty($list_dept_ids)) {
+    $dept_conds = [];
+    foreach ($list_dept_ids as $_did) {
+        $dept_conds[] = "FIND_IN_SET($_did, department)";
+    }
+    $staff_dir_where = '(' . implode(' OR ', $dept_conds) . ')';
+} else {
+    $staff_dir_where = '0=1';
 }
-asort($list_owners);
-asort($list_issuers);
+$list_owners = [];
+$list_issuers = [];
+$staff_dir_res = mysqli_query($conn, "SELECT id, nama_staff FROM staff WHERE recycle != 1 AND ($staff_dir_where) ORDER BY nama_staff");
+if ($staff_dir_res) {
+    while ($srow = mysqli_fetch_assoc($staff_dir_res)) {
+        $list_owners[(int)$srow['id']] = $srow['nama_staff'];
+        $list_issuers[(int)$srow['id']] = $srow['nama_staff'];
+    }
+}
 
 $okr_list_config = [
     'cards'           => $cards,
     'requesterId'     => (int)$id_user,
     'requesterIsAdmin' => $okr_is_admin,
+    'deptNames'       => $list_dept_names,
 ];
 ?>
 
@@ -97,16 +113,21 @@ $okr_list_config = [
         </div>
         <div class="col">
             <label class="form-label">Status</label>
-            <select class="form-select form-select-sm" id="okr-filter-status">
-                <option value="">All statuses</option>
-                <option>Draft</option>
-                <option>Active</option>
-                <option>Complete</option>
-                <option>Complete with Excellence</option>
-                <option>Extend</option>
-                <option>Suspended</option>
-                <option>Fail</option>
-            </select>
+            <div class="okr-s2-wrap" id="okr-filter-status-wrap">
+                <div class="okr-s2-selection" id="okr-filter-status-btn" tabindex="0">All statuses</div>
+                <div class="okr-s2-dropdown" id="okr-filter-status-dropdown">
+                    <ul class="okr-s2-list" id="okr-filter-status-list" style="padding:4px 0;">
+                        <?php foreach (['Draft', 'Active', 'Complete', 'Complete with Excellence', 'Extend', 'Suspended', 'Fail'] as $_st): ?>
+                        <li style="cursor:default;">
+                            <label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">
+                                <input type="checkbox" value="<?php echo htmlspecialchars($_st); ?>" checked>
+                                <?php echo htmlspecialchars($_st); ?>
+                            </label>
+                        </li>
+                        <?php endforeach; ?>
+                    </ul>
+                </div>
+            </div>
         </div>
         <div class="col">
             <label class="form-label">Type</label>
@@ -142,28 +163,45 @@ $okr_list_config = [
         </div>
         <div class="col">
             <label class="form-label">Owner</label>
-            <select class="form-select form-select-sm" id="okr-filter-owner">
-                <option value="">All owners</option>
-                <?php foreach ($list_owners as $sid => $name): ?>
-                <option value="<?php echo $sid; ?>"><?php echo htmlspecialchars($name); ?></option>
-                <?php endforeach; ?>
-            </select>
+            <div class="okr-s2-wrap" id="okr-filter-owner-wrap">
+                <div class="okr-s2-selection" id="okr-filter-owner-btn" tabindex="0">All owners</div>
+                <div class="okr-s2-dropdown" id="okr-filter-owner-dropdown">
+                    <div class="okr-s2-search-wrap">
+                        <input class="okr-s2-search" id="okr-filter-owner-search" type="search" placeholder="Search name...">
+                    </div>
+                    <ul class="okr-s2-list" id="okr-filter-owner-list">
+                        <li data-id="">All owners</li>
+                        <?php foreach ($list_owners as $sid => $name): ?>
+                        <li data-id="<?php echo $sid; ?>"><?php echo htmlspecialchars($name); ?></li>
+                        <?php endforeach; ?>
+                    </ul>
+                </div>
+                <input type="hidden" id="okr-filter-owner-value" value="">
+            </div>
         </div>
         <div class="col">
             <label class="form-label">Issuer</label>
-            <select class="form-select form-select-sm" id="okr-filter-issuer">
-                <option value="">All issuers</option>
-                <?php foreach ($list_issuers as $sid => $name): ?>
-                <option value="<?php echo $sid; ?>"><?php echo htmlspecialchars($name); ?></option>
-                <?php endforeach; ?>
-            </select>
+            <div class="okr-s2-wrap" id="okr-filter-issuer-wrap">
+                <div class="okr-s2-selection" id="okr-filter-issuer-btn" tabindex="0">All issuers</div>
+                <div class="okr-s2-dropdown" id="okr-filter-issuer-dropdown">
+                    <div class="okr-s2-search-wrap">
+                        <input class="okr-s2-search" id="okr-filter-issuer-search" type="search" placeholder="Search name...">
+                    </div>
+                    <ul class="okr-s2-list" id="okr-filter-issuer-list">
+                        <li data-id="">All issuers</li>
+                        <?php foreach ($list_issuers as $sid => $name): ?>
+                        <li data-id="<?php echo $sid; ?>"><?php echo htmlspecialchars($name); ?></li>
+                        <?php endforeach; ?>
+                    </ul>
+                </div>
+                <input type="hidden" id="okr-filter-issuer-value" value="">
+            </div>
         </div>
         <div class="col">
             <label class="form-label">Search title or ID</label>
             <input type="text" class="form-control form-control-sm" id="okr-filter-search" placeholder="Type title or OKR ID...">
         </div>
         <div class="col d-flex gap-2">
-            <button class="btn btn-sm btn-primary" id="okr-filter-search-btn">Search</button>
             <button type="button" class="btn btn-outline-secondary btn-sm" id="okr-filter-reset">Reset</button>
         </div>
     </div>
@@ -175,17 +213,16 @@ $okr_list_config = [
         <table class="table table-hover align-middle okr-view-tbl" id="okr-view-tbl">
             <thead>
                 <tr>
-                    <th>ID</th>
-                    <th>Objective</th>
-                    <th>Type</th>
-                    <th>Level</th>
+                    <th class="okr-sortable" data-col="id">ID</th>
+                    <th class="okr-sortable" data-col="objective">Objective</th>
+                    <th class="okr-sortable" data-col="issuer_name">Issuer</th>
                     <th>Owner(s)</th>
-                    <th>Issuer</th>
-                    <th>Start Date</th>
-                    <th>End Date</th>
-                    <th>Status</th>
-                    <th>Incentive</th>
-                    <th>Action</th>
+                    <th class="okr-sortable" data-col="difficulty_level">Level</th>
+                    <th>Type</th>
+                    <th class="okr-sortable" data-col="start_date">Start Date</th>
+                    <th class="okr-sortable" data-col="end_date">End Date</th>
+                    <th class="okr-sortable" data-col="result_status">Status</th>
+                    <th style="width:110px;">Action</th>
                 </tr>
             </thead>
             <tbody id="okr-view-tbody"></tbody>

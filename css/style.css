@@ -259,9 +259,7 @@ textarea.form-control {
 .okr-filter-item .form-select,
 .okr-filter-item .form-control {
   width: 100%;
-  height: 32px;
   font-size: 13px;
-  padding: 0.25rem 0.5rem;
 }
 
 .okr-filter-item--dept {
@@ -277,7 +275,7 @@ textarea.form-control {
 }
 
 .okr-filter-item--btns .btn {
-  height: 32px;
+  height: 38px;
   font-size: 13px;
   padding: 0 12px;
   display: inline-flex;
@@ -491,6 +489,113 @@ textarea.form-control {
   .okr-arci-add-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ---------------------------------------------------------------
+   Searchable / checkbox dropdown ("s2-lite") - mirrors ATEM's
+   vf-issuer-wrap/vf-s2-* widget. Used for Staff/Owner/Issuer
+   (searchable single-select) and Status (checkbox multi-select).
+--------------------------------------------------------------- */
+.okr-s2-wrap {
+  position: relative;
+}
+
+.okr-s2-selection {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 38px;
+  padding-left: 0.5rem;
+  padding-right: 2.25rem;
+  font-size: 13px;
+  font-weight: 400;
+  color: #212529;
+  background-color: #fff;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23343a40' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 16px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  box-sizing: border-box;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.okr-s2-selection:focus,
+.okr-s2-selection:hover {
+  outline: none;
+  box-shadow: none;
+  border-color: #ced4da;
+}
+
+.okr-s2-dropdown {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .1);
+  z-index: 9999;
+  display: none;
+}
+
+.okr-s2-dropdown.open {
+  display: block;
+}
+
+.okr-s2-search-wrap {
+  padding: 6px 6px 4px;
+}
+
+.okr-s2-search {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 12px;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  padding: 4px 8px;
+  outline: none;
+}
+
+.okr-s2-search:focus {
+  border-color: #86b7fe;
+}
+
+.okr-s2-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.okr-s2-list li {
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.okr-s2-list li:hover,
+.okr-s2-list li.active {
+  background: #0d6efd;
+  color: #fff;
+}
+
+.okr-s2-list li.hidden {
+  display: none;
+}
+
+.okr-s2-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #6c757d;
 }
 
 /* Inline form error (small red text instead of system dialogs) */
@@ -863,12 +968,24 @@ textarea.form-control {
   margin-left: 8px;
 }
 
+.okr-pill-draft { background-color: #6c757d; }
 .okr-pill-active { background-color: #0d6efd; }
 .okr-pill-complete { background-color: #198754; }
-.okr-pill-complete-excellence { background-color: #146c43; }
-.okr-pill-extend { background-color: #ffc107; color: #212529; }
-.okr-pill-suspended { background-color: #dc3545; }
+.okr-pill-complete-excellence { background-color: #0dcaf0; }
+.okr-pill-extend { background-color: #fd7e14; }
+.okr-pill-suspended { background-color: #e11d48; }
 .okr-pill-fail { background-color: #dc3545; }
+
+/* OKR ID badge, mirrors atem/view.php's .atem-id */
+.okr-id {
+  font-family: monospace;
+  font-size: 12px;
+  color: #0a5aa8;
+  background: #eef3f9;
+  border-radius: 4px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
 
 .okr-deleted-banner {
   background-color: #fdeaea;
@@ -893,19 +1010,67 @@ textarea.form-control {
 }
 
 /* ---------------------------------------------------------------
-   Card list table
+   Card list table (mirrors atem/view.php's .atem-view-tbl/.atem-sortable)
 --------------------------------------------------------------- */
+.okr-view-tbl {
+  margin-bottom: 0;
+}
+
 .okr-view-tbl th {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  color: #6c757d;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+  color: #495057;
+  white-space: nowrap;
+  text-align: left;
+  border-bottom: 2px solid #e9ecef;
 }
 
 .okr-view-tbl td {
   font-size: 13px;
+  color: #212529;
   vertical-align: middle;
+  text-align: left;
+}
+
+.okr-view-tbl tbody tr:not(.okr-row-locked):not(.okr-row-deleted):nth-child(odd) {
+  background-color: #fbfcfe;
+}
+
+.okr-view-tbl tbody tr:not(.okr-row-locked):not(.okr-row-deleted):hover {
+  background-color: #eef6ff;
+}
+
+.okr-sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.okr-sortable::after {
+  content: '\2195';
+  margin-left: 5px;
+  font-size: 11px;
+  color: #ced4da;
+  vertical-align: middle;
+}
+
+.okr-sortable.okr-sort-asc::after {
+  content: '\2191';
+  color: #0d6efd;
+}
+
+.okr-sortable.okr-sort-desc::after {
+  content: '\2193';
+  color: #0d6efd;
+}
+
+.okr-sortable:hover {
+  color: #0a5aa8;
+}
+
+.okr-view-actions {
+  white-space: nowrap;
+  text-align: center;
 }
 
 /* ---------------------------------------------------------------

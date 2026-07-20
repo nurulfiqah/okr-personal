@@ -33,6 +33,75 @@
         if (el) { el.style.width = pct + '%'; }
     }
 
+    function escapeHtml(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+
+    // Generic searchable single-select dropdown, mirrors ATEM's
+    // vf-issuer-wrap/vf-s2-* widget (buildS2Dropdown in atem/js/index.js).
+    // Wires open/close, type-to-filter search, and item selection for a
+    // {baseId}-wrap/-btn/-dropdown/-search/-list/-value element set.
+    function wireS2Dropdown(baseId, onSelect) {
+        var wrapEl   = document.getElementById(baseId + '-wrap');
+        var btnEl    = document.getElementById(baseId + '-btn');
+        var dropEl   = document.getElementById(baseId + '-dropdown');
+        var searchEl = document.getElementById(baseId + '-search');
+        var listEl   = document.getElementById(baseId + '-list');
+        var valueEl  = document.getElementById(baseId + '-value');
+        if (!wrapEl || !btnEl || !dropEl || !listEl) { return; }
+
+        function filterList(term) {
+            var lower = term.toLowerCase();
+            var items = listEl.querySelectorAll('li');
+            for (var i = 0; i < items.length; i++) {
+                var match = items[i].textContent.toLowerCase().indexOf(lower) >= 0;
+                items[i].classList.toggle('hidden', !match);
+            }
+        }
+
+        function open() {
+            dropEl.classList.add('open');
+            if (searchEl) {
+                searchEl.value = '';
+                filterList('');
+                searchEl.focus();
+            }
+        }
+
+        function close() {
+            dropEl.classList.remove('open');
+        }
+
+        btnEl.addEventListener('click', function () {
+            if (dropEl.classList.contains('open')) { close(); } else { open(); }
+        });
+        btnEl.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+        });
+
+        if (searchEl) {
+            searchEl.addEventListener('input', function () { filterList(this.value); });
+            searchEl.addEventListener('click', function (e) { e.stopPropagation(); });
+        }
+
+        listEl.addEventListener('click', function (e) {
+            var li = e.target.closest ? e.target.closest('li[data-id]') : null;
+            if (!li) { return; }
+            var id = li.getAttribute('data-id');
+            var label = li.textContent;
+            if (valueEl) { valueEl.value = id; }
+            btnEl.textContent = label;
+            close();
+            if (onSelect) { onSelect(id, label); }
+        });
+
+        document.addEventListener('click', function (e) {
+            if (!wrapEl.contains(e.target)) { close(); }
+        });
+    }
+
     function setLoading(on) {
         var cards = document.querySelectorAll('.okr-stat-value');
         for (var i = 0; i < cards.length; i++) {
@@ -168,13 +237,13 @@
         var monthEl   = document.getElementById('dash-filter-month');
         var quarterEl = document.getElementById('dash-filter-quarter');
         var deptEl    = document.getElementById('dash-filter-dept');
-        var staffEl   = document.getElementById('dash-filter-staff');
+        var staffValueEl = document.getElementById('dash-staff-value');
 
         var year    = yearEl    ? parseInt(yearEl.value,    10) : 0;
         var month   = monthEl   ? parseInt(monthEl.value,   10) : 0;
         var quarter = quarterEl ? parseInt(quarterEl.value, 10) : 0;
         var deptId  = deptEl    ? parseInt(deptEl.value,    10) : 0;
-        var staffId = staffEl   ? parseInt(staffEl.value,   10) : 0;
+        var staffId = staffValueEl ? parseInt(staffValueEl.value, 10) : 0;
 
         if (year    > 0) { payload.filter_year    = year;    }
         if (month   > 0) { payload.filter_month   = month;   }
@@ -190,16 +259,17 @@
         var monthEl   = document.getElementById('dash-filter-month');
         var quarterEl = document.getElementById('dash-filter-quarter');
         var deptEl    = document.getElementById('dash-filter-dept');
-        var staffEl   = document.getElementById('dash-filter-staff');
+        var staffValueEl = document.getElementById('dash-staff-value');
+        var staffBtnEl   = document.getElementById('dash-staff-btn');
 
         var parts = [];
         var yearVal    = yearEl    ? yearEl.value    : '';
         var monthVal   = monthEl   ? monthEl.value   : '';
         var quarterVal = quarterEl ? quarterEl.value  : '';
         var deptVal    = deptEl    ? deptEl.value    : '';
-        var staffVal   = staffEl   ? staffEl.value   : '';
+        var staffVal   = staffValueEl ? staffValueEl.value : '0';
 
-        if (!yearVal && !monthVal && !quarterVal && !deptVal && !staffVal) { return 'Showing all records'; }
+        if (!yearVal && !monthVal && !quarterVal && !deptVal && (!staffVal || staffVal === '0')) { return 'Showing all records'; }
 
         if (yearVal) { parts.push(yearVal); }
 
@@ -218,8 +288,8 @@
             parts.push(deptEl.options[deptEl.selectedIndex].text);
         }
 
-        if (staffEl && staffEl.selectedIndex > 0) {
-            parts.push(staffEl.options[staffEl.selectedIndex].text);
+        if (staffBtnEl && staffVal && staffVal !== '0') {
+            parts.push(staffBtnEl.textContent);
         }
 
         return 'Showing: ' + parts.join(', ');
@@ -267,53 +337,61 @@
     // pickers. Keeps the previous selection if it's still in the narrowed
     // list, otherwise falls back to "All Staff".
     function populateStaffSelect() {
-        var staffEl = document.getElementById('dash-filter-staff');
-        var deptEl = document.getElementById('dash-filter-dept');
-        if (!staffEl || !CFG.staff) { return; }
+        var listEl  = document.getElementById('dash-staff-list');
+        var deptEl  = document.getElementById('dash-filter-dept');
+        var valueEl = document.getElementById('dash-staff-value');
+        var btnEl   = document.getElementById('dash-staff-btn');
+        if (!listEl || !CFG.staff) { return; }
 
         var deptId = deptEl ? parseInt(deptEl.value, 10) : 0;
-        var currentValue = staffEl.value;
+        var currentValue = valueEl ? parseInt(valueEl.value, 10) : 0;
+        var stillValid = (currentValue === 0);
+        var currentLabel = 'All Staff';
 
-        staffEl.innerHTML = '<option value="">All Staff</option>';
+        var html = '<li data-id="0">All Staff</li>';
         for (var i = 0; i < CFG.staff.length; i++) {
             var s = CFG.staff[i];
             if (deptId > 0 && (!s.deptIds || s.deptIds.indexOf(deptId) === -1)) { continue; }
-            var opt = document.createElement('option');
-            opt.value = s.id;
-            opt.textContent = s.name;
-            staffEl.appendChild(opt);
+            html += '<li data-id="' + s.id + '">' + escapeHtml(s.name) + '</li>';
+            if (s.id === currentValue) { stillValid = true; currentLabel = s.name; }
         }
-        staffEl.value = currentValue;
-        if (staffEl.value !== currentValue) { staffEl.value = ''; }
+        listEl.innerHTML = html;
+
+        if (!stillValid) {
+            if (valueEl) { valueEl.value = '0'; }
+            if (btnEl)   { btnEl.textContent = 'All Staff'; }
+        } else if (btnEl) {
+            btnEl.textContent = currentLabel;
+        }
     }
 
     document.addEventListener('DOMContentLoaded', function () {
         populateDeptSelect();
         populateStaffSelect();
+        wireS2Dropdown('dash-staff', function () { loadDashboard(buildPayload()); });
 
-        var deptFilterEl = document.getElementById('dash-filter-dept');
-        if (deptFilterEl) {
-            deptFilterEl.addEventListener('change', populateStaffSelect);
-        }
-
-        var applyBtn  = document.getElementById('dash-apply-filter');
         var resetBtn  = document.getElementById('dash-reset-filter');
+        var yearEl    = document.getElementById('dash-filter-year');
         var monthEl   = document.getElementById('dash-filter-month');
         var quarterEl = document.getElementById('dash-filter-quarter');
+        var deptEl    = document.getElementById('dash-filter-dept');
 
         if (monthEl) {
             monthEl.addEventListener('change', function () {
                 if (this.value && quarterEl) { quarterEl.value = ''; }
+                loadDashboard(buildPayload());
             });
         }
         if (quarterEl) {
             quarterEl.addEventListener('change', function () {
                 if (this.value && monthEl) { monthEl.value = ''; }
+                loadDashboard(buildPayload());
             });
         }
-
-        if (applyBtn) {
-            applyBtn.addEventListener('click', function () {
+        if (yearEl) { yearEl.addEventListener('change', function () { loadDashboard(buildPayload()); }); }
+        if (deptEl) {
+            deptEl.addEventListener('change', function () {
+                populateStaffSelect();
                 loadDashboard(buildPayload());
             });
         }
@@ -322,12 +400,15 @@
             resetBtn.addEventListener('click', function () {
                 var yearEl  = document.getElementById('dash-filter-year');
                 var deptEl  = document.getElementById('dash-filter-dept');
-                var staffEl = document.getElementById('dash-filter-staff');
+                var staffValueEl = document.getElementById('dash-staff-value');
+                var staffBtnEl   = document.getElementById('dash-staff-btn');
                 if (yearEl)    { yearEl.value    = '2026'; }
                 if (monthEl)   { monthEl.value   = ''; }
                 if (quarterEl) { quarterEl.value = ''; }
                 if (deptEl)    { deptEl.value    = ''; }
-                if (staffEl)   { staffEl.value   = ''; }
+                if (staffValueEl) { staffValueEl.value = '0'; }
+                if (staffBtnEl)   { staffBtnEl.textContent = 'All Staff'; }
+                populateStaffSelect();
                 loadDashboard({ filter_year: 2026 });
             });
         }

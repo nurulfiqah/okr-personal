@@ -3,21 +3,151 @@
     var tbody = document.getElementById('okr-view-tbody');
     var emptyState = document.getElementById('okr-empty-state');
     var searchFilter = document.getElementById('okr-filter-search');
-    var statusFilter = document.getElementById('okr-filter-status');
     var typeFilter = document.getElementById('okr-filter-type');
     var levelFilter = document.getElementById('okr-filter-level');
     var deptFilter = document.getElementById('okr-filter-dept');
-    var ownerFilter = document.getElementById('okr-filter-owner');
-    var issuerFilter = document.getElementById('okr-filter-issuer');
     var yearFilter = document.getElementById('okr-filter-year');
     var monthFilter = document.getElementById('okr-filter-month');
     var startDateFilter = document.getElementById('okr-filter-start-date');
     var endDateFilter = document.getElementById('okr-filter-end-date');
     var resetFilterBtn = document.getElementById('okr-filter-reset');
-    var searchFilterBtn = document.getElementById('okr-filter-search-btn');
+
+    // Generic searchable single-select dropdown, mirrors ATEM's
+    // vf-issuer-wrap/vf-s2-* widget (buildS2Dropdown in atem/js/view.js).
+    // Wires open/close, type-to-filter search, and item selection for a
+    // {baseId}-wrap/-btn/-dropdown/-search/-list/-value element set.
+    function wireS2Dropdown(baseId, onSelect) {
+        var wrapEl   = document.getElementById(baseId + '-wrap');
+        var btnEl    = document.getElementById(baseId + '-btn');
+        var dropEl   = document.getElementById(baseId + '-dropdown');
+        var searchEl = document.getElementById(baseId + '-search');
+        var listEl   = document.getElementById(baseId + '-list');
+        var valueEl  = document.getElementById(baseId + '-value');
+        if (!wrapEl || !btnEl || !dropEl || !listEl) { return; }
+
+        function filterList(term) {
+            var lower = term.toLowerCase();
+            var items = listEl.querySelectorAll('li');
+            for (var i = 0; i < items.length; i++) {
+                var match = items[i].textContent.toLowerCase().indexOf(lower) >= 0;
+                items[i].classList.toggle('hidden', !match);
+            }
+        }
+
+        function open() {
+            dropEl.classList.add('open');
+            if (searchEl) {
+                searchEl.value = '';
+                filterList('');
+                searchEl.focus();
+            }
+        }
+
+        function close() {
+            dropEl.classList.remove('open');
+        }
+
+        btnEl.addEventListener('click', function () {
+            if (dropEl.classList.contains('open')) { close(); } else { open(); }
+        });
+        btnEl.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+        });
+
+        if (searchEl) {
+            searchEl.addEventListener('input', function () { filterList(this.value); });
+            searchEl.addEventListener('click', function (e) { e.stopPropagation(); });
+        }
+
+        listEl.addEventListener('click', function (e) {
+            var li = e.target.closest ? e.target.closest('li[data-id]') : null;
+            if (!li) { return; }
+            var id = li.getAttribute('data-id');
+            var label = li.textContent;
+            if (valueEl) { valueEl.value = id; }
+            btnEl.textContent = label;
+            close();
+            if (onSelect) { onSelect(id, label); }
+        });
+
+        document.addEventListener('click', function (e) {
+            if (!wrapEl.contains(e.target)) { close(); }
+        });
+    }
+
+    function resetS2Dropdown(baseId, defaultLabel) {
+        var valueEl = document.getElementById(baseId + '-value');
+        var btnEl   = document.getElementById(baseId + '-btn');
+        if (valueEl) { valueEl.value = ''; }
+        if (btnEl)   { btnEl.textContent = defaultLabel; }
+    }
+
+    // Checkbox multi-select dropdown, mirrors ATEM's Status filter
+    // (buildStatusDropdown/getSelectedStatuses/updateStatusButtonLabel in
+    // atem/js/view.js). No search box; open/close only, label reflects
+    // how many statuses are checked.
+    function allStatusCheckboxes(baseId) {
+        var listEl = document.getElementById(baseId + '-list');
+        return listEl ? listEl.querySelectorAll('input[type=checkbox]') : [];
+    }
+
+    function getSelectedStatuses(baseId) {
+        var listEl = document.getElementById(baseId + '-list');
+        if (!listEl) { return []; }
+        var boxes = listEl.querySelectorAll('input[type=checkbox]:checked');
+        var values = [];
+        for (var i = 0; i < boxes.length; i++) { values.push(boxes[i].value); }
+        return values;
+    }
+
+    function updateStatusButtonLabel(baseId) {
+        var btnEl = document.getElementById(baseId + '-btn');
+        if (!btnEl) { return; }
+        var selected = getSelectedStatuses(baseId);
+        var all = allStatusCheckboxes(baseId);
+        if (selected.length === 0) {
+            btnEl.textContent = 'No status selected';
+        } else if (selected.length === all.length) {
+            btnEl.textContent = 'All statuses';
+        } else if (selected.length <= 2) {
+            btnEl.textContent = selected.join(', ');
+        } else {
+            btnEl.textContent = selected.length + ' statuses selected';
+        }
+    }
+
+    function wireStatusCheckboxDropdown(baseId, onChange) {
+        var wrapEl = document.getElementById(baseId + '-wrap');
+        var btnEl  = document.getElementById(baseId + '-btn');
+        var dropEl = document.getElementById(baseId + '-dropdown');
+        if (!wrapEl || !btnEl || !dropEl) { return; }
+
+        btnEl.addEventListener('click', function () {
+            dropEl.classList.toggle('open');
+        });
+        btnEl.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); dropEl.classList.add('open'); }
+        });
+        dropEl.addEventListener('change', function (e) {
+            if (e.target.type !== 'checkbox') { return; }
+            updateStatusButtonLabel(baseId);
+            if (onChange) { onChange(); }
+        });
+        document.addEventListener('click', function (e) {
+            if (!wrapEl.contains(e.target)) { dropEl.classList.remove('open'); }
+        });
+        updateStatusButtonLabel(baseId);
+    }
+
+    function resetStatusCheckboxDropdown(baseId) {
+        var boxes = allStatusCheckboxes(baseId);
+        for (var i = 0; i < boxes.length; i++) { boxes[i].checked = true; }
+        updateStatusButtonLabel(baseId);
+    }
 
     function pillClass(status) {
         var map = {
+            'Draft': 'okr-pill-draft',
             'Active': 'okr-pill-active',
             'Complete': 'okr-pill-complete',
             'Complete with Excellence': 'okr-pill-complete-excellence',
@@ -28,25 +158,98 @@
         return map[status] || 'okr-pill-active';
     }
 
-    function ownerText(card) {
-        var text = card.owner_name || '-';
-        if (card.owner2_name) {
-            text += ' & ' + card.owner2_name;
-        }
-        return text;
+    // Level badge color map, mirrors atem/js/view.js's LEVEL_COLOR.
+    var LEVEL_COLOR = { 1: '#6c757d', 2: '#0d6efd', 3: '#6610f2', 4: '#003B73' };
+
+    function levelPill(level) {
+        var color = LEVEL_COLOR[level] || '#6c757d';
+        return '<span class="okr-pill" style="background-color:' + color + '">L' + level + '</span>';
     }
 
-    function incentiveText(card) {
-        if (card.result_status === 'Complete' || card.result_status === 'Complete with Excellence') {
-            return 'RM' + Number(card.level_rm).toFixed(2);
+    // Type badge colors - kept distinct from the Level (gray/blue/indigo/navy)
+    // and Status (gray/blue/green/cyan/orange/rose/red) palettes above.
+    var TYPE_COLOR = { 'Committed': '#6f42c1', 'Aspiration': '#d63384', 'Learning': '#20c997' };
+
+    function typePill(type) {
+        var color = TYPE_COLOR[type] || '#6c757d';
+        return '<span class="okr-pill" style="background-color:' + color + '">' + escapeHtml(type) + '</span>';
+    }
+
+    // staff.department is a comma-separated list of department ids (a staff
+    // member can belong to more than one) - resolve every id present via the
+    // deptNames map built server-side and join for display.
+    function deptNamesForCsv(csv) {
+        if (!csv) { return '-'; }
+        var names = String(csv).split(',').map(function (s) { return s.trim(); }).filter(Boolean).map(function (id) {
+            return (CFG.deptNames && CFG.deptNames[id]) || null;
+        }).filter(Boolean);
+        return names.length ? names.join(', ') : '-';
+    }
+
+    // Owner(s) cell: name + department per owner, on its own row, with a
+    // divider between owners when there are two - mirrors atem/js/view.js's
+    // buildAccountableCell.
+    function ownerCell(card) {
+        var owners = [];
+        if (card.owner_staff_id > 0) { owners.push({ name: card.owner_name, dept: card.owner_department }); }
+        if (card.owner2_staff_id > 0) { owners.push({ name: card.owner2_name, dept: card.owner2_department }); }
+        if (owners.length === 0) {
+            return '<span style="color:#adb5bd;font-size:12px;">-</span>';
         }
-        return '-';
+        var html = '';
+        for (var i = 0; i < owners.length; i++) {
+            if (i > 0) {
+                html += '<div style="border-top:1px solid #dee2e6;margin:4px 0;"></div>';
+            }
+            html += '<div style="font-size:13px;">' + escapeHtml(owners[i].name) + '</div>'
+                + '<div style="font-size:11px;color:#6c757d;">' + escapeHtml(deptNamesForCsv(owners[i].dept)) + '</div>';
+        }
+        return html;
+    }
+
+    // Issuer cell: name + department, mirrors atem/js/view.js's buildIssuerCell.
+    function issuerCell(card) {
+        return '<div style="font-size:13px;">' + escapeHtml(card.issuer_name || '-') + '</div>'
+            + '<div style="font-size:11px;color:#6c757d;">' + escapeHtml(deptNamesForCsv(card.issuer_department)) + '</div>';
     }
 
     function escapeHtml(str) {
         var div = document.createElement('div');
         div.textContent = str == null ? '' : str;
         return div.innerHTML;
+    }
+
+    // Click-to-sort table headers, mirrors atem/js/view.js's sortRows/
+    // updateSortIndicators. sortCol === null keeps the server's default
+    // order (created_at desc).
+    var sortState = { col: null, dir: 1 };
+
+    function sortRows(list) {
+        if (sortState.col === null) { return list; }
+        var col = sortState.col, dir = sortState.dir;
+        return list.slice().sort(function (a, b) {
+            var av = a[col], bv = b[col];
+            if (col === 'id' || col === 'difficulty_level') {
+                av = Number(av) || 0;
+                bv = Number(bv) || 0;
+            } else {
+                av = String(av == null ? '' : av).toLowerCase();
+                bv = String(bv == null ? '' : bv).toLowerCase();
+            }
+            if (av < bv) { return -1 * dir; }
+            if (av > bv) { return 1 * dir; }
+            return 0;
+        });
+    }
+
+    function updateSortIndicators() {
+        var ths = document.querySelectorAll('#okr-view-tbl th.okr-sortable');
+        for (var i = 0; i < ths.length; i++) {
+            ths[i].classList.remove('okr-sort-asc', 'okr-sort-desc');
+            if (sortState.col !== null && ths[i].getAttribute('data-col') === sortState.col) {
+                ths[i].classList.add(sortState.dir === 1 ? 'okr-sort-asc' : 'okr-sort-desc');
+            }
+        }
     }
 
     function canEdit(card) {
@@ -64,19 +267,23 @@
 
     function render() {
         var search = searchFilter.value.trim().toLowerCase();
-        var status = statusFilter.value;
+        var statuses = getSelectedStatuses('okr-filter-status');
+        var allStatusCount = allStatusCheckboxes('okr-filter-status').length;
         var type = typeFilter.value;
         var level = levelFilter.value;
         var deptId = deptFilter.value;
-        var ownerId = ownerFilter.value;
-        var issuerId = issuerFilter.value;
+        var ownerValueEl = document.getElementById('okr-filter-owner-value');
+        var issuerValueEl = document.getElementById('okr-filter-issuer-value');
+        var ownerId = ownerValueEl ? ownerValueEl.value : '';
+        var issuerId = issuerValueEl ? issuerValueEl.value : '';
         var year = yearFilter.value;
         var month = monthFilter.value;
         var startDate = startDateFilter.value;
         var endDate = endDateFilter.value;
 
         var rows = CFG.cards.filter(function (card) {
-            if (status && card.result_status !== status) return false;
+            if (statuses.length === 0) return false;
+            if (statuses.length < allStatusCount && statuses.indexOf(card.result_status) === -1) return false;
             if (type && card.okr_type !== type) return false;
             if (level && String(card.difficulty_level) !== level) return false;
             if (deptId) {
@@ -95,6 +302,9 @@
             }
             return true;
         });
+
+        rows = sortRows(rows);
+        updateSortIndicators();
 
         tbody.innerHTML = '';
         emptyState.style.display = rows.length === 0 ? 'block' : 'none';
@@ -119,34 +329,44 @@
                 ? '<span class="okr-pill okr-pill-fail">Deleted</span>'
                 : '<span class="okr-pill ' + pillClass(card.result_status) + '">' + escapeHtml(statusLabel) + '</span>';
             tr.innerHTML =
-                '<td>OKR' + card.id + '</td>' +
+                '<td><span class="okr-id">OKR' + card.id + '</span></td>' +
                 '<td>' + escapeHtml(card.objective).slice(0, 80) + '</td>' +
-                '<td>' + escapeHtml(card.okr_type) + '</td>' +
-                '<td>L' + card.difficulty_level + '</td>' +
-                '<td>' + escapeHtml(ownerText(card)) + '</td>' +
-                '<td>' + escapeHtml(card.issuer_name) + '</td>' +
+                '<td>' + issuerCell(card) + '</td>' +
+                '<td>' + ownerCell(card) + '</td>' +
+                '<td>' + levelPill(card.difficulty_level) + '</td>' +
+                '<td>' + typePill(card.okr_type) + '</td>' +
                 '<td>' + escapeHtml(card.start_date) + '</td>' +
                 '<td>' + escapeHtml(card.end_date) + '</td>' +
                 '<td>' + statusCell + '</td>' +
-                '<td>' + incentiveText(card) + '</td>' +
-                '<td>' + actions + '</td>';
+                '<td class="okr-view-actions">' + actions + '</td>';
             tbody.appendChild(tr);
         });
     }
 
     searchFilter.addEventListener('input', render);
-    [statusFilter, typeFilter, levelFilter, deptFilter, ownerFilter, issuerFilter, yearFilter, monthFilter, startDateFilter, endDateFilter].forEach(function (el) {
+    [typeFilter, levelFilter, deptFilter, yearFilter, monthFilter, startDateFilter, endDateFilter].forEach(function (el) {
         el.addEventListener('change', render);
     });
-    searchFilterBtn.addEventListener('click', render);
+    wireS2Dropdown('okr-filter-owner', render);
+    wireS2Dropdown('okr-filter-issuer', render);
+    wireStatusCheckboxDropdown('okr-filter-status', render);
+
+    document.querySelectorAll('#okr-view-tbl th.okr-sortable').forEach(function (th) {
+        th.addEventListener('click', function () {
+            var col = this.getAttribute('data-col');
+            if (sortState.col === col) { sortState.dir = -sortState.dir; } else { sortState.col = col; sortState.dir = 1; }
+            render();
+        });
+    });
+
     resetFilterBtn.addEventListener('click', function () {
         searchFilter.value = '';
-        statusFilter.value = '';
+        resetStatusCheckboxDropdown('okr-filter-status');
         typeFilter.value = '';
         levelFilter.value = '';
         deptFilter.value = '';
-        ownerFilter.value = '';
-        issuerFilter.value = '';
+        resetS2Dropdown('okr-filter-owner', 'All owners');
+        resetS2Dropdown('okr-filter-issuer', 'All issuers');
         yearFilter.value = '';
         monthFilter.value = '';
         startDateFilter.value = '';

@@ -2,6 +2,7 @@
     var CFG = window.OKR_PERFORMANCE || { departments: [], apiUrl: 'okr/backend.php', exportUrl: 'okr/export_performance.php' };
 
     var PILL_CLASS = {
+        'Draft': 'okr-pill-draft',
         'Active': 'okr-pill-active',
         'Complete': 'okr-pill-complete',
         'Complete with Excellence': 'okr-pill-complete-excellence',
@@ -32,7 +33,6 @@
     var structSelect  = document.getElementById('perf-filter-struct');
     var closureFromInput = document.getElementById('perf-filter-closure-from');
     var closureToInput   = document.getElementById('perf-filter-closure-to');
-    var applyBtn      = document.getElementById('perf-apply-filter');
     var resetBtn      = document.getElementById('perf-reset-filter');
     var exportBtn     = document.getElementById('perf-export-btn');
     var tableBody     = document.getElementById('perf-table-body');
@@ -68,9 +68,19 @@
 
     monthSelect.addEventListener('change', function () {
         if (monthSelect.value) { quarterSelect.value = ''; }
+        loadTable();
+        updateExportLink();
     });
     quarterSelect.addEventListener('change', function () {
         if (quarterSelect.value) { monthSelect.value = ''; }
+        loadTable();
+        updateExportLink();
+    });
+    [yearSelect, deptSelect, gradeSelect, structSelect, closureFromInput, closureToInput].forEach(function (el) {
+        el.addEventListener('change', function () {
+            loadTable();
+            updateExportLink();
+        });
     });
 
     function currentFilters() {
@@ -219,7 +229,7 @@
 
     function renderTable() {
         if (staffRows.length === 0) {
-            tableBody.innerHTML = '<tr><td colspan="12" class="text-muted" style="font-size:12px;text-align:left;">No data for this filter.</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="12" class="text-muted" style="text-align:left;">No data for this filter.</td></tr>';
             renderPager(0);
             return;
         }
@@ -236,17 +246,17 @@
             tr.innerHTML =
                 '<td><input type="checkbox" class="perf-row-cb" value="' + r.staff_id + '"' +
                 (selectedStaffIds[r.staff_id] ? ' checked' : '') + '></td>' +
-                '<td style="font-size:12px;text-align:left;">' + escapeHtml(r.name) + '</td>' +
-                '<td style="font-size:12px;text-align:left;">' + escapeHtml(r.department) + '</td>' +
-                '<td style="font-size:12px;text-align:left;">' + escapeHtml(r.grade) + '</td>' +
-                '<td style="font-size:12px;text-align:left;">' + escapeHtml(r.struct) + '</td>' +
-                '<td style="font-size:12px;text-align:center;">' + r.total + '</td>' +
-                '<td style="font-size:12px;text-align:center;">' + r.complete_total + '</td>' +
-                '<td style="font-size:12px;text-align:center;">' + r.active + '</td>' +
-                '<td style="font-size:12px;text-align:center;">' + r.extend + '</td>' +
-                '<td style="font-size:12px;text-align:center;">' + r.fail + '</td>' +
-                '<td style="font-size:12px;text-align:center;">' + money(r.forecast_rm) + '</td>' +
-                '<td style="font-size:12px;text-align:left;">' + actionButtonsHtml(r) + '</td>';
+                '<td style="text-align:left;">' + escapeHtml(r.name) + '</td>' +
+                '<td style="text-align:left;">' + escapeHtml(r.department) + '</td>' +
+                '<td style="text-align:left;">' + escapeHtml(r.grade) + '</td>' +
+                '<td style="text-align:left;">' + escapeHtml(r.struct) + '</td>' +
+                '<td style="text-align:center;">' + r.total + '</td>' +
+                '<td style="text-align:center;">' + r.complete_total + '</td>' +
+                '<td style="text-align:center;">' + r.active + '</td>' +
+                '<td style="text-align:center;">' + r.extend + '</td>' +
+                '<td style="text-align:center;">' + r.fail + '</td>' +
+                '<td style="text-align:center;">' + money(r.forecast_rm) + '</td>' +
+                '<td style="text-align:left;">' + actionButtonsHtml(r) + '</td>';
             tr.querySelector('.perf-row-cb').addEventListener('change', function () {
                 if (this.checked) { selectedStaffIds[r.staff_id] = true; }
                 else { delete selectedStaffIds[r.staff_id]; }
@@ -288,7 +298,7 @@
     }
 
     function loadTable() {
-        tableBody.innerHTML = '<tr><td colspan="12" class="text-muted" style="font-size:12px;text-align:left;">Loading...</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="12" class="text-muted" style="text-align:left;">Loading...</td></tr>';
         var qs = buildQuery(Object.assign({ action: 'staffPerformanceList' }, currentFilters()));
         fetch(CFG.apiUrl + '?' + qs)
             .then(function (r) { return r.json(); })
@@ -298,11 +308,11 @@
                     perfPage = 1;
                     renderTable();
                 } else {
-                    tableBody.innerHTML = '<tr><td colspan="12" class="text-muted" style="font-size:12px;text-align:left;">' + escapeHtml(res.error || res.message || 'Failed to load.') + '</td></tr>';
+                    tableBody.innerHTML = '<tr><td colspan="12" class="text-muted" style="text-align:left;">' + escapeHtml(res.error || res.message || 'Failed to load.') + '</td></tr>';
                 }
             })
             .catch(function () {
-                tableBody.innerHTML = '<tr><td colspan="12" class="text-muted" style="font-size:12px;text-align:left;">Network error.</td></tr>';
+                tableBody.innerHTML = '<tr><td colspan="12" class="text-muted" style="text-align:left;">Network error.</td></tr>';
             });
     }
 
@@ -314,7 +324,7 @@
 
     function openStaffModal(staffRow) {
         staffModalTitle.textContent = staffRow.name + "'s OKR Cards";
-        staffModalBody.innerHTML = '<tr><td colspan="8" class="text-muted" style="font-size:12px;text-align:left;">Loading...</td></tr>';
+        staffModalBody.innerHTML = '<tr><td colspan="8" class="text-muted" style="text-align:left;">Loading...</td></tr>';
         if (staffModalExportBtn) {
             var exportQs = buildQuery(Object.assign({ type: 'staff-okr', staff_id: staffRow.staff_id }, currentFilters()));
             staffModalExportBtn.href = CFG.exportUrl + '?' + exportQs;
@@ -326,30 +336,30 @@
             .then(function (r) { return r.json(); })
             .then(function (res) {
                 if (!res.success) {
-                    staffModalBody.innerHTML = '<tr><td colspan="8" class="text-muted" style="font-size:12px;text-align:left;">' + escapeHtml(res.message || 'Failed to load.') + '</td></tr>';
+                    staffModalBody.innerHTML = '<tr><td colspan="8" class="text-muted" style="text-align:left;">' + escapeHtml(res.message || 'Failed to load.') + '</td></tr>';
                     return;
                 }
                 if (res.data.length === 0) {
-                    staffModalBody.innerHTML = '<tr><td colspan="8" class="text-muted" style="font-size:12px;text-align:left;">No cards for this filter.</td></tr>';
+                    staffModalBody.innerHTML = '<tr><td colspan="8" class="text-muted" style="text-align:left;">No cards for this filter.</td></tr>';
                     return;
                 }
                 staffModalBody.innerHTML = '';
                 res.data.forEach(function (c) {
                     var tr = document.createElement('tr');
                     tr.innerHTML =
-                        '<td style="font-size:12px;text-align:left;">OKR' + c.id + '</td>' +
-                        '<td style="font-size:12px;text-align:left;"><a href="okr/view.php?id=' + c.id + '" target="_blank">' + escapeHtml(c.objective) + '</a></td>' +
-                        '<td style="font-size:12px;text-align:left;">' + escapeHtml(c.okr_type) + '</td>' +
-                        '<td style="font-size:12px;text-align:left;">' + escapeHtml(c.level_label) + '</td>' +
-                        '<td style="font-size:12px;text-align:left;">' + escapeHtml(c.start_date) + ' &rarr; ' + escapeHtml(c.end_date) + '</td>' +
-                        '<td style="font-size:12px;text-align:left;"><span class="okr-pill ' + pillClass(c.result_status) + '">' + escapeHtml(c.result_status) + '</span></td>' +
-                        '<td style="font-size:12px;text-align:left;">' + escapeHtml(c.role) + '</td>' +
-                        '<td style="font-size:12px;text-align:left;">' + money(c.rm_share) + '</td>';
+                        '<td style="text-align:left;">OKR' + c.id + '</td>' +
+                        '<td style="text-align:left;"><a href="okr/view.php?id=' + c.id + '" target="_blank">' + escapeHtml(c.objective) + '</a></td>' +
+                        '<td style="text-align:left;">' + escapeHtml(c.okr_type) + '</td>' +
+                        '<td style="text-align:left;">' + escapeHtml(c.level_label) + '</td>' +
+                        '<td style="text-align:left;">' + escapeHtml(c.start_date) + ' &rarr; ' + escapeHtml(c.end_date) + '</td>' +
+                        '<td style="text-align:left;"><span class="okr-pill ' + pillClass(c.result_status) + '">' + escapeHtml(c.result_status) + '</span></td>' +
+                        '<td style="text-align:left;">' + escapeHtml(c.role) + '</td>' +
+                        '<td style="text-align:left;">' + money(c.rm_share) + '</td>';
                     staffModalBody.appendChild(tr);
                 });
             })
             .catch(function () {
-                staffModalBody.innerHTML = '<tr><td colspan="8" class="text-muted" style="font-size:12px;text-align:left;">Network error.</td></tr>';
+                staffModalBody.innerHTML = '<tr><td colspan="8" class="text-muted" style="text-align:left;">Network error.</td></tr>';
             });
     }
 
@@ -363,11 +373,6 @@
             exportLockBtn.href = CFG.exportUrl + '?' + lockQs;
         }
     }
-
-    applyBtn.addEventListener('click', function () {
-        loadTable();
-        updateExportLink();
-    });
 
     resetBtn.addEventListener('click', function () {
         yearSelect.value = '2026';

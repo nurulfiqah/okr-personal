@@ -46,19 +46,30 @@ if (isset($id_user)) {
     }
 }
 
+// Dev grade override (localhost only), mirrors ATEM's atem_dev_role_override pattern.
+if (isset($_SESSION['okr_dev_role_override'])) {
+    $okr_permission = (int)$_SESSION['okr_dev_role_override'];
+    $okr_is_admin = false;
+}
+
 if ($okr_permission === 0 && !$okr_is_admin) {
-    header('Location: /odb/index.php');
+    if (isset($_SESSION['okr_dev_role_override'])) {
+        unset($_SESSION['okr_dev_role_override']);
+        header('Location: /odb/okr/index.php');
+    } else {
+        header('Location: /odb/index.php');
+    }
     exit;
 }
 ?>
 
 <body>
+    <?php include(dirname(__FILE__) . '/navbar.php'); ?>
     <div class="header" style="position: relative;">
         <b class="rtop"><b class="r1"></b><b class="r2"></b><b class="r3"></b><b class="r4"></b></b>
         <h1 class="headerH1">OKR</h1>
         <b class="rbottom"><b class="r4"></b><b class="r3"></b><b class="r2"></b><b class="r1"></b></b>
     </div>
-    <?php include(dirname(__FILE__) . '/navbar.php'); ?>
     <div class="okr-container mb-3">
 
         <div class="row mb-4">

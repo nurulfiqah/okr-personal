@@ -613,7 +613,11 @@
         payload.set('owner_staff_id', owner1.staff_id || '');
         payload.set('owner2_staff_id', owner2.staff_id || '');
         payload.set('owner2_purpose', document.getElementById('okr-owner2-purpose').value.trim());
-        payload.set('incentive_rule', incentiveRuleSelect.value);
+        // With a single owner, the incentive rule doesn't apply (that owner
+        // always gets 100%) and the field may be blank/disabled (e.g. Level 1
+        // has no payout) - default to Rule 1, matching backend.php's own
+        // single-owner fallback, instead of sending the blank placeholder.
+        payload.set('incentive_rule', ownerState.length === 2 ? incentiveRuleSelect.value : '1');
         payload.set('incentivised_owner_staff_id', incentivisedOwnerId);
         payload.set('dept_scope', deptScope);
         payload.set('start_date', document.getElementById('okr-start').value);

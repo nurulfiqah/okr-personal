@@ -73,10 +73,12 @@ window.OKR_PERFORMANCE = <?php echo json_encode([
 </script>
 
 <!-- Filter card -->
-<div class="okr-card mb-3">
+<div class="okr-card okr-filter mb-3">
     <h6 class="okr-card-title"><i class="bi bi-funnel"></i> Filter</h6>
-    <div class="okr-filter-row mt-1">
-        <div class="okr-filter-item">
+
+    <!-- Row 1: Year | Month | Quarter | Department -->
+    <div class="row row-cols-md-4 row-cols-2 g-2 mt-1">
+        <div class="col">
             <label class="form-label">Year</label>
             <select id="perf-filter-year" class="form-select form-select-sm">
                 <option value="">All Years</option>
@@ -85,7 +87,7 @@ window.OKR_PERFORMANCE = <?php echo json_encode([
                 <?php endforeach; ?>
             </select>
         </div>
-        <div class="okr-filter-item">
+        <div class="col">
             <label class="form-label">Month</label>
             <select id="perf-filter-month" class="form-select form-select-sm">
                 <option value="">All Months</option>
@@ -103,7 +105,7 @@ window.OKR_PERFORMANCE = <?php echo json_encode([
                 <option value="12">December</option>
             </select>
         </div>
-        <div class="okr-filter-item">
+        <div class="col">
             <label class="form-label">Quarter</label>
             <select id="perf-filter-quarter" class="form-select form-select-sm">
                 <option value="">All Quarters</option>
@@ -113,7 +115,7 @@ window.OKR_PERFORMANCE = <?php echo json_encode([
                 <option value="4">Q4 (Oct &ndash; Dec)</option>
             </select>
         </div>
-        <div class="okr-filter-item okr-filter-item--dept">
+        <div class="col">
             <label class="form-label">Department</label>
             <select id="perf-filter-dept" class="form-select form-select-sm">
                 <option value="">All Departments</option>
@@ -122,7 +124,11 @@ window.OKR_PERFORMANCE = <?php echo json_encode([
                 <?php endforeach; ?>
             </select>
         </div>
-        <div class="okr-filter-item">
+    </div>
+
+    <!-- Row 2: Grade | Evaluation Structure | Closure Date From | Closure Date To -->
+    <div class="row row-cols-md-4 row-cols-2 g-2 mt-0">
+        <div class="col">
             <label class="form-label">Grade</label>
             <select id="perf-filter-grade" class="form-select form-select-sm">
                 <option value="">All Grades</option>
@@ -131,7 +137,7 @@ window.OKR_PERFORMANCE = <?php echo json_encode([
                 <?php endforeach; ?>
             </select>
         </div>
-        <div class="okr-filter-item">
+        <div class="col">
             <label class="form-label">Evaluation Structure</label>
             <select id="perf-filter-struct" class="form-select form-select-sm">
                 <option value="">All Structures</option>
@@ -140,25 +146,25 @@ window.OKR_PERFORMANCE = <?php echo json_encode([
                 <?php endforeach; ?>
             </select>
         </div>
-        <div class="okr-filter-item">
+        <div class="col">
             <label class="form-label">Closure Date From</label>
             <input type="date" id="perf-filter-closure-from" class="form-control form-control-sm">
         </div>
-        <div class="okr-filter-item">
+        <div class="col">
             <label class="form-label">Closure Date To</label>
             <input type="date" id="perf-filter-closure-to" class="form-control form-control-sm">
         </div>
-        <div class="okr-filter-item okr-filter-item--btns">
-            <button class="btn btn-sm btn-primary" id="perf-apply-filter">Apply</button>
-            <button class="btn btn-sm btn-outline-secondary" id="perf-reset-filter">Reset</button>
-            <a class="btn btn-sm btn-outline-success" id="perf-export-btn" href="#">Export</a>
-            <?php if ($can_lock_payout): ?>
-            <span class="okr-filter-btns-divider"></span>
-            <a class="btn btn-sm btn-outline-danger" id="perf-export-lock-btn" href="#">Export &amp; Lock</a>
-            <button class="btn btn-sm btn-danger" id="perf-lock-btn">Lock Payout</button>
-            <button class="btn btn-sm btn-outline-warning" id="perf-unlock-btn">Undo Lock Payout</button>
-            <?php endif; ?>
-        </div>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 justify-content-end align-items-center mt-2">
+        <button class="btn btn-sm btn-outline-secondary" id="perf-reset-filter">Reset</button>
+        <a class="btn btn-sm btn-outline-success" id="perf-export-btn" href="#">Export</a>
+        <?php if ($can_lock_payout): ?>
+        <span class="okr-filter-btns-divider"></span>
+        <a class="btn btn-sm btn-outline-danger" id="perf-export-lock-btn" href="#">Export &amp; Lock</a>
+        <button class="btn btn-sm btn-danger" id="perf-lock-btn">Lock Payout</button>
+        <button class="btn btn-sm btn-outline-warning" id="perf-unlock-btn">Undo Lock Payout</button>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -223,30 +229,30 @@ window.OKR_PERFORMANCE = <?php echo json_encode([
         <h6 class="okr-card-title mb-0">Staff Performance</h6>
         <?php if ($can_lock_payout): ?>
         <div>
-            <a class="btn btn-sm btn-outline-success okr-tbl-btn" id="perf-export-selected-btn" href="#" style="pointer-events:none;opacity:0.5;">Export Selected</a>
-            <a class="btn btn-sm btn-outline-danger okr-tbl-btn" id="perf-export-lock-selected-btn" href="#" style="pointer-events:none;opacity:0.5;">Export &amp; Lock Selected</a>
-            <button class="btn btn-sm btn-outline-danger okr-tbl-btn" id="perf-lock-selected-btn" disabled>Lock Selected</button>
-            <button class="btn btn-sm btn-outline-warning okr-tbl-btn" id="perf-unlock-selected-btn" disabled>Unlock Selected</button>
+            <a class="btn btn-sm btn-outline-success" id="perf-export-selected-btn" href="#" style="pointer-events:none;opacity:0.5;">Export Selected</a>
+            <a class="btn btn-sm btn-outline-danger" id="perf-export-lock-selected-btn" href="#" style="pointer-events:none;opacity:0.5;">Export &amp; Lock Selected</a>
+            <button class="btn btn-sm btn-outline-danger" id="perf-lock-selected-btn" disabled>Lock Selected</button>
+            <button class="btn btn-sm btn-outline-warning" id="perf-unlock-selected-btn" disabled>Unlock Selected</button>
         </div>
         <?php endif; ?>
     </div>
     <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">View a staff's OKR cards for the current filter, or export just their history</div>
     <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0" id="perf-staff-table">
+        <table class="table table-sm align-middle mb-0 okr-view-tbl" id="perf-staff-table">
             <thead>
                 <tr>
                     <th style="width:28px;"><input type="checkbox" id="perf-select-all" title="Select all on this page"></th>
-                    <th style="font-size:12px;text-align:left;">Name</th>
-                    <th style="font-size:12px;text-align:left;">Department</th>
-                    <th style="font-size:12px;text-align:left;">Grade</th>
-                    <th style="font-size:12px;text-align:left;">Evaluation Structure</th>
-                    <th style="font-size:12px;text-align:center;">OKR</th>
-                    <th style="font-size:12px;text-align:center;">Complete</th>
-                    <th style="font-size:12px;text-align:center;">Active</th>
-                    <th style="font-size:12px;text-align:center;">Extend</th>
-                    <th style="font-size:12px;text-align:center;">Fail</th>
-                    <th style="font-size:12px;text-align:center;">Est. Reward</th>
-                    <th style="font-size:12px;text-align:left;">Action</th>
+                    <th style="text-align:left;">Name</th>
+                    <th style="text-align:left;">Department</th>
+                    <th style="text-align:left;">Grade</th>
+                    <th style="text-align:left;">Evaluation Structure</th>
+                    <th style="text-align:center;">OKR</th>
+                    <th style="text-align:center;">Complete</th>
+                    <th style="text-align:center;">Active</th>
+                    <th style="text-align:center;">Extend</th>
+                    <th style="text-align:center;">Fail</th>
+                    <th style="text-align:center;">Est. Reward</th>
+                    <th style="text-align:left;">Action</th>
                 </tr>
             </thead>
             <tbody id="perf-table-body">
@@ -267,17 +273,17 @@ window.OKR_PERFORMANCE = <?php echo json_encode([
             </div>
             <div class="modal-body">
                 <div class="table-responsive">
-                    <table class="table table-sm align-middle mb-0">
+                    <table class="table table-sm align-middle mb-0 okr-view-tbl">
                         <thead>
                             <tr>
-                                <th style="font-size:12px;text-align:left;">ID</th>
-                                <th style="font-size:12px;text-align:left;">Objective</th>
-                                <th style="font-size:12px;text-align:left;">Type</th>
-                                <th style="font-size:12px;text-align:left;">Level</th>
-                                <th style="font-size:12px;text-align:left;">Dates</th>
-                                <th style="font-size:12px;text-align:left;">Status</th>
-                                <th style="font-size:12px;text-align:left;">Role</th>
-                                <th style="font-size:12px;text-align:left;">Est. Reward</th>
+                                <th style="text-align:left;">ID</th>
+                                <th style="text-align:left;">Objective</th>
+                                <th style="text-align:left;">Type</th>
+                                <th style="text-align:left;">Level</th>
+                                <th style="text-align:left;">Dates</th>
+                                <th style="text-align:left;">Status</th>
+                                <th style="text-align:left;">Role</th>
+                                <th style="text-align:left;">Est. Reward</th>
                             </tr>
                         </thead>
                         <tbody id="okr-staff-modal-body"></tbody>

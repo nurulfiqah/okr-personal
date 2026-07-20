@@ -21,8 +21,10 @@ $OKR_MAX_FILE_SIZE   = 10 * 1024 * 1024;
 
 function okrCardSelectSql($where, $include_deleted = false) {
     $deleted_clause = $include_deleted ? '' : 'c.deleted_at IS NULL AND ';
-    return "SELECT c.*, ow.nama_staff AS owner_name, ow2.nama_staff AS owner2_name,
-                   iss.nama_staff AS issuer_name, lv.label AS level_label, lv.base_rm AS level_rm,
+    return "SELECT c.*, ow.nama_staff AS owner_name, ow.department AS owner_department,
+                   ow2.nama_staff AS owner2_name, ow2.department AS owner2_department,
+                   iss.nama_staff AS issuer_name, iss.department AS issuer_department,
+                   lv.label AS level_label, lv.base_rm AS level_rm,
                    os.value AS status_value, ir.code AS incentive_rule_code, ir.label AS incentive_rule_label,
                    inc.nama_staff AS incentivised_owner_name,
                    lb.nama_staff AS locked_by_name, ub.nama_staff AS unlocked_by_name
@@ -50,8 +52,10 @@ function okrFormatCard($row) {
         'level_rm'          => (float)$row['level_rm'],
         'owner_staff_id'    => (int)$row['owner_staff_id'],
         'owner_name'        => $row['owner_name'],
+        'owner_department'  => $row['owner_department'],
         'owner2_staff_id'   => $row['owner2_staff_id'] !== null ? (int)$row['owner2_staff_id'] : null,
         'owner2_name'       => $row['owner2_name'],
+        'owner2_department' => $row['owner2_department'],
         'owner2_purpose'    => $row['owner2_purpose'],
         'incentive_rule'         => (int)$row['incentive_rule'],
         'incentive_rule_code'    => $row['incentive_rule_code'],
@@ -60,6 +64,7 @@ function okrFormatCard($row) {
         'incentivised_owner_name'    => $row['incentivised_owner_name'],
         'issuer_staff_id'   => (int)$row['issuer_staff_id'],
         'issuer_name'       => $row['issuer_name'],
+        'issuer_department' => $row['issuer_department'],
         'dept_scope'        => $row['dept_scope'],
         'start_date'        => $row['start_date'],
         'end_date'          => $row['end_date'],
@@ -739,6 +744,7 @@ function okrStatusDisplayLabel($status, $extended) {
 
 function okrPillClass($status) {
     $map = [
+        'Draft'                    => 'okr-pill-draft',
         'Active'                   => 'okr-pill-active',
         'Complete'                 => 'okr-pill-complete',
         'Complete with Excellence' => 'okr-pill-complete-excellence',
