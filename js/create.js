@@ -97,7 +97,7 @@
     // ---------------------------------------------------------------
     // Start/End dates: End Date can't be before Start Date. Start Date
     // also can't be before today unless the admin's Backdate toggle is on
-    // (okr/admin/index.php).
+    // (atem/admin/index.php).
     // ---------------------------------------------------------------
     var startDateInput = document.getElementById('okr-start');
     var endDateInput = document.getElementById('okr-end');

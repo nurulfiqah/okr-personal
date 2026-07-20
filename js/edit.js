@@ -419,7 +419,7 @@
     }
 
     // End Date can't be before Start Date (or before today, unless the
-    // admin's Backdate toggle is on - okr/admin/index.php); Extended Date
+    // admin's Backdate toggle is on - atem/admin/index.php); Extended Date
     // can't be before the (original) End Date it's extending past.
     var todayStr = new Date().toISOString().slice(0, 10);
     endInput.min = (!CFG.backdateEnabled && startInput.value < todayStr) ? todayStr : startInput.value;

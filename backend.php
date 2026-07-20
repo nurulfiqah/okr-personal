@@ -26,7 +26,7 @@ if (!isset($conn)) {
 }
 
 $username    = mysqli_real_escape_string($conn, $_SESSION['myusername']);
-$auth_result = mysqli_query($conn, "SELECT id, grade, department, okr FROM staff WHERE username = '$username' AND recycle != 1");
+$auth_result = mysqli_query($conn, "SELECT id, grade, department, okr, atem FROM staff WHERE username = '$username' AND recycle != 1");
 if (!$auth_result || mysqli_num_rows($auth_result) === 0) {
     echo json_encode(['error' => 'Unauthorized']);
     exit;
@@ -34,7 +34,8 @@ if (!$auth_result || mysqli_num_rows($auth_result) === 0) {
 $auth_row          = mysqli_fetch_assoc($auth_result);
 $requester_id      = (int)$auth_row['id'];
 $requester_grade   = (int)$auth_row['grade'];
-$requester_is_admin = ((int)$auth_row['okr'] === 1);
+// SuperAdmin is the union of staff.okr and staff.atem.
+$requester_is_admin = ((int)$auth_row['okr'] === 1 || (int)$auth_row['atem'] === 1);
 $requester_dept_ids = [];
 foreach (explode(',', $auth_row['department']) as $_d) {
     $_d = (int)trim($_d);

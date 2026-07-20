@@ -51,9 +51,19 @@ $current_dir  = basename(dirname($_SERVER['PHP_SELF']));
 
 $dashboard_active   = ($current_dir == 'okr' && $current_page == 'index.php') ? 'active' : '';
 $list_active        = ($current_dir == 'okr' && in_array($current_page, ['list.php', 'view.php', 'create.php', 'edit.php'])) ? 'active' : '';
-$performance_active = ($current_dir == 'okr' && $current_page == 'performance.php') ? 'active' : '';
-$admin_settings_active = ($current_dir == 'admin' && $current_page == 'index.php') ? 'active' : '';
-$show_performance   = ($okr_permission >= 4 || $okr_is_admin);
+
+// Performance is ATEM's own page (atem/staff_performance/index.php) - OKR has
+// no Performance page of its own, so this links cross-module the same way
+// Access Control/Masterlist/Admin do below. Same visibility rule as ATEM's
+// own navbar: grade 2+, People Management (dept 17), or SuperAdmin.
+$_navbar_dept_ids = [];
+if (isset($department) && $department !== '') {
+    foreach (explode(',', (string)$department) as $_navbar_d) {
+        $_navbar_d = (int)trim($_navbar_d);
+        if ($_navbar_d > 0) { $_navbar_dept_ids[] = $_navbar_d; }
+    }
+}
+$show_performance = ($okr_permission >= 2 || $okr_is_admin || in_array(17, $_navbar_dept_ids, true));
 ?>
 <nav class="okr-nav navbar navbar-expand-lg navbar-light mb-3">
     <div class="container-fluid">
@@ -74,12 +84,18 @@ $show_performance   = ($okr_permission >= 4 || $okr_is_admin);
                 </li>
                 <?php if ($show_performance): ?>
                 <li class="nav-item">
-                    <a class="nav-link <?php echo $performance_active; ?>" href="okr/performance.php">Performance</a>
+                    <a class="nav-link" href="atem/staff_performance/index.php">Performance</a>
                 </li>
                 <?php endif; ?>
                 <?php if ($okr_is_admin): ?>
                 <li class="nav-item">
-                    <a class="nav-link <?php echo $admin_settings_active; ?>" href="okr/admin/index.php">Admin</a>
+                    <a class="nav-link" href="atem/access_control/index.php">Access Control</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="atem/access_control/masterlist.php">Masterlist</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="atem/admin/index.php">Admin</a>
                 </li>
                 <?php endif; ?>
             </ul>

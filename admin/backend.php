@@ -20,13 +20,14 @@ if (!isset($conn)) {
 }
 
 $username    = mysqli_real_escape_string($conn, $_SESSION['myusername']);
-$auth_result = mysqli_query($conn, "SELECT okr FROM staff WHERE username = '$username' AND recycle != 1");
+$auth_result = mysqli_query($conn, "SELECT okr, atem FROM staff WHERE username = '$username' AND recycle != 1");
 if (!$auth_result || mysqli_num_rows($auth_result) === 0) {
     echo json_encode(['error' => 'Unauthorized']);
     exit;
 }
 $auth_row      = mysqli_fetch_assoc($auth_result);
-$db_is_admin   = ((int)$auth_row['okr'] === 1);
+// SuperAdmin is the union of staff.okr and staff.atem.
+$db_is_admin   = ((int)$auth_row['okr'] === 1 || (int)$auth_row['atem'] === 1);
 
 if (!$db_is_admin) {
     echo json_encode(['error' => 'Unauthorized']);

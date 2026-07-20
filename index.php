@@ -121,12 +121,10 @@ window.OKR_DASH = <?php echo json_encode([
                 <input type="hidden" id="dash-staff-value" value="0">
             </div>
         </div>
-        <div class="okr-filter-item okr-filter-item--btns">
-            <button class="btn btn-sm btn-outline-secondary" id="dash-reset-filter">Reset</button>
-        </div>
     </div>
-    <div class="mt-2">
+    <div class="d-flex justify-content-end align-items-center gap-2 mt-2">
         <span class="text-muted" id="dash-filter-label" style="font-size:12px;"></span>
+        <button class="btn btn-sm btn-outline-secondary" id="dash-reset-filter">Reset</button>
     </div>
 </div>
 

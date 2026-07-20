@@ -37,13 +37,15 @@ include(dirname(__FILE__) . '/../common/index_adv.php');
 
 $okr_permission = (int)($grade ?? 0);
 
-// OKR superadmin flag (staff.okr), mirrors ATEM's staff.atem pattern:
-// bypasses every grade-based restriction in the module regardless of actual grade.
-$okr_is_admin = false;
+// SuperAdmin recognition is the union of both module flags: staff.atem is
+// already available via lock_adv.php ($atem); staff.okr is queried directly
+// since lock_adv.php does not set it. Either flag being set to 1 grants full
+// SuperAdmin access to OKR (and, symmetrically, to ATEM - see atem/header.php).
+$okr_is_admin = (isset($atem) && (int)$atem === 1);
 if (isset($id_user)) {
     $admin_check = mysqli_query($conn, 'SELECT okr FROM staff WHERE id = ' . (int)$id_user);
     if ($admin_check && ($admin_row = mysqli_fetch_assoc($admin_check))) {
-        $okr_is_admin = ((int)$admin_row['okr'] === 1);
+        $okr_is_admin = $okr_is_admin || ((int)$admin_row['okr'] === 1);
     }
 }
 
