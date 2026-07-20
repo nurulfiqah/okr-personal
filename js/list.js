@@ -377,7 +377,7 @@
                 ? '<span class="okr-pill okr-pill-fail">Deleted</span>'
                 : '<span class="okr-pill ' + pillClass(card.result_status) + '">' + escapeHtml(statusLabel) + '</span>';
             tr.innerHTML =
-                '<td><span class="okr-id">OKR' + card.id + '</span></td>' +
+                '<td><span class="okr-id">#OKR' + card.id + '</span></td>' +
                 '<td>' + escapeHtml(card.objective).slice(0, 80) + '</td>' +
                 '<td>' + issuerCell(card) + '</td>' +
                 '<td>' + ownerCell(card) + '</td>' +
