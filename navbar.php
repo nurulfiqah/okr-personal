@@ -64,6 +64,13 @@ if (isset($department) && $department !== '') {
     }
 }
 $show_performance = ($okr_permission >= 2 || $okr_is_admin || in_array(17, $_navbar_dept_ids, true));
+
+// ATEM has separate production ("atem") and staging ("atem-staging") copies
+// on the live server; only "atem" exists locally. Cross-links from OKR must
+// follow whichever copy is being tested, so pick the sibling folder the same
+// way ATEM's own environment detection does (localhost vs everything else) -
+// not by OKR's own folder name, since OKR itself has no staging copy.
+$_navbar_atem_folder = $_navbar_isLocal ? 'atem' : 'atem-staging';
 ?>
 <nav class="okr-nav navbar navbar-expand-lg navbar-light mb-3">
     <div class="container-fluid">
@@ -77,25 +84,25 @@ $show_performance = ($okr_permission >= 2 || $okr_is_admin || in_array(17, $_nav
                     <a class="nav-link <?php echo $dashboard_active; ?>" href="okr/index.php">Dashboard</a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link" href="atem/index.php">ATEM</a>
+                    <a class="nav-link" href="<?php echo $_navbar_atem_folder; ?>/index.php">ATEM</a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link <?php echo $list_active; ?>" href="okr/list.php">OKR</a>
                 </li>
                 <?php if ($show_performance): ?>
                 <li class="nav-item">
-                    <a class="nav-link" href="atem/staff_performance/index.php">Performance</a>
+                    <a class="nav-link" href="<?php echo $_navbar_atem_folder; ?>/staff_performance/index.php">Performance</a>
                 </li>
                 <?php endif; ?>
                 <?php if ($okr_is_admin): ?>
                 <li class="nav-item">
-                    <a class="nav-link" href="atem/access_control/index.php">Access Control</a>
+                    <a class="nav-link" href="<?php echo $_navbar_atem_folder; ?>/access_control/index.php">Access Control</a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link" href="atem/access_control/masterlist.php">Masterlist</a>
+                    <a class="nav-link" href="<?php echo $_navbar_atem_folder; ?>/access_control/masterlist.php">Masterlist</a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link" href="atem/admin/index.php">Admin</a>
+                    <a class="nav-link" href="<?php echo $_navbar_atem_folder; ?>/admin/index.php">Admin</a>
                 </li>
                 <?php endif; ?>
             </ul>

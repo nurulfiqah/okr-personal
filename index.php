@@ -1,6 +1,18 @@
 <?php
 $page_title = 'OKR Dashboard';
-$page_title_actions = '<a href="atem/index.php" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-left-right"></i> Switch to ATEM Dashboard</a>';
+
+// See okr/navbar.php for why this can't just be "atem": ATEM has separate
+// production/staging copies on the live server (only "atem" exists locally),
+// and this button must follow whichever copy is being tested.
+$_dash_serverName = $_SERVER['SERVER_NAME'] ?? '';
+$_dash_httpHost    = $_SERVER['HTTP_HOST'] ?? '';
+$_dash_isLocal     = in_array($_dash_serverName, ['localhost', '127.0.0.1'])
+    || strpos($_dash_serverName, 'localhost') !== false
+    || strpos($_dash_httpHost,   'localhost') !== false
+    || strpos($_dash_httpHost,   '127.0.0.1') !== false;
+$_dash_atem_folder = $_dash_isLocal ? 'atem' : 'atem-staging';
+
+$page_title_actions = '<a href="' . $_dash_atem_folder . '/index.php" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-left-right"></i> Switch to ATEM Dashboard</a>';
 include('header.php');
 require_once(__DIR__ . '/lib.php');
 
