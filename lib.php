@@ -5,10 +5,24 @@
  * Requires $conn (mysqli) to already be set up by the includer.
  */
 
-// Statuses settable via the Timeline card's Status field. Suspended is
-// deliberately excluded — it's only ever set via the dedicated Suspend/
-// Unsuspend CEO actions, which have their own restore-previous-status logic.
-$OKR_TIMELINE_STATUSES = ['Draft', 'Active', 'Complete', 'Complete with Excellence', 'Extend', 'Fail'];
+// Canonical status value strings. okr_statuses.value is admin-editable (see
+// admin lookup tables), so the module must not hardcode status names except
+// where the identity of a *specific* status drives business logic that isn't
+// expressible as a table scan (see okrFetchStatuses()/okrTimelineAssignableStatuses()
+// below for the DB-driven alternative used everywhere else). These five are
+// that irreducible set:
+// - ACTIVE/DRAFT: the two default statuses createCard resolves to.
+// - SUSPENDED: only ever set via the dedicated CEO Suspend/Unsuspend actions,
+//   never directly assignable on the Timeline card.
+// - COMPLETED / COMPLETED_EXTENSION: an OKR resolved as Completed while
+//   already extended is stored as the more specific Completed with Extension
+//   status instead (see updateCard in backend.php) - a business rule, not a
+//   fact read off the table.
+define('OKR_STATUS_ACTIVE', 'Active');
+define('OKR_STATUS_DRAFT', 'Draft');
+define('OKR_STATUS_COMPLETED', 'Completed');
+define('OKR_STATUS_SUSPENDED', 'Suspended');
+define('OKR_STATUS_COMPLETED_EXTENSION', 'Completed with Extension');
 
 require_once __DIR__ . '/nas_config.php';
 
@@ -25,7 +39,8 @@ function okrCardSelectSql($where, $include_deleted = false) {
                    ow2.nama_staff AS owner2_name, ow2.department AS owner2_department,
                    iss.nama_staff AS issuer_name, iss.department AS issuer_department,
                    lv.label AS level_label, lv.base_rm AS level_rm,
-                   os.value AS status_value, ir.code AS incentive_rule_code, ir.label AS incentive_rule_label,
+                   os.value AS status_value, os.pays_incentive AS status_pays_incentive,
+                   ir.code AS incentive_rule_code, ir.label AS incentive_rule_label,
                    inc.nama_staff AS incentivised_owner_name,
                    lb.nama_staff AS locked_by_name, ub.nama_staff AS unlocked_by_name
             FROM okr_cards c
@@ -80,6 +95,8 @@ function okrFormatCard($row) {
         'closure_date'      => $row['closed_at'] ? substr($row['closed_at'], 0, 10) : null,
         'result_status_id'  => (int)$row['result_status'],
         'result_status'     => $row['status_value'],
+        'pays_incentive'    => (bool)($row['status_pays_incentive'] ?? false),
+        'pill_class'        => okrPillClass($row['status_value']),
         'incentive_locked'  => (bool)$row['incentive_locked'],
         'payout_remark'     => $row['payout_remark'] ?? null,
         'locked_by_name'    => $row['locked_by_name'] ?? null,
@@ -106,6 +123,44 @@ function okrFetchTypes($conn, $include_recycled = true) {
 
 function okrTypeValues($conn, $include_recycled = true) {
     return array_column(okrFetchTypes($conn, $include_recycled), 'value');
+}
+
+// The single DB-driven source of truth for okr_statuses' shape - every status
+// picker/filter/validation should read from this (or okrTimelineAssignableStatuses
+// below), not re-declare its own hardcoded status list.
+function okrFetchStatuses($conn, $include_recycled = true) {
+    $where = $include_recycled ? '' : 'WHERE recycle = 0';
+    $statuses = [];
+    $result = mysqli_query($conn, "SELECT id, value, description, pays_incentive, sort_order, recycle
+                                    FROM okr_statuses $where ORDER BY sort_order ASC");
+    if ($result) {
+        while ($row = mysqli_fetch_assoc($result)) {
+            $statuses[] = [
+                'id' => (int)$row['id'], 'value' => $row['value'], 'description' => $row['description'],
+                'pays_incentive' => (int)$row['pays_incentive'], 'sort_order' => (int)$row['sort_order'],
+                'recycle' => (int)$row['recycle'],
+            ];
+        }
+    }
+    return $statuses;
+}
+
+// Statuses settable via the Timeline card's Status field: every non-recycled
+// status except the two that are only ever reached indirectly (Suspended via
+// the dedicated CEO action, Completed with Extension derived from Completed +
+// extended - see updateCard). Reads live from okr_statuses so an admin
+// renaming/adding/soft-deleting a status is picked up with no code change.
+function okrTimelineAssignableStatuses($conn) {
+    $values = array_column(okrFetchStatuses($conn, false), 'value');
+    return array_values(array_diff($values, [OKR_STATUS_SUSPENDED, OKR_STATUS_COMPLETED_EXTENSION]));
+}
+
+// The only statuses an extended (and not admin) OKR can still resolve to -
+// a business rule (see updateCard's once-extended restriction), not
+// something derivable from the table, so shared here rather than
+// re-declared independently by backend.php and edit.php.
+function okrPostExtensionResolvableStatuses() {
+    return [OKR_STATUS_COMPLETED, 'Extended', 'Failed'];
 }
 
 // Parses the Performance page's filter inputs (Year/Month/Quarter on
@@ -153,7 +208,7 @@ function okrPerformanceFilterSql($input) {
 // can have different grades/structs, so it can't be a single card-level WHERE.
 function okrStaffPerformanceRows($conn, $filter_sql, $filter_grade = 0, $filter_struct = 0) {
     $query = "SELECT c.owner_staff_id, c.owner2_staff_id, c.incentive_rule, c.incentivised_owner_staff_id,
-                     c.incentive_locked, os.value AS result_status, lv.base_rm AS level_rm
+                     c.incentive_locked, os.value AS result_status, os.pays_incentive, lv.base_rm AS level_rm
               FROM okr_cards c
               LEFT JOIN okr_levels lv ON c.difficulty_level = lv.level
               LEFT JOIN okr_statuses os ON c.result_status = os.id
@@ -166,7 +221,7 @@ function okrStaffPerformanceRows($conn, $filter_sql, $filter_grade = 0, $filter_
         while ($row = mysqli_fetch_assoc($result)) {
             $status    = $row['result_status'];
             $rm        = (float)$row['level_rm'];
-            $is_paid   = ($status === 'Complete' || $status === 'Complete with Excellence');
+            $is_paid   = (int)$row['pays_incentive'] === 1;
             $owner_id  = (int)$row['owner_staff_id'];
             $owner2_id = $row['owner2_staff_id'] !== null ? (int)$row['owner2_staff_id'] : 0;
 
@@ -196,11 +251,14 @@ function okrStaffPerformanceRows($conn, $filter_sql, $filter_grade = 0, $filter_
                     ];
                 }
                 $by_staff[$sid]['total']++;
-                if ($status === 'Complete') { $by_staff[$sid]['complete']++; }
-                if ($status === 'Complete with Excellence') { $by_staff[$sid]['excellence']++; }
-                if ($status === 'Active') { $by_staff[$sid]['active']++; }
-                if ($status === 'Extend') { $by_staff[$sid]['extend']++; }
-                if ($status === 'Fail') { $by_staff[$sid]['fail']++; }
+                // Completed with Extension folds into the same "complete" bucket
+                // as a plain Completed - it's still a Completed outcome, just one
+                // that went through an extension first (see updateCard).
+                if ($status === OKR_STATUS_COMPLETED || $status === OKR_STATUS_COMPLETED_EXTENSION) { $by_staff[$sid]['complete']++; }
+                if ($status === 'Completed with Excellence') { $by_staff[$sid]['excellence']++; }
+                if ($status === OKR_STATUS_ACTIVE) { $by_staff[$sid]['active']++; }
+                if ($status === 'Extended') { $by_staff[$sid]['extend']++; }
+                if ($status === 'Failed') { $by_staff[$sid]['fail']++; }
                 if ($is_paid) { $by_staff[$sid]['forecast_rm'] += $shares[$sid] ?? 0.0; }
                 if ($is_paid && (int)$row['incentive_locked'] === 1) { $by_staff[$sid]['locked']++; }
             }
@@ -270,7 +328,7 @@ function okrExportRows($conn, $filter_sql, $staff_id = 0, $staff_id_list = [], $
         $staff_condition = '';
     }
     $query = "SELECT c.id, c.objective, c.okr_type, lv.label AS level_label, lv.base_rm AS level_rm,
-                     c.start_date, c.end_date, os.value AS result_status,
+                     c.start_date, c.end_date, os.value AS result_status, os.pays_incentive,
                      c.owner_staff_id, c.owner2_staff_id, c.incentive_rule, c.incentivised_owner_staff_id,
                      iss.nama_staff AS issuer_name, ow2.nama_staff AS owner2_name, ir.label AS incentive_rule_label
               FROM okr_cards c
@@ -289,7 +347,7 @@ function okrExportRows($conn, $filter_sql, $staff_id = 0, $staff_id_list = [], $
         while ($row = mysqli_fetch_assoc($result)) {
             $status    = $row['result_status'];
             $rm        = (float)$row['level_rm'];
-            $is_paid   = ($status === 'Complete' || $status === 'Complete with Excellence');
+            $is_paid   = (int)$row['pays_incentive'] === 1;
             $owner_id  = (int)$row['owner_staff_id'];
             $owner2_id = $row['owner2_staff_id'] !== null ? (int)$row['owner2_staff_id'] : 0;
 
@@ -397,9 +455,9 @@ function okrExportRows($conn, $filter_sql, $staff_id = 0, $staff_id_list = [], $
     return $entries;
 }
 
-// Locks (incentive_locked = 1) every not-yet-locked Complete/Complete with
-// Excellence card matching $filter_sql (+ optional single $staff_id, or a
-// $staff_id_list for "Lock Selected"), stamping locked_by/locked_at/
+// Locks (incentive_locked = 1) every not-yet-locked incentive-paying card
+// (os.pays_incentive = 1) matching $filter_sql (+ optional single $staff_id,
+// or a $staff_id_list for "Lock Selected"), stamping locked_by/locked_at/
 // payout_remark (mirrors ATEM's payout audit fields on atems) and logging one
 // audit entry per card. Shared by backend.php's lockPayoutCards action and
 // export_performance.php (People Management's export auto-locks the same set
@@ -420,13 +478,13 @@ function okrLockPayoutCards($conn, $actor_id, $filter_sql, $staff_id = 0, $staff
         $filter_sql .= " AND EXISTS (SELECT 1 FROM staff s WHERE s.id IN (c.owner_staff_id, c.owner2_staff_id) AND s.struct = $filter_struct)";
     }
 
-    $complete_id   = okrStatusIdByValue($conn, 'Complete');
-    $excellence_id = okrStatusIdByValue($conn, 'Complete with Excellence');
-
+    // Lockable = pays incentive, read straight off the table's own flag
+    // instead of naming which specific statuses currently qualify.
     $select_sql = "SELECT c.id FROM okr_cards c
                    LEFT JOIN staff iss ON c.issuer_staff_id = iss.id
+                   LEFT JOIN okr_statuses os ON c.result_status = os.id
                    WHERE c.deleted_at IS NULL AND c.incentive_locked = 0
-                     AND c.result_status IN ($complete_id, $excellence_id)
+                     AND os.pays_incentive = 1
                      $filter_sql";
     $ids_result = mysqli_query($conn, $select_sql);
     $ids = [];
@@ -740,44 +798,41 @@ function okrScopeWhere($requester_id, $requester_grade, $requester_dept_ids, $is
     return "(c.owner_staff_id = $requester_id OR c.owner2_staff_id = $requester_id)";
 }
 
-// Once an OKR has gone through an extension, Complete/Fail read as
-// "Completed with extension"/"Failed" everywhere, to make the extension
-// visible in the outcome rather than just in the Extended? checkbox.
+// Only meaningful before a card is saved with the resolved status - once
+// saved, result_status already IS "Completed with Extension" (see updateCard),
+// so this is only needed for the edit form's live preview of the Completed
+// option's label while the user is still choosing.
 function okrStatusDisplayLabel($status, $extended) {
-    if (!$extended) {
-        return $status;
-    }
-    if ($status === 'Complete') {
-        return 'Completed with extension';
-    }
-    if ($status === 'Fail') {
-        return 'Failed';
-    }
-    return $status;
+    return ($extended && $status === OKR_STATUS_COMPLETED) ? OKR_STATUS_COMPLETED_EXTENSION : $status;
 }
 
+// The one canonical presentational map - pages/JS should consume the
+// pre-computed 'pill_class' field on cards/rows (see okrFormatCard) rather
+// than re-declaring their own copy of this map.
 function okrPillClass($status) {
     $map = [
-        'Draft'                    => 'okr-pill-draft',
-        'Active'                   => 'okr-pill-active',
-        'Complete'                 => 'okr-pill-complete',
-        'Complete with Excellence' => 'okr-pill-complete-excellence',
-        'Extend'                   => 'okr-pill-extend',
-        'Suspended'                => 'okr-pill-suspended',
-        'Fail'                     => 'okr-pill-fail',
+        'Draft'                      => 'okr-pill-draft',
+        'Active'                     => 'okr-pill-active',
+        'Completed'                  => 'okr-pill-complete',
+        'Completed with Excellence'  => 'okr-pill-complete-excellence',
+        'Completed with Extension'   => 'okr-pill-complete-extension',
+        'Extended'                   => 'okr-pill-extend',
+        'Suspended'                  => 'okr-pill-suspended',
+        'Failed'                     => 'okr-pill-fail',
     ];
     return isset($map[$status]) ? $map[$status] : 'okr-pill-active';
 }
 
 // Incentive tile color follows the OKR's lifecycle stage, not just paid/unpaid:
-// Draft/Active = still in progress (blue), Extend = pending closure (yellow),
-// Fail/Suspended = won't pay out (red), Complete(+Excellence) = paid (green, default).
+// Draft/Active = still in progress (blue), Extended = pending closure (yellow),
+// Failed/Suspended = won't pay out (red), Completed(+Excellence/+Extension) =
+// paid (green, default - no entry needed below).
 function okrIncentiveTileClass($status) {
     $map = [
         'Draft'     => 'okr-incentive-tile--blue',
         'Active'    => 'okr-incentive-tile--blue',
-        'Extend'    => 'okr-incentive-tile--yellow',
-        'Fail'      => 'okr-incentive-tile--red',
+        'Extended'  => 'okr-incentive-tile--yellow',
+        'Failed'    => 'okr-incentive-tile--red',
         'Suspended' => 'okr-incentive-tile--red',
     ];
     return isset($map[$status]) ? $map[$status] : '';

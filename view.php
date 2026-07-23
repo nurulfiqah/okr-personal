@@ -107,8 +107,8 @@ $okr_view_config = [
             <h6 class="okr-card-title"><i class="bi bi-cash-coin"></i> Estimated Incentive</h6>
             <p class="okr-card-hint">This shows an estimated incentive based on the selected level and rule. The company reserves the right to determine the final payout under its incentive scheme.</p>
             <?php
-            $is_paid      = in_array($card['result_status'], ['Complete', 'Complete with Excellence'], true);
-            $is_forecast  = !$is_paid && !in_array($card['result_status'], ['Fail', 'Suspended'], true);
+            $is_paid      = $card['pays_incentive'];
+            $is_forecast  = !$is_paid && !in_array($card['result_status'], ['Failed', OKR_STATUS_SUSPENDED], true);
             $show_amount  = $is_paid || $is_forecast;
             $tile_amount  = $show_amount ? $card['level_rm'] : 0;
             $tile_label   = $is_paid ? 'Total Incentive' : 'Estimated Incentive';
@@ -174,7 +174,7 @@ $okr_view_config = [
         <div class="okr-card">
             <h6 class="okr-card-title"><i class="bi bi-pause-circle"></i> CEO Action</h6>
             <div class="okr-form-error" id="okr-suspend-error"></div>
-            <?php if ($card['result_status'] === 'Suspended'): ?>
+            <?php if ($card['result_status'] === OKR_STATUS_SUSPENDED): ?>
             <button type="button" class="btn btn-outline-secondary btn-sm w-100" id="okr-unsuspend-btn">Unsuspend OKR</button>
             <?php else: ?>
             <p class="okr-card-hint">Only the CEO can suspend an OKR.</p>

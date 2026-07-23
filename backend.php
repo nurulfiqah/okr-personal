@@ -87,8 +87,9 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
         $filter_sql .= " AND (c.owner_staff_id = $filter_staff_id OR c.owner2_staff_id = $filter_staff_id OR c.issuer_staff_id = $filter_staff_id)";
     }
 
-    $query = "SELECT c.id, c.okr_type, c.difficulty_level, os.value AS result_status, c.start_date, c.end_date,
-                     lv.base_rm AS level_rm, lv.label AS level_label, iss.department AS issuer_department
+    $query = "SELECT c.id, c.okr_type, c.difficulty_level, os.value AS result_status, os.pays_incentive,
+                     c.start_date, c.end_date, lv.base_rm AS level_rm, lv.label AS level_label,
+                     iss.department AS issuer_department
               FROM okr_cards c
               LEFT JOIN okr_levels lv ON c.difficulty_level = lv.level
               LEFT JOIN okr_statuses os ON c.result_status = os.id
@@ -140,21 +141,24 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
             $status = $row['result_status'];
             $level  = (int)$row['difficulty_level'];
             $rm     = (float)$row['level_rm'];
-            $is_paid = ($status === 'Complete' || $status === 'Complete with Excellence');
+            $is_paid = (int)$row['pays_incentive'] === 1;
+            // Completed with Extension folds into the "complete" bucket
+            // alongside a plain Completed - see updateCard.
+            $is_complete = ($status === OKR_STATUS_COMPLETED || $status === OKR_STATUS_COMPLETED_EXTENSION);
 
-            if ($status === 'Active') { $active++; }
-            if ($status === 'Extend') { $extended++; }
-            if ($status === 'Complete') { $complete++; }
-            if ($status === 'Complete with Excellence') { $excellence++; }
-            if ($status === 'Fail') { $failed++; }
-            if (($status === 'Active' || $status === 'Extend') && $row['end_date'] < $today) { $overdue++; }
+            if ($status === OKR_STATUS_ACTIVE) { $active++; }
+            if ($status === 'Extended') { $extended++; }
+            if ($is_complete) { $complete++; }
+            if ($status === 'Completed with Excellence') { $excellence++; }
+            if ($status === 'Failed') { $failed++; }
+            if (($status === OKR_STATUS_ACTIVE || $status === 'Extended') && $row['end_date'] < $today) { $overdue++; }
             if ($is_paid) { $incentive_total += $rm; }
 
             if (isset($levels[$level])) {
                 $levels[$level]['cards']++;
-                if ($status === 'Complete') { $levels[$level]['complete']++; }
-                if ($status === 'Complete with Excellence') { $levels[$level]['excellence']++; }
-                if ($status === 'Fail') { $levels[$level]['fail']++; }
+                if ($is_complete) { $levels[$level]['complete']++; }
+                if ($status === 'Completed with Excellence') { $levels[$level]['excellence']++; }
+                if ($status === 'Failed') { $levels[$level]['fail']++; }
                 if ($is_paid) { $levels[$level]['forecast'] += $rm; }
             }
 
@@ -168,17 +172,17 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
                 ];
             }
             $by_dept[$dept_id]['cards']++;
-            if ($status === 'Complete') { $by_dept[$dept_id]['complete']++; }
-            if ($status === 'Complete with Excellence') { $by_dept[$dept_id]['excellence']++; }
-            if ($status === 'Fail') { $by_dept[$dept_id]['fail']++; }
+            if ($is_complete) { $by_dept[$dept_id]['complete']++; }
+            if ($status === 'Completed with Excellence') { $by_dept[$dept_id]['excellence']++; }
+            if ($status === 'Failed') { $by_dept[$dept_id]['fail']++; }
             if ($is_paid) { $by_dept[$dept_id]['forecast'] += $rm; }
 
             if (isset($by_type[$row['okr_type']])) {
-                if ($status === 'Complete') { $by_type[$row['okr_type']]['complete']++; }
-                if ($status === 'Complete with Excellence') { $by_type[$row['okr_type']]['excellence']++; }
-                if ($status === 'Extend') { $by_type[$row['okr_type']]['extend']++; }
+                if ($is_complete) { $by_type[$row['okr_type']]['complete']++; }
+                if ($status === 'Completed with Excellence') { $by_type[$row['okr_type']]['excellence']++; }
+                if ($status === 'Extended') { $by_type[$row['okr_type']]['extend']++; }
                 if ($status === 'Suspended') { $by_type[$row['okr_type']]['suspended']++; }
-                if ($status === 'Fail') { $by_type[$row['okr_type']]['fail']++; }
+                if ($status === 'Failed') { $by_type[$row['okr_type']]['fail']++; }
             }
         }
     }
@@ -286,7 +290,7 @@ if ($action === 'staffOkrList' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     $filter_sql = $f['filter_sql'];
 
     $query = "SELECT c.id, c.objective, c.okr_type, lv.label AS level_label, lv.base_rm AS level_rm,
-                     c.start_date, c.end_date, os.value AS result_status,
+                     c.start_date, c.end_date, os.value AS result_status, os.pays_incentive,
                      c.owner_staff_id, c.owner2_staff_id, c.incentive_rule, c.incentivised_owner_staff_id
               FROM okr_cards c
               LEFT JOIN okr_levels lv ON c.difficulty_level = lv.level
@@ -301,7 +305,7 @@ if ($action === 'staffOkrList' && $_SERVER['REQUEST_METHOD'] === 'GET') {
         while ($row = mysqli_fetch_assoc($result)) {
             $status  = $row['result_status'];
             $rm      = (float)$row['level_rm'];
-            $is_paid = ($status === 'Complete' || $status === 'Complete with Excellence');
+            $is_paid = (int)$row['pays_incentive'] === 1;
             $owner_id  = (int)$row['owner_staff_id'];
             $owner2_id = $row['owner2_staff_id'] !== null ? (int)$row['owner2_staff_id'] : 0;
 
@@ -324,6 +328,7 @@ if ($action === 'staffOkrList' && $_SERVER['REQUEST_METHOD'] === 'GET') {
                 'start_date'   => $row['start_date'],
                 'end_date'     => $row['end_date'],
                 'result_status' => $status,
+                'pill_class'   => okrPillClass($status),
                 'role'         => ($owner2_id === $staff_id) ? '2nd Owner' : 'Owner',
                 'rm_share'     => $is_paid ? $share : 0.0,
             ];
@@ -470,23 +475,22 @@ if ($action === 'createCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $owner2_purpose_sql = $owner2_id > 0 ? "'$owner2_purpose_e'" : 'NULL';
     $incentivised_owner_sql = $incentivised_owner_id > 0 ? $incentivised_owner_id : 'NULL';
 
-    // Final submissions rely on okr_cards.result_status's own DEFAULT (Active,
-    // id 1) same as always; a draft explicitly inserts the Draft status instead.
-    $status_column = '';
-    $status_value  = '';
-    if ($mode === 'draft') {
-        $draft_status_id = okrStatusIdByValue($conn, 'Draft');
-        $status_column = ', result_status';
-        $status_value  = ', ' . ($draft_status_id > 0 ? $draft_status_id : 1);
+    // Always resolve the status id explicitly rather than relying on
+    // okr_cards.result_status's DB column default - okr_statuses' ids are
+    // admin-editable (they were reordered once already), so the "default"
+    // status must be looked up by name every time, not assumed to be id 1.
+    $status_id = okrStatusIdByValue($conn, $mode === 'draft' ? OKR_STATUS_DRAFT : OKR_STATUS_ACTIVE);
+    if ($status_id <= 0) {
+        $status_id = $mode === 'draft' ? 1 : 2;
     }
 
     $insert = "INSERT INTO okr_cards
         (objective, key_results, okr_type, difficulty_level,
          owner_staff_id, owner2_staff_id, owner2_purpose, incentive_rule, incentivised_owner_staff_id,
-         issuer_staff_id, dept_scope, start_date, end_date$status_column)
+         issuer_staff_id, dept_scope, start_date, end_date, result_status)
         VALUES ('$objective_e', '$key_results_e', '$okr_type_e', $level,
                 $owner_id, $owner2_sql, $owner2_purpose_sql, $incentive_rule, $incentivised_owner_sql,
-                $requester_id, '$dept_scope_safe', '$start_date', '$end_date'$status_value)";
+                $requester_id, '$dept_scope_safe', '$start_date', '$end_date', $status_id)";
 
     if (mysqli_query($conn, $insert)) {
         $new_id = mysqli_insert_id($conn);
@@ -771,7 +775,7 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $dept_scope  = trim($_POST['dept_scope'] ?? '');
     $start_date  = trim($_POST['start_date'] ?? '');
     $end_date    = trim($_POST['end_date'] ?? '');
-    $status      = trim($_POST['result_status'] ?? 'Active');
+    $status      = trim($_POST['result_status'] ?? OKR_STATUS_ACTIVE);
     $extended    = ($_POST['extended'] ?? '') === '1';
     $extended_date = trim($_POST['extended_date'] ?? '');
     $remarks     = trim($_POST['remarks'] ?? '');
@@ -796,17 +800,19 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['success' => false, 'message' => 'End date cannot be before start date.']);
         exit;
     }
-    if (!in_array($status, $OKR_TIMELINE_STATUSES, true)) {
+    if (!in_array($status, okrTimelineAssignableStatuses($conn), true)) {
         echo json_encode(['success' => false, 'message' => 'Invalid status.']);
         exit;
     }
     // Once an OKR has been extended, it can no longer go back to Draft/Active
-    // or be marked Complete with Excellence — it can only resolve as
-    // Complete, Fail, or stay in Extend while still ongoing. Admins are exempt
-    // from this restriction: they may set any status until the OKR is paid
-    // (incentive_locked), which is already enforced above.
-    if ((bool)$card['extended'] && !in_array($status, ['Complete', 'Extend', 'Fail'], true) && !$requester_is_admin) {
-        echo json_encode(['success' => false, 'message' => 'This OKR has been extended, so it can now only resolve as Complete or Fail.']);
+    // or be marked Completed with Excellence — it can only resolve as
+    // Completed, Failed, or stay Extended while still ongoing. This specific
+    // 3-way resolution is a business rule, not something read off the table,
+    // so these names stay literal (they have no other identity elsewhere).
+    // Admins are exempt from this restriction: they may set any status until
+    // the OKR is paid (incentive_locked), which is already enforced above.
+    if ((bool)$card['extended'] && !in_array($status, okrPostExtensionResolvableStatuses(), true) && !$requester_is_admin) {
+        echo json_encode(['success' => false, 'message' => 'This OKR has been extended, so it can now only resolve as Completed or Failed.']);
         exit;
     }
     // Extension is once-only and cannot be undone: once set, the flag and
@@ -867,10 +873,25 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $extended_date_sql = $extended_date !== '' ? "'$extended_date'" : 'NULL';
 
     $status_id = okrStatusIdByValue($conn, $status);
+    // An OKR resolved as Completed while already extended is stored as the
+    // more specific Completed with Extension status instead of plain
+    // Completed - $final_status tracks the actually-persisted value for the
+    // audit-diff comparison below (the dropdown always submits the plain
+    // "Completed" option value, so comparing against raw $status would log a
+    // spurious change every time an already-resolved card is re-saved).
+    $final_status = $status;
+    if ($status === OKR_STATUS_COMPLETED && $extended) {
+        $extension_id = okrStatusIdByValue($conn, OKR_STATUS_COMPLETED_EXTENSION);
+        if ($extension_id > 0) {
+            $status_id = $extension_id;
+            $final_status = OKR_STATUS_COMPLETED_EXTENSION;
+        }
+    }
     // "Open" = still ongoing (not yet resolved). closed_at should reflect
-    // the moment the OKR actually resolved, so it must fire on Extend ->
-    // Complete/Fail too, not just Active -> *.
-    $open_statuses = ['Draft', 'Active', 'Extend'];
+    // the moment the OKR actually resolved, so it must fire on Extended ->
+    // Completed/Failed too, not just Active -> *. No DB column encodes this,
+    // so it stays a small constant-based list.
+    $open_statuses = [OKR_STATUS_DRAFT, OKR_STATUS_ACTIVE, 'Extended'];
     $was_open = in_array($card['status_value'], $open_statuses, true);
     $is_open  = in_array($status, $open_statuses, true);
     if ($is_open) {
@@ -906,7 +927,7 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($card['dept_scope'] !== $dept_scope_safe) { $changes['dept_scope'] = [$card['dept_scope'], $dept_scope_safe]; }
         if ($card['start_date'] !== $start_date) { $changes['start_date'] = [$card['start_date'], $start_date]; }
         if ($card['end_date'] !== $end_date) { $changes['end_date'] = [$card['end_date'], $end_date]; }
-        if ($card['status_value'] !== $status) { $changes['result_status'] = [$card['status_value'], $status]; }
+        if ($card['status_value'] !== $final_status) { $changes['result_status'] = [$card['status_value'], $final_status]; }
         if (!(bool)$card['extended'] && $extended) { $changes['extended'] = [false, true]; }
         if ((string)$card['extended_date'] !== $extended_date) { $changes['extended_date'] = [$card['extended_date'], $extended_date]; }
         if ((string)$card['remarks'] !== $remarks) { $changes['remarks'] = [$card['remarks'], $remarks]; }
@@ -1064,8 +1085,8 @@ if ($action === 'unsuspendCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // Restore whatever status the card had right before it was suspended
-    // (e.g. Complete), instead of always reopening it as Active.
-    $restore_status = 'Active';
+    // (e.g. Completed), instead of always reopening it as Active.
+    $restore_status = OKR_STATUS_ACTIVE;
     $log_result = mysqli_query($conn, "SELECT changes FROM okr_audit_logs
                                         WHERE card_id = $id AND event = 'suspended'
                                         ORDER BY created_at DESC LIMIT 1");
@@ -1077,7 +1098,7 @@ if ($action === 'unsuspendCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $status_id = okrStatusIdByValue($conn, $restore_status);
-    $closed_sql = $restore_status === 'Active' ? ', closed_by = NULL, closed_at = NULL' : '';
+    $closed_sql = $restore_status === OKR_STATUS_ACTIVE ? ', closed_by = NULL, closed_at = NULL' : '';
     $update = "UPDATE okr_cards SET result_status = $status_id$closed_sql WHERE id = $id";
     if (mysqli_query($conn, $update)) {
         okrLogAudit($conn, $id, $requester_id, 'unsuspended',

@@ -185,19 +185,6 @@
         updateStatusButtonLabel(baseId);
     }
 
-    function pillClass(status) {
-        var map = {
-            'Draft': 'okr-pill-draft',
-            'Active': 'okr-pill-active',
-            'Complete': 'okr-pill-complete',
-            'Complete with Excellence': 'okr-pill-complete-excellence',
-            'Extend': 'okr-pill-extend',
-            'Suspended': 'okr-pill-suspended',
-            'Fail': 'okr-pill-fail'
-        };
-        return map[status] || 'okr-pill-active';
-    }
-
     // Level badge color map, mirrors atem/js/view.js's LEVEL_COLOR.
     var LEVEL_COLOR = { 1: '#6c757d', 2: '#0d6efd', 3: '#6610f2', 4: '#003B73' };
 
@@ -341,7 +328,7 @@
             if (deepLinkOverdueOnly) {
                 var today = new Date().toISOString().slice(0, 10);
                 var isOverdue = card.end_date && card.end_date < today
-                    && (card.result_status === 'Active' || card.result_status === 'Extend');
+                    && (card.result_status === 'Active' || card.result_status === 'Extended');
                 if (!isOverdue) return false;
             }
             if (search) {
@@ -370,12 +357,12 @@
             if (card.deleted_at && CFG.requesterIsAdmin) {
                 actions += ' <button type="button" class="btn btn-danger btn-sm okr-list-permadelete-btn" data-id="' + card.id + '" title="Delete Permanently"><i class="bi bi-trash3-fill"></i></button>';
             }
-            var statusLabel = card.extended
-                ? (card.result_status === 'Complete' ? 'Completed with extension' : (card.result_status === 'Fail' ? 'Failed' : card.result_status))
-                : card.result_status;
+            // card.result_status already reads "Completed with Extension" from
+            // the server when applicable (see backend.php's updateCard) - no
+            // client-side label override needed.
             var statusCell = card.deleted_at
                 ? '<span class="okr-pill okr-pill-fail">Deleted</span>'
-                : '<span class="okr-pill ' + pillClass(card.result_status) + '">' + escapeHtml(statusLabel) + '</span>';
+                : '<span class="okr-pill ' + card.pill_class + '">' + escapeHtml(card.result_status) + '</span>';
             tr.innerHTML =
                 '<td><span class="okr-id">#OKR' + card.id + '</span></td>' +
                 '<td>' + escapeHtml(card.objective).slice(0, 80) + '</td>' +

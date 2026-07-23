@@ -972,6 +972,7 @@ textarea.form-control {
 .okr-pill-active { background-color: #0d6efd; }
 .okr-pill-complete { background-color: #198754; }
 .okr-pill-complete-excellence { background-color: #0dcaf0; }
+.okr-pill-complete-extension { background-color: #6610f2; }
 .okr-pill-extend { background-color: #fd7e14; }
 .okr-pill-suspended { background-color: #e11d48; }
 .okr-pill-fail { background-color: #dc3545; }

@@ -150,7 +150,7 @@ window.OKR_DASH = <?php echo json_encode([
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
-        <div class="okr-card okr-dash-stat h-100" data-status="Active" style="cursor:pointer;">
+        <div class="okr-card okr-dash-stat h-100" data-status="<?php echo OKR_STATUS_ACTIVE; ?>" style="cursor:pointer;">
             <div class="okr-card-title mb-1">Active / On Hand</div>
             <div class="okr-stat-value okr-stat-value--blue" id="dash-active">---</div>
             <div class="okr-stat-label">not yet closed</div>
@@ -158,28 +158,28 @@ window.OKR_DASH = <?php echo json_encode([
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
-        <div class="okr-card okr-dash-stat h-100" data-statuses="Complete,Complete with Excellence" style="cursor:pointer;">
+        <div class="okr-card okr-dash-stat h-100" data-statuses="Completed,Completed with Excellence,Completed with Extension" style="cursor:pointer;">
             <div class="okr-card-title mb-1">Complete + Excellence</div>
             <div class="okr-stat-value okr-stat-value--green" id="dash-closed">---</div>
             <div class="okr-stat-label">paid outcomes</div>
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
-        <div class="okr-card okr-dash-stat h-100" data-status="Fail" style="cursor:pointer;">
+        <div class="okr-card okr-dash-stat h-100" data-status="Failed" style="cursor:pointer;">
             <div class="okr-card-title mb-1">Failed OKR</div>
             <div class="okr-stat-value okr-stat-value--red" id="dash-failed">---</div>
             <div class="okr-stat-label" id="dash-fail-rate">failure rate</div>
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
-        <div class="okr-card okr-dash-stat h-100" data-overdue="1" data-statuses="Active,Extend" style="cursor:pointer;">
+        <div class="okr-card okr-dash-stat h-100" data-overdue="1" data-statuses="Active,Extended" style="cursor:pointer;">
             <div class="okr-card-title mb-1">Overdue Cards</div>
             <div class="okr-stat-value okr-stat-value--red" id="dash-overdue">---</div>
             <div class="okr-stat-label">active/extended past end date</div>
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
-        <div class="okr-card okr-dash-stat h-100" data-statuses="Complete,Complete with Excellence" style="cursor:pointer;">
+        <div class="okr-card okr-dash-stat h-100" data-statuses="Completed,Completed with Excellence,Completed with Extension" style="cursor:pointer;">
             <div class="okr-card-title mb-1">Est. Incentive Forecast</div>
             <div class="okr-stat-value okr-stat-value--orange" id="dash-incentive">---</div>
             <div class="okr-stat-label">Complete + Excellence payout</div>
@@ -198,11 +198,11 @@ window.OKR_DASH = <?php echo json_encode([
                     <thead>
                         <tr>
                             <th style="font-size:12px;text-align:left;">Type</th>
-                            <th style="font-size:12px;text-align:left;">Complete</th>
+                            <th style="font-size:12px;text-align:left;">Completed</th>
                             <th style="font-size:12px;text-align:left;">Excellence</th>
-                            <th style="font-size:12px;text-align:left;">Extend</th>
+                            <th style="font-size:12px;text-align:left;">Extended</th>
                             <th style="font-size:12px;text-align:left;">Suspended</th>
-                            <th style="font-size:12px;text-align:left;">Fail</th>
+                            <th style="font-size:12px;text-align:left;">Failed</th>
                         </tr>
                     </thead>
                     <tbody id="dash-type-body">
@@ -228,9 +228,9 @@ window.OKR_DASH = <?php echo json_encode([
                         <tr>
                             <th style="font-size:12px;text-align:left;">Level</th>
                             <th style="font-size:12px;text-align:left;">Cards</th>
-                            <th style="font-size:12px;text-align:left;">Complete</th>
+                            <th style="font-size:12px;text-align:left;">Completed</th>
                             <th style="font-size:12px;text-align:left;">Excellence</th>
-                            <th style="font-size:12px;text-align:left;">Fail</th>
+                            <th style="font-size:12px;text-align:left;">Failed</th>
                             <th style="font-size:12px;text-align:left;">Forecast</th>
                         </tr>
                     </thead>
@@ -246,7 +246,7 @@ window.OKR_DASH = <?php echo json_encode([
     <div class="col-lg-6">
         <div class="okr-card h-100">
             <h6 class="okr-card-title mb-0">Closure &amp; Failure Analysis</h6>
-            <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Issuer-only closure: Complete, Excellence, Extend, Fail</div>
+            <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Issuer-only closure: Completed, Excellence, Extended, Failed</div>
             <div id="dash-bars">
                 <div class="okr-bar-row">
                     <div class="okr-bar-label">Excellence</div>
@@ -256,7 +256,7 @@ window.OKR_DASH = <?php echo json_encode([
                     <div class="okr-bar-count" id="bar-excellence-n">-</div>
                 </div>
                 <div class="okr-bar-row">
-                    <div class="okr-bar-label">Complete</div>
+                    <div class="okr-bar-label">Completed</div>
                     <div class="okr-bar-track">
                         <div class="okr-bar-fill" id="bar-complete" style="width:0%;background:#0d6efd;"></div>
                     </div>
@@ -270,7 +270,7 @@ window.OKR_DASH = <?php echo json_encode([
                     <div class="okr-bar-count" id="bar-extended-n">-</div>
                 </div>
                 <div class="okr-bar-row">
-                    <div class="okr-bar-label">Fail</div>
+                    <div class="okr-bar-label">Failed</div>
                     <div class="okr-bar-track">
                         <div class="okr-bar-fill" id="bar-failed" style="width:0%;background:#dc3545;"></div>
                     </div>
@@ -294,9 +294,9 @@ window.OKR_DASH = <?php echo json_encode([
                         <tr>
                             <th style="font-size:12px;text-align:left;">Department</th>
                             <th style="font-size:12px;text-align:left;">Cards</th>
-                            <th style="font-size:12px;text-align:left;">Complete</th>
+                            <th style="font-size:12px;text-align:left;">Completed</th>
                             <th style="font-size:12px;text-align:left;">Excellence</th>
-                            <th style="font-size:12px;text-align:left;">Fail</th>
+                            <th style="font-size:12px;text-align:left;">Failed</th>
                             <th style="font-size:12px;text-align:left;">Fail Rate</th>
                             <th style="font-size:12px;text-align:left;">Forecast</th>
                         </tr>

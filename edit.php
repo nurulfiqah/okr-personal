@@ -27,7 +27,7 @@ $row  = mysqli_fetch_assoc($result);
 $card = okrFormatCard($row);
 
 $can_edit = (($okr_is_admin || $card['issuer_staff_id'] === (int)$id_user) && !$card['incentive_locked']);
-if (!$can_edit || $card['result_status'] === 'Suspended') {
+if (!$can_edit || $card['result_status'] === OKR_STATUS_SUSPENDED) {
     header('Location: /odb/okr/view.php?id=' . $card_id);
     exit;
 }
@@ -94,6 +94,25 @@ $attachments     = okrFetchAttachments($conn, $card_id);
 $reference_links = okrFetchReferenceLinks($conn, $card_id);
 $audit_logs      = okrFetchAuditLogs($conn, $card_id);
 
+// Timeline dropdown options: every assignable status except Suspended /
+// Completed with Extension (system-managed, see okrTimelineAssignableStatuses).
+$all_statuses = okrFetchStatuses($conn, false);
+$timeline_status_options = array_values(array_filter($all_statuses, function ($s) {
+    return $s['value'] !== OKR_STATUS_SUSPENDED && $s['value'] !== OKR_STATUS_COMPLETED_EXTENSION;
+}));
+
+// Per-status metadata for js/edit.js's live incentive-tile preview as the
+// user changes the Status dropdown - computed here once instead of edit.js
+// maintaining its own hardcoded copy of pill/tile classes and paid statuses.
+$status_meta = [];
+foreach ($all_statuses as $s) {
+    $status_meta[$s['value']] = [
+        'pays_incentive'       => (bool)$s['pays_incentive'],
+        'pill_class'           => okrPillClass($s['value']),
+        'incentive_tile_class' => okrIncentiveTileClass($s['value']),
+    ];
+}
+
 $okr_config = [
     'apiUrl'          => 'okr/backend.php',
     'card'            => $card,
@@ -105,6 +124,7 @@ $okr_config = [
     'referenceLinks'  => $reference_links,
     'deptScopeIds'    => empty($card['dept_scope']) ? [] : okrDeptIdsFromCsv($card['dept_scope']),
     'backdateEnabled' => okrBackdateEnabled($conn),
+    'statusMeta'      => $status_meta,
 ];
 ?>
 
@@ -174,7 +194,7 @@ $okr_config = [
             <h6 class="okr-card-title"><i class="bi bi-cash-coin"></i> Estimated Incentive</h6>
             <p class="okr-card-hint" id="okr-level-rubric">Select a difficulty level to see its rubric and RM.</p>
             <div class="okr-incentive-tile <?php echo okrIncentiveTileClass($card['result_status']); ?> mt-2" id="okr-incentive-tile">
-                <div class="okr-incentive-tile-label" id="okr-incentive-tile-label"><?php echo in_array($card['result_status'], ['Complete', 'Complete with Excellence'], true) ? 'Total Incentive' : 'Estimated Incentive'; ?></div>
+                <div class="okr-incentive-tile-label" id="okr-incentive-tile-label"><?php echo $card['pays_incentive'] ? 'Total Incentive' : 'Estimated Incentive'; ?></div>
                 <div class="okr-incentive-tile-value" id="okr-level-rm">RM0.00</div>
             </div>
             <div class="okr-incentive-breakdown" id="okr-incentive-breakdown" style="display:none;">
@@ -279,17 +299,25 @@ $okr_config = [
                 <div class="col-md-4">
                     <label for="okr-status" class="form-label">Status <span class="okr-req">*</span></label>
                     <select class="form-select" id="okr-status">
-                        <?php if (!$card['extended'] || $okr_is_admin): ?>
-                        <option value="Draft" <?php echo $card['result_status'] === 'Draft' ? 'selected' : ''; ?>>Draft</option>
-                        <option value="Active" <?php echo $card['result_status'] === 'Active' ? 'selected' : ''; ?>>Active</option>
-                        <option value="Complete with Excellence" <?php echo $card['result_status'] === 'Complete with Excellence' ? 'selected' : ''; ?>>Complete with Excellence</option>
-                        <?php endif; ?>
-                        <option value="Complete" <?php echo $card['result_status'] === 'Complete' ? 'selected' : ''; ?>><?php echo htmlspecialchars(okrStatusDisplayLabel('Complete', $card['extended'])); ?></option>
-                        <option value="Extend" <?php echo $card['result_status'] === 'Extend' ? 'selected' : ''; ?>>Extend</option>
-                        <option value="Fail" <?php echo $card['result_status'] === 'Fail' ? 'selected' : ''; ?>><?php echo htmlspecialchars(okrStatusDisplayLabel('Fail', $card['extended'])); ?></option>
+                        <?php
+                        // Reads live from okr_statuses (minus the two system-
+                        // managed statuses) instead of a fixed option list, so
+                        // an admin renaming/adding/soft-deleting a status is
+                        // reflected here with no code change.
+                        $post_extension_statuses = okrPostExtensionResolvableStatuses();
+                        foreach ($timeline_status_options as $st):
+                            $value = $st['value'];
+                            $visible = !$card['extended'] || $okr_is_admin || in_array($value, $post_extension_statuses, true);
+                            if (!$visible) { continue; }
+                            $is_selected = ($card['result_status'] === $value)
+                                || ($value === OKR_STATUS_COMPLETED && $card['result_status'] === OKR_STATUS_COMPLETED_EXTENSION);
+                            $label = okrStatusDisplayLabel($value, $card['extended']);
+                        ?>
+                        <option value="<?php echo htmlspecialchars($value); ?>" <?php echo $is_selected ? 'selected' : ''; ?>><?php echo htmlspecialchars($label); ?></option>
+                        <?php endforeach; ?>
                     </select>
                     <?php if ($card['extended'] && !$okr_is_admin): ?>
-                    <p class="okr-card-hint">This OKR has been extended, so it can now only resolve as Completed with extension or Failed.</p>
+                    <p class="okr-card-hint">This OKR has been extended, so it can now only resolve as Completed with Extension or Failed.</p>
                     <?php elseif ($card['extended']): ?>
                     <p class="okr-card-hint">This OKR has been extended. As an admin, you can still set any status until it is marked as paid.</p>
                     <?php endif; ?>

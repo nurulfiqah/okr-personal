@@ -117,7 +117,12 @@ $okr_list_config = [
                 <div class="okr-s2-selection" id="okr-filter-status-btn" tabindex="0">All statuses</div>
                 <div class="okr-s2-dropdown" id="okr-filter-status-dropdown">
                     <ul class="okr-s2-list" id="okr-filter-status-list" style="padding:4px 0;">
-                        <?php foreach (['Draft', 'Active', 'Complete', 'Complete with Excellence', 'Extend', 'Suspended', 'Fail'] as $_st): ?>
+                        <?php
+                        // As a filter, list every real status a card can currently
+                        // hold - including Suspended and Completed with Extension -
+                        // read live from okr_statuses rather than a fixed list.
+                        $list_status_options = array_column(okrFetchStatuses($conn, false), 'value');
+                        foreach ($list_status_options as $_st): ?>
                         <li style="cursor:default;">
                             <label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">
                                 <input type="checkbox" value="<?php echo htmlspecialchars($_st); ?>" checked>

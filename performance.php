@@ -178,8 +178,8 @@ window.OKR_PERFORMANCE = <?php echo json_encode([
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <p>This locks every <strong>Complete</strong> / <strong>Complete with Excellence</strong> OKR matching the current filter. Locked OKRs can no longer be edited, deleted, or suspended by anyone.</p>
-                <p class="mb-0 text-muted" style="font-size:12px;">This does not affect cards that are still Active, Extend, Draft, Suspended, or Fail.</p>
+                <p>This locks every incentive-paying OKR (<strong>Completed</strong> / <strong>Completed with Excellence</strong> / <strong>Completed with Extension</strong>) matching the current filter. Locked OKRs can no longer be edited, deleted, or suspended by anyone.</p>
+                <p class="mb-0 text-muted" style="font-size:12px;">This does not affect cards that are still Active, Extended, Draft, Suspended, or Failed.</p>
                 <div class="mt-2">
                     <label for="okr-lock-remark" class="form-label">Remark (optional)</label>
                     <textarea class="form-control" id="okr-lock-remark" rows="2" placeholder="e.g. July 2026 payroll run"></textarea>
@@ -247,10 +247,10 @@ window.OKR_PERFORMANCE = <?php echo json_encode([
                     <th style="text-align:left;">Grade</th>
                     <th style="text-align:left;">Evaluation Structure</th>
                     <th style="text-align:center;">OKR</th>
-                    <th style="text-align:center;">Complete</th>
+                    <th style="text-align:center;">Completed</th>
                     <th style="text-align:center;">Active</th>
-                    <th style="text-align:center;">Extend</th>
-                    <th style="text-align:center;">Fail</th>
+                    <th style="text-align:center;">Extended</th>
+                    <th style="text-align:center;">Failed</th>
                     <th style="text-align:center;">Est. Reward</th>
                     <th style="text-align:left;">Action</th>
                 </tr>

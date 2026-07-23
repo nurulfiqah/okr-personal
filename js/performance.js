@@ -1,20 +1,6 @@
 (function () {
     var CFG = window.OKR_PERFORMANCE || { departments: [], apiUrl: 'okr/backend.php', exportUrl: 'okr/export_performance.php' };
 
-    var PILL_CLASS = {
-        'Draft': 'okr-pill-draft',
-        'Active': 'okr-pill-active',
-        'Complete': 'okr-pill-complete',
-        'Complete with Excellence': 'okr-pill-complete-excellence',
-        'Extend': 'okr-pill-extend',
-        'Suspended': 'okr-pill-suspended',
-        'Fail': 'okr-pill-fail',
-    };
-
-    function pillClass(status) {
-        return PILL_CLASS[status] || 'okr-pill-active';
-    }
-
     function escapeHtml(s) {
         return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
             return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -352,7 +338,7 @@
                         '<td style="text-align:left;">' + escapeHtml(c.okr_type) + '</td>' +
                         '<td style="text-align:left;">' + escapeHtml(c.level_label) + '</td>' +
                         '<td style="text-align:left;">' + escapeHtml(c.start_date) + ' &rarr; ' + escapeHtml(c.end_date) + '</td>' +
-                        '<td style="text-align:left;"><span class="okr-pill ' + pillClass(c.result_status) + '">' + escapeHtml(c.result_status) + '</span></td>' +
+                        '<td style="text-align:left;"><span class="okr-pill ' + c.pill_class + '">' + escapeHtml(c.result_status) + '</span></td>' +
                         '<td style="text-align:left;">' + escapeHtml(c.role) + '</td>' +
                         '<td style="text-align:left;">' + money(c.rm_share) + '</td>';
                     staffModalBody.appendChild(tr);

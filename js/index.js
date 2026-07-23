@@ -145,9 +145,9 @@
                 html += '<tr>' +
                     '<td style="font-size:12px;font-weight:600;text-align:left;">' + l.label + '</td>' +
                     '<td style="font-size:12px;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-level="' + l.level_id + '" data-nav-status="">' + l.cards + '</td>' +
-                    '<td style="font-size:12px;color:#0d6efd;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-level="' + l.level_id + '" data-nav-status="Complete">' + l.complete + '</td>' +
-                    '<td style="font-size:12px;color:#198754;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-level="' + l.level_id + '" data-nav-status="Complete with Excellence">' + l.excellence + '</td>' +
-                    '<td style="font-size:12px;color:#dc3545;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-level="' + l.level_id + '" data-nav-status="Fail">' + l.fail + '</td>' +
+                    '<td style="font-size:12px;color:#0d6efd;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-level="' + l.level_id + '" data-nav-status="Completed,Completed with Extension">' + l.complete + '</td>' +
+                    '<td style="font-size:12px;color:#198754;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-level="' + l.level_id + '" data-nav-status="Completed with Excellence">' + l.excellence + '</td>' +
+                    '<td style="font-size:12px;color:#dc3545;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-level="' + l.level_id + '" data-nav-status="Failed">' + l.fail + '</td>' +
                     '<td style="font-size:12px;text-align:left;">' + forecast + '</td>' +
                     '</tr>';
             }
@@ -156,7 +156,8 @@
                 var td = e.target;
                 while (td && td !== tbody) {
                     if (td.tagName === 'TD' && td.hasAttribute('data-nav-level')) {
-                        window.location.href = buildListUrl(td.getAttribute('data-nav-status'), [], false, td.getAttribute('data-nav-level'));
+                        var navStatus = td.getAttribute('data-nav-status') || '';
+                        window.location.href = buildListUrl('', navStatus ? navStatus.split(',') : [], false, td.getAttribute('data-nav-level'));
                         return;
                     }
                     td = td.parentNode;
@@ -181,11 +182,11 @@
                     var type = data.by_type[t];
                     tHtml += '<tr>' +
                         '<td style="font-size:12px;font-weight:600;text-align:left;">' + type.okr_type + '</td>' +
-                        '<td style="font-size:12px;color:#0d6efd;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-type="' + escapeHtml(type.okr_type) + '" data-nav-status="Complete">' + (type.complete || 0) + '</td>' +
-                        '<td style="font-size:12px;color:#198754;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-type="' + escapeHtml(type.okr_type) + '" data-nav-status="Complete with Excellence">' + (type.excellence || 0) + '</td>' +
-                        '<td style="font-size:12px;color:#fd7e14;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-type="' + escapeHtml(type.okr_type) + '" data-nav-status="Extend">' + (type.extend || 0) + '</td>' +
+                        '<td style="font-size:12px;color:#0d6efd;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-type="' + escapeHtml(type.okr_type) + '" data-nav-status="Completed,Completed with Extension">' + (type.complete || 0) + '</td>' +
+                        '<td style="font-size:12px;color:#198754;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-type="' + escapeHtml(type.okr_type) + '" data-nav-status="Completed with Excellence">' + (type.excellence || 0) + '</td>' +
+                        '<td style="font-size:12px;color:#fd7e14;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-type="' + escapeHtml(type.okr_type) + '" data-nav-status="Extended">' + (type.extend || 0) + '</td>' +
                         '<td style="font-size:12px;color:#dc3545;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-type="' + escapeHtml(type.okr_type) + '" data-nav-status="Suspended">' + (type.suspended || 0) + '</td>' +
-                        '<td style="font-size:12px;color:#dc3545;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-type="' + escapeHtml(type.okr_type) + '" data-nav-status="Fail">' + (type.fail || 0) + '</td>' +
+                        '<td style="font-size:12px;color:#dc3545;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-type="' + escapeHtml(type.okr_type) + '" data-nav-status="Failed">' + (type.fail || 0) + '</td>' +
                         '</tr>';
                 }
                 typeTbody.innerHTML = tHtml;
@@ -193,7 +194,8 @@
                     var td = e.target;
                     while (td && td !== typeTbody) {
                         if (td.tagName === 'TD' && td.hasAttribute('data-nav-type')) {
-                            window.location.href = buildListUrl(td.getAttribute('data-nav-status'), [], false, '', '', td.getAttribute('data-nav-type'));
+                            var navStatus = td.getAttribute('data-nav-status') || '';
+                            window.location.href = buildListUrl('', navStatus ? navStatus.split(',') : [], false, '', '', td.getAttribute('data-nav-type'));
                             return;
                         }
                         td = td.parentNode;
@@ -221,9 +223,9 @@
                     dHtml += '<tr>' +
                         '<td style="font-size:12px;font-weight:600;text-align:left;">' + escapeHtml(dept.dept_name) + '</td>' +
                         '<td style="font-size:12px;text-align:left;' + dClickable + '"' + (dId ? ' data-nav-dept="' + dId + '" data-nav-status=""' : '') + '>' + dCards + '</td>' +
-                        '<td style="font-size:12px;color:#0d6efd;text-align:left;' + dClickable + '"' + (dId ? ' data-nav-dept="' + dId + '" data-nav-status="Complete"' : '') + '>' + (dept.complete || 0) + '</td>' +
-                        '<td style="font-size:12px;color:#198754;text-align:left;' + dClickable + '"' + (dId ? ' data-nav-dept="' + dId + '" data-nav-status="Complete with Excellence"' : '') + '>' + (dept.excellence || 0) + '</td>' +
-                        '<td style="font-size:12px;color:#dc3545;text-align:left;' + dClickable + '"' + (dId ? ' data-nav-dept="' + dId + '" data-nav-status="Fail"' : '') + '>' + dFail + '</td>' +
+                        '<td style="font-size:12px;color:#0d6efd;text-align:left;' + dClickable + '"' + (dId ? ' data-nav-dept="' + dId + '" data-nav-status="Completed,Completed with Extension"' : '') + '>' + (dept.complete || 0) + '</td>' +
+                        '<td style="font-size:12px;color:#198754;text-align:left;' + dClickable + '"' + (dId ? ' data-nav-dept="' + dId + '" data-nav-status="Completed with Excellence"' : '') + '>' + (dept.excellence || 0) + '</td>' +
+                        '<td style="font-size:12px;color:#dc3545;text-align:left;' + dClickable + '"' + (dId ? ' data-nav-dept="' + dId + '" data-nav-status="Failed"' : '') + '>' + dFail + '</td>' +
                         '<td style="font-size:12px;text-align:left;">' + dFailRate + '</td>' +
                         '<td style="font-size:12px;text-align:left;">' + dForecast + '</td>' +
                         '</tr>';
@@ -235,7 +237,8 @@
                         if (td.tagName === 'TD' && td.hasAttribute('data-nav-dept')) {
                             var navDept = td.getAttribute('data-nav-dept');
                             if (!navDept) { return; }
-                            window.location.href = buildListUrl(td.getAttribute('data-nav-status'), [], false, '', navDept);
+                            var navStatus = td.getAttribute('data-nav-status') || '';
+                            window.location.href = buildListUrl('', navStatus ? navStatus.split(',') : [], false, '', navDept);
                             return;
                         }
                         td = td.parentNode;

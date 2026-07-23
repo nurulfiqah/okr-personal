@@ -39,8 +39,9 @@ if ($dl_token !== '') {
 }
 
 // "Export & Lock" is an explicit opt-in (?lock=1) from People Management
-// (staff_department id 17) or admin - locks the same Complete/Complete with
-// Excellence cards this export covers, same rule as the Lock Payout button.
+// (staff_department id 17) or admin - locks the same incentive-paying cards
+// this export covers, same rule as the Lock Payout button (okrLockPayoutCards
+// keys off okr_statuses.pays_incentive, not a fixed status name list).
 // Plain Export never locks anything.
 $requester_dept_ids = okrDeptIdsFromCsv($department ?? '');
 $is_ppm = $okr_is_admin || in_array(17, $requester_dept_ids, true);

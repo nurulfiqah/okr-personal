@@ -383,21 +383,17 @@
     var statusSelect = document.getElementById('okr-status');
     var incentiveTileEl = document.getElementById('okr-incentive-tile');
     var incentiveTileLabelEl = document.getElementById('okr-incentive-tile-label');
-    var incentiveTileClassMap = {
-        'Draft': 'okr-incentive-tile--blue',
-        'Active': 'okr-incentive-tile--blue',
-        'Extend': 'okr-incentive-tile--yellow',
-        'Fail': 'okr-incentive-tile--red',
-        'Suspended': 'okr-incentive-tile--red'
-    };
+    // Per-status pays_incentive/pill_class/incentive_tile_class, computed
+    // server-side from okr_statuses (see edit.php) instead of a hardcoded
+    // copy of the status->class mapping here.
+    var STATUS_META = CFG.statusMeta || {};
 
     function refreshIncentiveTileStatus() {
         var status = statusSelect.value;
-        var paid = (status === 'Complete' || status === 'Complete with Excellence');
+        var meta = STATUS_META[status] || {};
         incentiveTileEl.classList.remove('okr-incentive-tile--blue', 'okr-incentive-tile--yellow', 'okr-incentive-tile--red');
-        var cls = incentiveTileClassMap[status];
-        if (cls) { incentiveTileEl.classList.add(cls); }
-        incentiveTileLabelEl.textContent = paid ? 'Total Incentive' : 'Estimated Incentive';
+        if (meta.incentive_tile_class) { incentiveTileEl.classList.add(meta.incentive_tile_class); }
+        incentiveTileLabelEl.textContent = meta.pays_incentive ? 'Total Incentive' : 'Estimated Incentive';
     }
     refreshIncentiveTileStatus();
     statusSelect.addEventListener('change', refreshIncentiveTileStatus);
@@ -666,8 +662,8 @@
 
         if (!statusSelect.value) { setError('okr-status', 'Select a status.'); ok = false; }
 
-        if (statusSelect.value === 'Extend' && !extendedCheckbox.checked) {
-            setError('okr-status', 'Tick "Extended?" and set an Extended Date when Status is Extend.');
+        if (statusSelect.value === 'Extended' && !extendedCheckbox.checked) {
+            setError('okr-status', 'Tick "Extended?" and set an Extended Date when Status is Extended.');
             ok = false;
         }
 
