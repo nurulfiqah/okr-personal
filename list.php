@@ -1,6 +1,5 @@
 <?php
 $page_title = 'OKR Cards';
-$page_title_actions = '<a href="okr/create.php" class="btn btn-primary"><i class="bi bi-plus-lg"></i> New OKR</a>';
 include('header.php');
 require_once(__DIR__ . '/lib.php');
 

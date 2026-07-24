@@ -84,7 +84,7 @@ $_navbar_atem_folder = $_navbar_isLocal ? 'atem' : 'atem-staging';
                     <a class="nav-link <?php echo $dashboard_active; ?>" href="okr/index.php">Dashboard</a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link" href="<?php echo $_navbar_atem_folder; ?>/index.php">ATEM</a>
+                    <a class="nav-link" href="<?php echo $_navbar_atem_folder; ?>/view.php">ATEM</a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link <?php echo $list_active; ?>" href="okr/list.php">OKR</a>

@@ -64,6 +64,16 @@ if ($okr_permission === 0 && !$okr_is_admin) {
     }
     exit;
 }
+
+// list.php's "New OKR" button follows the same create-permission gate as
+// create.php itself (grade 3+ or admin). Set here, not in list.php, because
+// $okr_permission/$okr_is_admin aren't known until lock_adv.php runs above,
+// and the title row below is rendered inline as part of this same include -
+// by the time include('header.php') returns to the caller, the row has
+// already been echoed.
+if (!isset($page_title_actions) && basename($_SERVER['PHP_SELF']) === 'list.php' && ($okr_permission >= 3 || $okr_is_admin)) {
+    $page_title_actions = '<a href="okr/create.php" class="btn btn-primary"><i class="bi bi-plus-lg"></i> New OKR</a>';
+}
 ?>
 
 <body>
