@@ -115,7 +115,7 @@ $okr_config = [
                     <input type="text" class="form-control" id="okr-department"
                         value="<?php echo htmlspecialchars($issuer_department); ?>" readonly>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-6">
                     <label for="okr-type" class="form-label">OKR Type <span class="okr-req">*</span></label>
                     <select class="form-select" id="okr-type">
                         <option value="">Select type</option>
@@ -125,20 +125,26 @@ $okr_config = [
                     </select>
                     <div class="okr-form-error" id="okr-type-error"></div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-6">
                     <label for="okr-level" class="form-label">OKR Complexity Level <span class="okr-req">*</span></label>
                     <select class="form-select" id="okr-level">
                         <option value="">Select level</option>
                     </select>
                     <div class="okr-form-error" id="okr-level-error"></div>
                 </div>
-                <div class="col-md-4" id="okr-incentive-rule-wrap">
+                <div class="col-md-6" id="okr-incentive-rule-wrap">
                     <label for="okr-incentive-rule" class="form-label">Incentive Rule <span class="okr-req">*</span></label>
                     <select class="form-select" id="okr-incentive-rule">
                         <option value="">Select rule</option>
                     </select>
-                    <p class="okr-card-hint" id="okr-incentive-rule-hint"></p>
                     <div class="okr-form-error" id="okr-incentive-rule-error"></div>
+                </div>
+                <div class="col-md-6 d-flex flex-column">
+                    <label class="form-label invisible">Incentive Rule</label>
+                    <div class="d-flex align-items-center okr-incentive-rule-hint-row">
+                        <p class="okr-card-hint mb-0" id="okr-incentive-rule-hint">Select an incentive rule to see how the payout will be split.</p>
+                    </div>
+                    <div class="okr-form-error"></div>
                 </div>
                 <div class="col-md-6">
                     <label for="okr-start" class="form-label">Start Date <span class="okr-req">*</span></label>

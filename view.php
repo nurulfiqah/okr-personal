@@ -66,33 +66,43 @@ $okr_view_config = [
     <div class="okr-bento-item okr-span-8">
         <div class="okr-card">
             <div class="okr-card-title-row">
-                <h6 class="okr-card-title"><i class="bi bi-file-earmark-text"></i> OKR<?php echo (int)$card['id']; ?> Details</h6>
-                <span class="okr-pill <?php echo okrPillClass($card['result_status']); ?>"><?php echo htmlspecialchars(okrStatusDisplayLabel($card['result_status'], $card['extended'])); ?></span>
+                <h6 class="okr-card-title"><i class="bi bi-file-earmark-text"></i> OKR<?php echo (int)$card['id']; ?>
+                    Details</h6>
+                <span
+                    class="okr-pill <?php echo okrPillClass($card['result_status']); ?>"><?php echo htmlspecialchars(okrStatusDisplayLabel($card['result_status'], $card['extended'])); ?></span>
             </div>
             <div class="row g-3 mt-1">
                 <div class="col-12">
                     <label class="form-label">Objective</label>
-                    <textarea class="form-control" id="okr-objective" rows="2" readonly><?php echo htmlspecialchars($card['objective']); ?></textarea>
+                    <textarea class="form-control" id="okr-objective" rows="2"
+                        readonly><?php echo htmlspecialchars($card['objective']); ?></textarea>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Issuer</label>
-                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($card['issuer_name']); ?>" readonly>
+                    <input type="text" class="form-control"
+                        value="<?php echo htmlspecialchars($card['issuer_name']); ?>" readonly>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Department</label>
-                    <input type="text" class="form-control" value="<?php echo htmlspecialchars(empty($dept_names) ? '-' : implode(', ', $dept_names)); ?>" readonly>
+                    <input type="text" class="form-control"
+                        value="<?php echo htmlspecialchars(empty($dept_names) ? '-' : implode(', ', $dept_names)); ?>"
+                        readonly>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">OKR Type</label>
-                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($card['okr_type']); ?>" readonly>
+                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($card['okr_type']); ?>"
+                        readonly>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">OKR Complexity Level</label>
-                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($card['level_label']); ?> (RM<?php echo number_format($card['level_rm'], 2); ?>)" readonly>
+                    <input type="text" class="form-control"
+                        value="<?php echo htmlspecialchars($card['level_label']); ?> (RM<?php echo number_format($card['level_rm'], 2); ?>)"
+                        readonly>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Incentive Rule</label>
-                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($card['incentive_rule_label']); ?>" readonly>
+                    <input type="text" class="form-control"
+                        value="<?php echo htmlspecialchars($card['incentive_rule_label']); ?>" readonly>
                 </div>
                 <div class="col-12">
                     <label class="form-label">Key Results</label>
@@ -105,7 +115,8 @@ $okr_view_config = [
     <div class="okr-bento-item okr-span-4">
         <div class="okr-card mb-3">
             <h6 class="okr-card-title"><i class="bi bi-cash-coin"></i> Estimated Incentive</h6>
-            <p class="okr-card-hint">This shows an estimated incentive based on the selected level and rule. The company reserves the right to determine the final payout under its incentive scheme.</p>
+            <p class="okr-card-hint">This shows an estimated incentive based on the selected level and rule. The company
+                reserves the right to determine the final payout under its incentive scheme.</p>
             <?php
             $is_paid      = $card['pays_incentive'];
             $is_forecast  = !$is_paid && !in_array($card['result_status'], ['Failed', OKR_STATUS_SUSPENDED], true);
@@ -121,24 +132,31 @@ $okr_view_config = [
             <?php if ($show_amount): ?>
             <div class="okr-incentive-breakdown">
                 <?php if ($card['owner2_name']): ?>
-                    <?php if ($card['incentive_rule_code'] === 'RULE1'): ?>
+                <?php if ($card['incentive_rule_code'] === 'RULE1'): ?>
                 <div class="okr-incentive-stat" style="grid-column: 1 / -1;">
-                    <span class="okr-incentive-stat-label"><?php echo htmlspecialchars($card['incentivised_owner_name']); ?> (100%)</span>
+                    <span
+                        class="okr-incentive-stat-label"><?php echo htmlspecialchars($card['incentivised_owner_name']); ?>
+                        (100%)</span>
                     <span class="okr-incentive-stat-value">RM<?php echo number_format($card['level_rm'], 2); ?></span>
                 </div>
-                    <?php else: ?>
+                <?php else: ?>
                 <div class="okr-incentive-stat">
-                    <span class="okr-incentive-stat-label">1st Owner &middot; <?php echo htmlspecialchars($card['owner_name']); ?></span>
-                    <span class="okr-incentive-stat-value">RM<?php echo number_format($card['level_rm'] / 2, 2); ?></span>
+                    <span class="okr-incentive-stat-label">1st Owner &middot;
+                        <?php echo htmlspecialchars($card['owner_name']); ?></span>
+                    <span
+                        class="okr-incentive-stat-value">RM<?php echo number_format($card['level_rm'] / 2, 2); ?></span>
                 </div>
                 <div class="okr-incentive-stat">
-                    <span class="okr-incentive-stat-label">2nd Owner &middot; <?php echo htmlspecialchars($card['owner2_name']); ?></span>
-                    <span class="okr-incentive-stat-value">RM<?php echo number_format($card['level_rm'] / 2, 2); ?></span>
+                    <span class="okr-incentive-stat-label">2nd Owner &middot;
+                        <?php echo htmlspecialchars($card['owner2_name']); ?></span>
+                    <span
+                        class="okr-incentive-stat-value">RM<?php echo number_format($card['level_rm'] / 2, 2); ?></span>
                 </div>
-                    <?php endif; ?>
+                <?php endif; ?>
                 <?php else: ?>
                 <div class="okr-incentive-stat" style="grid-column: 1 / -1;">
-                    <span class="okr-incentive-stat-label">Owner &middot; <?php echo htmlspecialchars($card['owner_name']); ?></span>
+                    <span class="okr-incentive-stat-label">Owner &middot;
+                        <?php echo htmlspecialchars($card['owner_name']); ?></span>
                     <span class="okr-incentive-stat-value">RM<?php echo number_format($card['level_rm'], 2); ?></span>
                 </div>
                 <?php endif; ?>
@@ -146,14 +164,16 @@ $okr_view_config = [
             <?php endif; ?>
             <?php if ($card['incentive_locked']): ?>
             <p class="okr-card-hint mb-0">
-                <i class="bi bi-lock-fill"></i> Locked after payout<?php echo $card['locked_by_name'] ? ' by ' . htmlspecialchars($card['locked_by_name']) : ''; ?><?php echo $card['locked_at'] ? ' on ' . htmlspecialchars(substr($card['locked_at'], 0, 10)) : ''; ?>.
+                <i class="bi bi-lock-fill"></i> Locked after
+                payout<?php echo $card['locked_by_name'] ? ' by ' . htmlspecialchars($card['locked_by_name']) : ''; ?><?php echo $card['locked_at'] ? ' on ' . htmlspecialchars(substr($card['locked_at'], 0, 10)) : ''; ?>.
             </p>
             <?php if (!empty($card['payout_remark'])): ?>
             <p class="okr-card-hint mb-0"><em>"<?php echo htmlspecialchars($card['payout_remark']); ?>"</em></p>
             <?php endif; ?>
             <?php elseif ($card['unlocked_by_name']): ?>
             <p class="okr-card-hint mb-0">
-                <i class="bi bi-unlock"></i> Unlocked by <?php echo htmlspecialchars($card['unlocked_by_name']); ?><?php echo $card['unlocked_at'] ? ' on ' . htmlspecialchars(substr($card['unlocked_at'], 0, 10)) : ''; ?>.
+                <i class="bi bi-unlock"></i> Unlocked by
+                <?php echo htmlspecialchars($card['unlocked_by_name']); ?><?php echo $card['unlocked_at'] ? ' on ' . htmlspecialchars(substr($card['unlocked_at'], 0, 10)) : ''; ?>.
             </p>
             <?php endif; ?>
         </div>
@@ -175,15 +195,19 @@ $okr_view_config = [
             <h6 class="okr-card-title"><i class="bi bi-pause-circle"></i> CEO Action</h6>
             <div class="okr-form-error" id="okr-suspend-error"></div>
             <?php if ($card['result_status'] === OKR_STATUS_SUSPENDED): ?>
-            <button type="button" class="btn btn-outline-secondary btn-sm w-100" id="okr-unsuspend-btn">Unsuspend OKR</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm w-100" id="okr-unsuspend-btn">Unsuspend
+                OKR</button>
             <?php else: ?>
             <p class="okr-card-hint">Only the CEO can suspend an OKR.</p>
-            <button type="button" class="btn btn-outline-secondary btn-sm w-100" id="okr-suspend-btn">Suspend OKR</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm w-100" id="okr-suspend-btn">Suspend
+                OKR</button>
             <div id="okr-suspend-reason-wrap" style="display:none;" class="mt-2">
                 <label for="okr-suspend-reason" class="form-label">Reason <span class="okr-req">*</span></label>
-                <textarea class="form-control" id="okr-suspend-reason" rows="3" placeholder="Why is this OKR being suspended?"></textarea>
+                <textarea class="form-control" id="okr-suspend-reason" rows="3"
+                    placeholder="Why is this OKR being suspended?"></textarea>
                 <div class="okr-form-error" id="okr-suspend-reason-error"></div>
-                <button type="button" class="btn btn-danger btn-sm w-100 mt-2" id="okr-suspend-confirm-btn">Suspend OKR</button>
+                <button type="button" class="btn btn-danger btn-sm w-100 mt-2" id="okr-suspend-confirm-btn">Suspend
+                    OKR</button>
             </div>
             <?php endif; ?>
         </div>
@@ -202,8 +226,11 @@ $okr_view_config = [
                         <div class="okr-arci-members">
                             <div class="okr-arci-member">
                                 <div class="okr-arci-member-info">
-                                    <div class="okr-arci-member-dept">(<?php echo htmlspecialchars(empty($dept_names) ? '-' : implode(', ', $dept_names)); ?>)</div>
-                                    <div class="okr-arci-member-name"><?php echo htmlspecialchars($card['owner_name']); ?></div>
+                                    <div class="okr-arci-member-dept">
+                                        (<?php echo htmlspecialchars(empty($dept_names) ? '-' : implode(', ', $dept_names)); ?>)
+                                    </div>
+                                    <div class="okr-arci-member-name">
+                                        <?php echo htmlspecialchars($card['owner_name']); ?></div>
                                 </div>
                                 <?php if ($card['owner2_name'] && $card['incentive_rule_code'] === 'RULE1' && $card['incentivised_owner_staff_id'] === $card['owner_staff_id']): ?>
                                 <span class="okr-arci-incentivised-badge">Incentivised</span>
@@ -212,8 +239,11 @@ $okr_view_config = [
                             <?php if ($card['owner2_name']): ?>
                             <div class="okr-arci-member">
                                 <div class="okr-arci-member-info">
-                                    <div class="okr-arci-member-dept">(<?php echo htmlspecialchars(empty($dept_names2) ? '-' : implode(', ', $dept_names2)); ?>)</div>
-                                    <div class="okr-arci-member-name"><?php echo htmlspecialchars($card['owner2_name']); ?></div>
+                                    <div class="okr-arci-member-dept">
+                                        (<?php echo htmlspecialchars(empty($dept_names2) ? '-' : implode(', ', $dept_names2)); ?>)
+                                    </div>
+                                    <div class="okr-arci-member-name">
+                                        <?php echo htmlspecialchars($card['owner2_name']); ?></div>
                                 </div>
                                 <?php if ($card['incentive_rule_code'] === 'RULE1' && $card['incentivised_owner_staff_id'] === $card['owner2_staff_id']): ?>
                                 <span class="okr-arci-incentivised-badge">Incentivised</span>
@@ -226,7 +256,8 @@ $okr_view_config = [
                 <?php if ($card['owner2_name']): ?>
                 <div class="col-md-6">
                     <label class="form-label">Purpose of joint ownership</label>
-                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($card['owner2_purpose']); ?>" readonly>
+                    <input type="text" class="form-control"
+                        value="<?php echo htmlspecialchars($card['owner2_purpose']); ?>" readonly>
                 </div>
                 <?php endif; ?>
             </div>
@@ -240,7 +271,8 @@ $okr_view_config = [
     <div class="row g-3 mt-1">
         <div class="col-md-4">
             <label class="form-label">Start Date</label>
-            <input type="date" class="form-control" value="<?php echo htmlspecialchars($card['start_date']); ?>" readonly>
+            <input type="date" class="form-control" value="<?php echo htmlspecialchars($card['start_date']); ?>"
+                readonly>
         </div>
         <div class="col-md-4">
             <label class="form-label">End Date</label>
@@ -248,35 +280,43 @@ $okr_view_config = [
         </div>
         <div class="col-md-4">
             <label class="form-label">Status</label>
-            <input type="text" class="form-control" value="<?php echo htmlspecialchars(okrStatusDisplayLabel($card['result_status'], $card['extended'])); ?>" readonly>
+            <input type="text" class="form-control"
+                value="<?php echo htmlspecialchars(okrStatusDisplayLabel($card['result_status'], $card['extended'])); ?>"
+                readonly>
         </div>
 
         <div class="col-12">
             <div class="form-check okr-extended-check mb-2">
-                <input class="form-check-input" type="checkbox" <?php echo $card['extended'] ? 'checked' : ''; ?> disabled>
-                <label class="form-check-label">Extended? (once only &mdash; cannot be undone)</label>
+                <input class="form-check-input" type="checkbox" <?php echo $card['extended'] ? 'checked' : ''; ?>
+                    disabled>
+                <label class="form-check-label" style="font-size: 12px;">Extended? (once only &mdash; cannot be
+                    undone)</label>
             </div>
         </div>
 
         <?php if ($card['extended']): ?>
         <div class="col-md-4">
             <label class="form-label">Extended Date</label>
-            <input type="date" class="form-control" value="<?php echo htmlspecialchars($card['extended_date'] ?? ''); ?>" readonly>
+            <input type="date" class="form-control"
+                value="<?php echo htmlspecialchars($card['extended_date'] ?? ''); ?>" readonly>
         </div>
         <?php endif; ?>
 
         <div class="col-md-4">
             <label class="form-label">Final Due Date</label>
-            <input type="date" class="form-control" value="<?php echo htmlspecialchars($card['final_due_date']); ?>" readonly>
+            <input type="date" class="form-control" value="<?php echo htmlspecialchars($card['final_due_date']); ?>"
+                readonly>
         </div>
         <div class="col-md-4">
             <label class="form-label">Closure Date</label>
-            <input type="date" class="form-control" value="<?php echo htmlspecialchars($card['closure_date'] ?? ''); ?>" readonly>
+            <input type="date" class="form-control" value="<?php echo htmlspecialchars($card['closure_date'] ?? ''); ?>"
+                readonly>
         </div>
 
         <div class="col-12">
             <label class="form-label">Remarks</label>
-            <textarea class="form-control" rows="3" readonly><?php echo htmlspecialchars($card['remarks'] ?? ''); ?></textarea>
+            <textarea class="form-control" rows="3"
+                readonly><?php echo htmlspecialchars($card['remarks'] ?? ''); ?></textarea>
         </div>
     </div>
 </div>
@@ -301,7 +341,8 @@ $okr_view_config = [
 </div>
 
 <?php if ($can_suspend): ?>
-<div class="modal fade" id="okr-suspend-modal" tabindex="-1" aria-labelledby="okr-suspend-modal-title" aria-hidden="true">
+<div class="modal fade" id="okr-suspend-modal" tabindex="-1" aria-labelledby="okr-suspend-modal-title"
+    aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
@@ -321,10 +362,12 @@ $okr_view_config = [
 <?php endif; ?>
 
 <div class="toast-container position-fixed bottom-0 end-0 p-3">
-    <div id="okr-saved-toast" class="toast align-items-center text-bg-success border-0" role="status" aria-live="polite" aria-atomic="true">
+    <div id="okr-saved-toast" class="toast align-items-center text-bg-success border-0" role="status" aria-live="polite"
+        aria-atomic="true">
         <div class="d-flex">
             <div class="toast-body">Changes saved.</div>
-            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"
+                aria-label="Close"></button>
         </div>
     </div>
 </div>

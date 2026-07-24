@@ -139,8 +139,13 @@ input, select, textarea, button {
   text-align: left;
 }
 
+.okr-incentive-rule-hint-row {
+  min-height: 38px;
+}
+
 #okr-incentive-rule-hint {
-  font-size: 11px;
+  font-size: 12px;
+  margin: 0;
 }
 
 .okr-card-title-row {
@@ -680,6 +685,7 @@ textarea.form-control {
 .okr-extended-check .form-check-input {
   float: none;
   margin-left: 0;
+  margin-top: 0;
 }
 
 /* ---------------------------------------------------------------

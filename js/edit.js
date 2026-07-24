@@ -287,7 +287,7 @@
         incentiveRuleSelect.disabled = noPayout;
 
         var rule = selectedIncentiveRule();
-        incentiveRuleHint.textContent = rule ? rule.payout_logic : '';
+        incentiveRuleHint.textContent = rule ? rule.payout_logic : 'Select an incentive rule to see how the payout will be split.';
 
         renderOwnerMembers();
         renderOwnerStaffList();
