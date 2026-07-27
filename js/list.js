@@ -4,12 +4,13 @@
     var emptyState = document.getElementById('okr-empty-state');
     var searchFilter = document.getElementById('okr-filter-search');
     var typeFilter = document.getElementById('okr-filter-type');
-    var levelFilter = document.getElementById('okr-filter-level');
     var deptFilter = document.getElementById('okr-filter-dept');
     var yearFilter = document.getElementById('okr-filter-year');
     var monthFilter = document.getElementById('okr-filter-month');
     var startDateFilter = document.getElementById('okr-filter-start-date');
     var endDateFilter = document.getElementById('okr-filter-end-date');
+    var closureStartFilter = document.getElementById('okr-filter-closure-start');
+    var closureEndFilter = document.getElementById('okr-filter-closure-end');
     var resetFilterBtn = document.getElementById('okr-filter-reset');
 
     // Set when index.php's Overdue Cards stat tile deep-links here (?overdue=1) -
@@ -47,7 +48,6 @@
         if (params.get('from'))  { deepLinkDateFrom = params.get('from'); }
         if (params.get('to'))    { deepLinkDateTo = params.get('to'); }
         if (params.get('dept'))  { deptFilter.value = params.get('dept'); }
-        if (params.get('level')) { levelFilter.value = params.get('level'); }
         if (params.get('type'))  { typeFilter.value = params.get('type'); }
         if (params.get('overdue') === '1') { deepLinkOverdueOnly = true; }
     }
@@ -185,16 +185,8 @@
         updateStatusButtonLabel(baseId);
     }
 
-    // Level badge color map, mirrors atem/js/view.js's LEVEL_COLOR.
-    var LEVEL_COLOR = { 1: '#6c757d', 2: '#0d6efd', 3: '#6610f2', 4: '#003B73' };
-
-    function levelPill(level) {
-        var color = LEVEL_COLOR[level] || '#6c757d';
-        return '<span class="okr-pill" style="background-color:' + color + '">L' + level + '</span>';
-    }
-
-    // Type badge colors - kept distinct from the Level (gray/blue/indigo/navy)
-    // and Status (gray/blue/green/cyan/orange/rose/red) palettes above.
+    // Type badge colors, kept distinct from the Status (gray/blue/green/cyan/
+    // orange/rose/red) palette above.
     var TYPE_COLOR = { 'Committed': '#6f42c1', 'Aspiration': '#d63384', 'Learning': '#20c997' };
 
     function typePill(type) {
@@ -256,7 +248,7 @@
         var col = sortState.col, dir = sortState.dir;
         return list.slice().sort(function (a, b) {
             var av = a[col], bv = b[col];
-            if (col === 'id' || col === 'difficulty_level') {
+            if (col === 'id') {
                 av = Number(av) || 0;
                 bv = Number(bv) || 0;
             } else {
@@ -280,14 +272,14 @@
     }
 
     function canEdit(card) {
-        return !card.deleted_at && (CFG.requesterIsAdmin || card.issuer_staff_id === CFG.requesterId) && !card.incentive_locked;
+        return !card.deleted_at && (CFG.requesterIsAdmin || card.issuer_staff_id === CFG.requesterId);
     }
 
-    // Admin can delete any (non-locked) card; the issuer can only delete
-    // their own card while it's still a Draft - once it's Active/closed/etc.
-    // only an admin can remove it.
+    // Admin can delete any card; the issuer can only delete their own card
+    // while it's still a Draft - once it's Active/closed/etc. only an admin
+    // can remove it.
     function canDelete(card) {
-        if (card.deleted_at || card.incentive_locked) { return false; }
+        if (card.deleted_at) { return false; }
         if (CFG.requesterIsAdmin) { return true; }
         return card.issuer_staff_id === CFG.requesterId && card.result_status === 'Draft';
     }
@@ -297,7 +289,6 @@
         var statuses = getSelectedStatuses('okr-filter-status');
         var allStatusCount = allStatusCheckboxes('okr-filter-status').length;
         var type = typeFilter.value;
-        var level = levelFilter.value;
         var deptId = deptFilter.value;
         var ownerValueEl = document.getElementById('okr-filter-owner-value');
         var issuerValueEl = document.getElementById('okr-filter-issuer-value');
@@ -307,12 +298,13 @@
         var month = monthFilter.value;
         var startDate = startDateFilter.value;
         var endDate = endDateFilter.value;
+        var closureStart = closureStartFilter.value;
+        var closureEnd = closureEndFilter.value;
 
         var rows = CFG.cards.filter(function (card) {
             if (statuses.length === 0) return false;
             if (statuses.length < allStatusCount && statuses.indexOf(card.result_status) === -1) return false;
             if (type && card.okr_type !== type) return false;
-            if (level && String(card.difficulty_level) !== level) return false;
             if (deptId) {
                 var deptIds = (card.dept_scope || '').split(',').map(function (s) { return s.trim(); });
                 if (deptIds.indexOf(deptId) === -1) return false;
@@ -323,6 +315,8 @@
             if (month && card.start_date && String(parseInt(card.start_date.slice(5, 7), 10)) !== month) return false;
             if (startDate && card.start_date !== startDate) return false;
             if (endDate && card.end_date !== endDate) return false;
+            if (closureStart && (!card.closure_date || card.closure_date < closureStart)) return false;
+            if (closureEnd && (!card.closure_date || card.closure_date > closureEnd)) return false;
             if (deepLinkDateFrom && (!card.start_date || card.start_date < deepLinkDateFrom)) return false;
             if (deepLinkDateTo && (!card.start_date || card.start_date > deepLinkDateTo)) return false;
             if (deepLinkOverdueOnly) {
@@ -368,18 +362,18 @@
                 '<td>' + escapeHtml(card.objective).slice(0, 80) + '</td>' +
                 '<td>' + issuerCell(card) + '</td>' +
                 '<td>' + ownerCell(card) + '</td>' +
-                '<td>' + levelPill(card.difficulty_level) + '</td>' +
                 '<td>' + typePill(card.okr_type) + '</td>' +
                 '<td>' + escapeHtml(card.start_date) + '</td>' +
                 '<td>' + escapeHtml(card.end_date) + '</td>' +
                 '<td>' + statusCell + '</td>' +
+                '<td>' + escapeHtml(card.closure_date || '-') + '</td>' +
                 '<td class="okr-view-actions">' + actions + '</td>';
             tbody.appendChild(tr);
         });
     }
 
     searchFilter.addEventListener('input', render);
-    [typeFilter, levelFilter, deptFilter, yearFilter, monthFilter, startDateFilter, endDateFilter].forEach(function (el) {
+    [typeFilter, deptFilter, yearFilter, monthFilter, startDateFilter, endDateFilter, closureStartFilter, closureEndFilter].forEach(function (el) {
         el.addEventListener('change', render);
     });
     wireS2Dropdown('okr-filter-owner', render);
@@ -398,7 +392,6 @@
         searchFilter.value = '';
         resetStatusCheckboxDropdown('okr-filter-status');
         typeFilter.value = '';
-        levelFilter.value = '';
         deptFilter.value = '';
         resetS2Dropdown('okr-filter-owner', 'All owners');
         resetS2Dropdown('okr-filter-issuer', 'All issuers');
@@ -406,6 +399,8 @@
         monthFilter.value = '';
         startDateFilter.value = '';
         endDateFilter.value = '';
+        closureStartFilter.value = '';
+        closureEndFilter.value = '';
         deepLinkOverdueOnly = false;
         deepLinkDateFrom = '';
         deepLinkDateTo = '';

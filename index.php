@@ -178,13 +178,6 @@ window.OKR_DASH = <?php echo json_encode([
             <div class="okr-stat-label">active/extended past end date</div>
         </div>
     </div>
-    <div class="col-12 col-sm-6 col-xl">
-        <div class="okr-card okr-dash-stat h-100" data-statuses="Completed,Completed with Excellence,Completed with Extension" style="cursor:pointer;">
-            <div class="okr-card-title mb-1">Est. Incentive Forecast</div>
-            <div class="okr-stat-value okr-stat-value--orange" id="dash-incentive">---</div>
-            <div class="okr-stat-label">Complete + Excellence payout</div>
-        </div>
-    </div>
 </div>
 
 <!-- OKR Type Breakdown -->
@@ -216,34 +209,9 @@ window.OKR_DASH = <?php echo json_encode([
     </div>
 </div>
 
-<!-- Level table + Bar chart -->
+<!-- Bar chart -->
 <div class="row g-3">
-    <div class="col-lg-6">
-        <div class="okr-card h-100">
-            <h6 class="okr-card-title mb-0">OKR Difficulty Reward</h6>
-            <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Level 1 RM0; Level 2-4 follow incentive value</div>
-            <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0">
-                    <thead>
-                        <tr>
-                            <th style="font-size:12px;text-align:left;">Level</th>
-                            <th style="font-size:12px;text-align:left;">Cards</th>
-                            <th style="font-size:12px;text-align:left;">Completed</th>
-                            <th style="font-size:12px;text-align:left;">Excellence</th>
-                            <th style="font-size:12px;text-align:left;">Failed</th>
-                            <th style="font-size:12px;text-align:left;">Forecast</th>
-                        </tr>
-                    </thead>
-                    <tbody id="dash-level-body">
-                        <tr>
-                            <td colspan="6" class="text-muted" style="font-size:12px;">Loading...</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-6">
+    <div class="col-12">
         <div class="okr-card h-100">
             <h6 class="okr-card-title mb-0">Closure &amp; Failure Analysis</h6>
             <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Issuer-only closure: Completed, Excellence, Extended, Failed</div>
@@ -277,7 +245,7 @@ window.OKR_DASH = <?php echo json_encode([
                     <div class="okr-bar-count" id="bar-failed-n">-</div>
                 </div>
             </div>
-            <div class="text-muted mt-3" style="font-size:11px;">Critical CEO use: identify failure rate by department, issuer, level and month.</div>
+            <div class="text-muted mt-3" style="font-size:11px;">Critical CEO use: identify failure rate by department, issuer and month.</div>
         </div>
     </div>
 </div>
@@ -287,7 +255,7 @@ window.OKR_DASH = <?php echo json_encode([
     <div class="col-12">
         <div class="okr-card">
             <h6 class="okr-card-title mb-0">Department Breakdown</h6>
-            <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Cards, outcomes and incentive forecast by issuer department</div>
+            <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Cards and outcomes by issuer department</div>
             <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
                     <thead>
@@ -298,11 +266,36 @@ window.OKR_DASH = <?php echo json_encode([
                             <th style="font-size:12px;text-align:left;">Excellence</th>
                             <th style="font-size:12px;text-align:left;">Failed</th>
                             <th style="font-size:12px;text-align:left;">Fail Rate</th>
-                            <th style="font-size:12px;text-align:left;">Forecast</th>
+                            <th style="font-size:12px;text-align:left;">Suspended</th>
+                            <th style="font-size:12px;text-align:left;">Force Terminated</th>
                         </tr>
                     </thead>
                     <tbody id="dash-dept-body">
-                        <tr><td colspan="7" class="text-muted" style="font-size:12px;">Loading...</td></tr>
+                        <tr><td colspan="8" class="text-muted" style="font-size:12px;">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Suspended & Force Terminated - Top Staff -->
+<div class="row g-3 mt-0">
+    <div class="col-12">
+        <div class="okr-card">
+            <h6 class="okr-card-title mb-0">Suspended &amp; Force Terminated (Top Staff)</h6>
+            <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Issuers with the most suspended/force-terminated OKRs, in range</div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th style="font-size:12px;text-align:left;">Staff (Issuer)</th>
+                            <th style="font-size:12px;text-align:left;">Suspended</th>
+                            <th style="font-size:12px;text-align:left;">Force Terminated</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dash-staff-suspend-body">
+                        <tr><td colspan="3" class="text-muted" style="font-size:12px;">Loading...</td></tr>
                     </tbody>
                 </table>
             </div>

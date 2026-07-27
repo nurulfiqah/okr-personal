@@ -105,7 +105,124 @@ $_navbar_atem_folder = $_navbar_isLocal ? 'atem' : 'atem-staging';
                     <a class="nav-link" href="<?php echo $_navbar_atem_folder; ?>/admin/index.php">Admin</a>
                 </li>
                 <?php endif; ?>
+                <?php if ($okr_permission >= 1 || $okr_is_admin): ?>
+                <li class="nav-item dropdown ms-lg-auto">
+                    <a class="nav-link position-relative" href="#" id="okrNotifBell" role="button"
+                        data-bs-toggle="dropdown" aria-expanded="false" title="Notifications">
+                        <i class="bi bi-bell"></i>
+                        <span id="okr-notif-badge" class="okr-notif-badge okr-hidden">0</span>
+                    </a>
+                    <div class="dropdown-menu dropdown-menu-end okr-notif-menu" aria-labelledby="okrNotifBell">
+                        <div class="okr-notif-menu-header">
+                            <span>Notifications</span>
+                            <button type="button" class="btn btn-link btn-sm p-0" id="okr-notif-markall">Mark all read</button>
+                        </div>
+                        <div id="okr-notif-list" class="okr-notif-list">
+                            <div class="okr-notif-empty">No notifications.</div>
+                        </div>
+                    </div>
+                </li>
+                <?php endif; ?>
             </ul>
         </div>
     </div>
 </nav>
+<?php if ($okr_permission >= 1 || $okr_is_admin): ?>
+<script>
+(function () {
+    'use strict';
+    var API_URL = 'okr/backend.php';
+    var VIEW_URL = 'okr/view.php';
+    var POLL_MS = 8000;
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+
+    // Renders in the browser's local timezone (not UTC), same as
+    // atem/navbar.php's formatDateTime().
+    function formatDateTime(v) {
+        if (!v) { return ''; }
+        var d = new Date(String(v).replace(' ', 'T'));
+        if (isNaN(d.getTime())) { return v; }
+        var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        var hh = String(d.getHours()).padStart(2, '0');
+        var mm = String(d.getMinutes()).padStart(2, '0');
+        return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear() + ', ' + hh + ':' + mm;
+    }
+
+    function setBadge(count) {
+        var badge = document.getElementById('okr-notif-badge');
+        if (!badge) { return; }
+        if (count > 0) {
+            badge.textContent = count > 99 ? '99+' : String(count);
+            badge.classList.remove('okr-hidden');
+        } else {
+            badge.classList.add('okr-hidden');
+        }
+    }
+
+    function renderList(items) {
+        var list = document.getElementById('okr-notif-list');
+        if (!list) { return; }
+        if (!items.length) {
+            list.innerHTML = '<div class="okr-notif-empty">No notifications.</div>';
+            return;
+        }
+        var html = '';
+        for (var i = 0; i < items.length; i++) {
+            var n = items[i];
+            var snippet = (n.type === 'chat_message' && n.card_id)
+                ? 'You received a chat message on OKR #' + n.card_id
+                : 'New activity on OKR #' + n.card_id;
+            html += '<div class="okr-notif-item' + (!n.read_at ? ' okr-notif-item-unread' : '') + '" data-id="' + n.id + '" data-card-id="' + (n.card_id || '') + '">'
+                + '<div>' + escapeHtml(snippet) + '</div>'
+                + '<div class="okr-notif-item-time">' + escapeHtml(formatDateTime(n.created_at)) + '</div></div>';
+        }
+        list.innerHTML = html;
+    }
+
+    function refresh() {
+        fetch(API_URL + '?action=listNotifications')
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (res && res.success) {
+                    setBadge(res.unread_count || 0);
+                    renderList(res.data || []);
+                }
+            })
+            .catch(function () {});
+    }
+
+    document.addEventListener('click', function (e) {
+        var item = e.target.closest('.okr-notif-item');
+        if (item) {
+            var id = item.getAttribute('data-id');
+            var cardId = item.getAttribute('data-card-id');
+            var body = new URLSearchParams();
+            body.set('action', 'markNotificationRead');
+            body.set('id', id);
+            fetch(API_URL, { method: 'POST', body: body }).then(function () {
+                if (cardId) {
+                    window.location.href = VIEW_URL + '?id=' + cardId;
+                } else {
+                    refresh();
+                }
+            });
+            return;
+        }
+        if (e.target.closest('#okr-notif-markall')) {
+            e.preventDefault();
+            var body2 = new URLSearchParams();
+            body2.set('action', 'markAllNotificationsRead');
+            fetch(API_URL, { method: 'POST', body: body2 }).then(refresh);
+        }
+    });
+
+    refresh();
+    setInterval(refresh, POLL_MS);
+})();
+</script>
+<?php endif; ?>

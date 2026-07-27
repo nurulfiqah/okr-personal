@@ -24,7 +24,16 @@ if (!$result || mysqli_num_rows($result) === 0) {
 $row  = mysqli_fetch_assoc($result);
 $card = okrFormatCard($row);
 
-$can_suspend = (($okr_is_admin || $okr_permission === 5) && !$card['incentive_locked']);
+$can_suspend = ($okr_is_admin || $okr_permission === 5);
+$can_rate    = ($okr_is_admin || $okr_permission === 5);
+// Force Terminate uses the same gate as Suspend/Unsuspend (grade 5/admin).
+$can_force_terminate = $can_suspend;
+// Only the issuer can appeal, only while Suspended, only once per
+// suspension cycle (appealed_at is cleared on unsuspend/force-terminate).
+// Shown even when the issuer also happens to be admin/grade-5 (they still
+// see it alongside the CEO Action card's direct Unsuspend/Force Terminate).
+$can_appeal = ($card['issuer_staff_id'] === (int)$id_user
+    && $card['result_status'] === OKR_STATUS_SUSPENDED && empty($card['appealed_at']));
 
 function okrStaffDeptNames($conn, $staff_id) {
     if (empty($staff_id)) {
@@ -52,13 +61,23 @@ $dept_names2 = okrStaffDeptNames($conn, $card['owner2_staff_id']);
 $attachments     = okrFetchAttachments($conn, $card_id);
 $reference_links = okrFetchReferenceLinks($conn, $card_id);
 $audit_logs      = okrFetchAuditLogs($conn, $card_id);
+$key_results     = okrFetchKeyResults($conn, $card_id);
+$chat_messages   = okrFetchChatMessages($conn, $card_id);
+$can_post_chat   = okrCanPostChat($card, $id_user, $okr_is_admin);
 
 $okr_view_config = [
     'apiUrl'          => 'okr/backend.php',
+    'atemApiUrl'      => $_navbar_atem_folder . '/api.php',
+    'atemViewUrl'     => $_navbar_atem_folder . '/edit.php',
     'card'            => $card,
     'attachments'     => $attachments,
     'referenceLinks'  => $reference_links,
+    'keyResults'      => $key_results,
+    'chatMessages'    => $chat_messages,
+    'canPostChat'     => $can_post_chat,
+    'currentStaffId'  => (int)$id_user,
     'canSuspend'      => $can_suspend,
+    'canRate'         => $can_rate,
 ];
 ?>
 
@@ -88,25 +107,10 @@ $okr_view_config = [
                         value="<?php echo htmlspecialchars(empty($dept_names) ? '-' : implode(', ', $dept_names)); ?>"
                         readonly>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-6">
                     <label class="form-label">OKR Type</label>
                     <input type="text" class="form-control" value="<?php echo htmlspecialchars($card['okr_type']); ?>"
                         readonly>
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">OKR Complexity Level</label>
-                    <input type="text" class="form-control"
-                        value="<?php echo htmlspecialchars($card['level_label']); ?> (RM<?php echo number_format($card['level_rm'], 2); ?>)"
-                        readonly>
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Incentive Rule</label>
-                    <input type="text" class="form-control"
-                        value="<?php echo htmlspecialchars($card['incentive_rule_label']); ?>" readonly>
-                </div>
-                <div class="col-12">
-                    <label class="form-label">Key Results</label>
-                    <div id="okr-key-results-editor"><?php echo $card['key_results']; ?></div>
                 </div>
             </div>
         </div>
@@ -114,68 +118,25 @@ $okr_view_config = [
 
     <div class="okr-bento-item okr-span-4">
         <div class="okr-card mb-3">
-            <h6 class="okr-card-title"><i class="bi bi-cash-coin"></i> Estimated Incentive</h6>
-            <p class="okr-card-hint">This shows an estimated incentive based on the selected level and rule. The company
-                reserves the right to determine the final payout under its incentive scheme.</p>
-            <?php
-            $is_paid      = $card['pays_incentive'];
-            $is_forecast  = !$is_paid && !in_array($card['result_status'], ['Failed', OKR_STATUS_SUSPENDED], true);
-            $show_amount  = $is_paid || $is_forecast;
-            $tile_amount  = $show_amount ? $card['level_rm'] : 0;
-            $tile_label   = $is_paid ? 'Total Incentive' : 'Estimated Incentive';
-            $tile_class   = okrIncentiveTileClass($card['result_status']);
-            ?>
-            <div class="okr-incentive-tile <?php echo $tile_class; ?> mt-2">
-                <div class="okr-incentive-tile-label"><?php echo $tile_label; ?></div>
-                <div class="okr-incentive-tile-value">RM<?php echo number_format($tile_amount, 2); ?></div>
+            <h6 class="okr-card-title"><i class="bi bi-star"></i> Rating</h6>
+            <div class="okr-star-rating" id="okr-star-rating">
+                <div class="okr-star-display" id="okr-star-display"></div>
             </div>
-            <?php if ($show_amount): ?>
-            <div class="okr-incentive-breakdown">
-                <?php if ($card['owner2_name']): ?>
-                <?php if ($card['incentive_rule_code'] === 'RULE1'): ?>
-                <div class="okr-incentive-stat" style="grid-column: 1 / -1;">
-                    <span
-                        class="okr-incentive-stat-label"><?php echo htmlspecialchars($card['incentivised_owner_name']); ?>
-                        (100%)</span>
-                    <span class="okr-incentive-stat-value">RM<?php echo number_format($card['level_rm'], 2); ?></span>
-                </div>
-                <?php else: ?>
-                <div class="okr-incentive-stat">
-                    <span class="okr-incentive-stat-label">1st Owner &middot;
-                        <?php echo htmlspecialchars($card['owner_name']); ?></span>
-                    <span
-                        class="okr-incentive-stat-value">RM<?php echo number_format($card['level_rm'] / 2, 2); ?></span>
-                </div>
-                <div class="okr-incentive-stat">
-                    <span class="okr-incentive-stat-label">2nd Owner &middot;
-                        <?php echo htmlspecialchars($card['owner2_name']); ?></span>
-                    <span
-                        class="okr-incentive-stat-value">RM<?php echo number_format($card['level_rm'] / 2, 2); ?></span>
-                </div>
+            <p class="okr-card-hint mb-0" id="okr-star-meta">
+                <?php if ($card['rating'] !== null):
+                    $rating_pct = round(((float)$card['rating'] / 5) * 100);
+                ?>
+                Rated <?php echo number_format((float)$card['rating'], 1); ?> / 5 (<?php echo $rating_pct; ?>%)
+                <?php if ($card['rated_by_name']): ?>
+                by <?php echo htmlspecialchars($card['rated_by_name']); ?>
+                <?php endif; ?>
+                <?php if ($card['rated_at']): ?>
+                on <?php echo htmlspecialchars(substr((string)$card['rated_at'], 0, 10)); ?>
                 <?php endif; ?>
                 <?php else: ?>
-                <div class="okr-incentive-stat" style="grid-column: 1 / -1;">
-                    <span class="okr-incentive-stat-label">Owner &middot;
-                        <?php echo htmlspecialchars($card['owner_name']); ?></span>
-                    <span class="okr-incentive-stat-value">RM<?php echo number_format($card['level_rm'], 2); ?></span>
-                </div>
+                Not yet rated
                 <?php endif; ?>
-            </div>
-            <?php endif; ?>
-            <?php if ($card['incentive_locked']): ?>
-            <p class="okr-card-hint mb-0">
-                <i class="bi bi-lock-fill"></i> Locked after
-                payout<?php echo $card['locked_by_name'] ? ' by ' . htmlspecialchars($card['locked_by_name']) : ''; ?><?php echo $card['locked_at'] ? ' on ' . htmlspecialchars(substr($card['locked_at'], 0, 10)) : ''; ?>.
             </p>
-            <?php if (!empty($card['payout_remark'])): ?>
-            <p class="okr-card-hint mb-0"><em>"<?php echo htmlspecialchars($card['payout_remark']); ?>"</em></p>
-            <?php endif; ?>
-            <?php elseif ($card['unlocked_by_name']): ?>
-            <p class="okr-card-hint mb-0">
-                <i class="bi bi-unlock"></i> Unlocked by
-                <?php echo htmlspecialchars($card['unlocked_by_name']); ?><?php echo $card['unlocked_at'] ? ' on ' . htmlspecialchars(substr($card['unlocked_at'], 0, 10)) : ''; ?>.
-            </p>
-            <?php endif; ?>
         </div>
 
         <div class="okr-card mb-3">
@@ -190,13 +151,38 @@ $okr_view_config = [
             <div id="okr-reflink-list" class="okr-reflink-list"></div>
         </div>
 
+        <?php if ($card['result_status'] === OKR_STATUS_SUSPENDED): ?>
+        <div class="okr-card">
+            <div class="okr-alert-notice mb-2">
+                Any unattended suspended OKR will be terminated after 30 days.
+            </div>
+        </div>
+        <?php endif; ?>
+
         <?php if ($can_suspend): ?>
         <div class="okr-card">
             <h6 class="okr-card-title"><i class="bi bi-pause-circle"></i> CEO Action</h6>
             <div class="okr-form-error" id="okr-suspend-error"></div>
             <?php if ($card['result_status'] === OKR_STATUS_SUSPENDED): ?>
-            <button type="button" class="btn btn-outline-secondary btn-sm w-100" id="okr-unsuspend-btn">Unsuspend
+            <?php if (!empty($card['appealed_at'])): ?>
+            <div class="okr-card-hint mb-2">
+                <strong>Appeal submitted</strong> on
+                <?php echo htmlspecialchars(substr((string)$card['appealed_at'], 0, 10)); ?>:<br>
+                <?php echo nl2br(htmlspecialchars($card['appeal_justification'])); ?>
+            </div>
+            <?php endif; ?>
+            <button type="button" class="btn btn-outline-secondary btn-sm w-100 mb-2" id="okr-unsuspend-btn">Unsuspend
                 OKR</button>
+            <button type="button" class="btn btn-outline-danger btn-sm w-100" id="okr-force-terminate-btn">Force
+                Terminate</button>
+            <div id="okr-force-terminate-wrap" style="display:none;" class="mt-2">
+                <label for="okr-force-terminate-remark" class="form-label">Remark <span class="okr-req">*</span></label>
+                <textarea class="form-control" id="okr-force-terminate-remark" rows="3"
+                    placeholder="Why is this OKR being force terminated?"></textarea>
+                <div class="okr-form-error" id="okr-force-terminate-remark-error"></div>
+                <button type="button" class="btn btn-danger btn-sm w-100 mt-2"
+                    id="okr-force-terminate-confirm-btn">Force Terminate OKR</button>
+            </div>
             <?php else: ?>
             <p class="okr-card-hint">Only the CEO can suspend an OKR.</p>
             <button type="button" class="btn btn-outline-secondary btn-sm w-100" id="okr-suspend-btn">Suspend
@@ -212,13 +198,31 @@ $okr_view_config = [
             <?php endif; ?>
         </div>
         <?php endif; ?>
+
+        <?php if ($can_appeal): ?>
+        <div class="okr-card">
+            <h6 class="okr-card-title"><i class="bi bi-megaphone"></i> Appeal Suspension</h6>
+            <p class="okr-card-hint">Submit a justification for the CEO to review.</p>
+            <div class="okr-form-error" id="okr-appeal-error"></div>
+            <button type="button" class="btn btn-outline-secondary btn-sm w-100" id="okr-appeal-btn">Appeal</button>
+            <div id="okr-appeal-wrap" style="display:none;" class="mt-2">
+                <label for="okr-appeal-justification" class="form-label">Justification <span
+                        class="okr-req">*</span></label>
+                <textarea class="form-control" id="okr-appeal-justification" rows="3"
+                    placeholder="Why should this suspension be reversed?"></textarea>
+                <div class="okr-form-error" id="okr-appeal-justification-error"></div>
+                <button type="button" class="btn btn-primary btn-sm w-100 mt-2" id="okr-appeal-confirm-btn">Submit
+                    Appeal</button>
+            </div>
+        </div>
+        <?php endif; ?>
     </div>
 
     <div class="okr-bento-item okr-span-12">
         <div class="okr-card">
             <h6 class="okr-card-title"><i class="bi bi-people"></i> Owner(s)</h6>
             <div class="row g-3 mt-1">
-                <div class="col-md-6">
+                <div class="col-12">
                     <div class="okr-arci-col">
                         <div class="okr-arci-col-head">
                             <span><strong>A</strong> - Accountable (Owner)</span>
@@ -232,9 +236,6 @@ $okr_view_config = [
                                     <div class="okr-arci-member-name">
                                         <?php echo htmlspecialchars($card['owner_name']); ?></div>
                                 </div>
-                                <?php if ($card['owner2_name'] && $card['incentive_rule_code'] === 'RULE1' && $card['incentivised_owner_staff_id'] === $card['owner_staff_id']): ?>
-                                <span class="okr-arci-incentivised-badge">Incentivised</span>
-                                <?php endif; ?>
                             </div>
                             <?php if ($card['owner2_name']): ?>
                             <div class="okr-arci-member">
@@ -245,21 +246,11 @@ $okr_view_config = [
                                     <div class="okr-arci-member-name">
                                         <?php echo htmlspecialchars($card['owner2_name']); ?></div>
                                 </div>
-                                <?php if ($card['incentive_rule_code'] === 'RULE1' && $card['incentivised_owner_staff_id'] === $card['owner2_staff_id']): ?>
-                                <span class="okr-arci-incentivised-badge">Incentivised</span>
-                                <?php endif; ?>
                             </div>
                             <?php endif; ?>
                         </div>
                     </div>
                 </div>
-                <?php if ($card['owner2_name']): ?>
-                <div class="col-md-6">
-                    <label class="form-label">Purpose of joint ownership</label>
-                    <input type="text" class="form-control"
-                        value="<?php echo htmlspecialchars($card['owner2_purpose']); ?>" readonly>
-                </div>
-                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -322,6 +313,27 @@ $okr_view_config = [
 </div>
 
 <div class="okr-card mt-3">
+    <h6 class="okr-card-title"><i class="bi bi-list-task"></i> Key Result Progress</h6>
+    <div id="okr-kr-list" class="okr-kr-list"></div>
+</div>
+
+<div class="okr-card mt-3" id="okr-chat-card">
+    <h6 class="okr-card-title"><i class="bi bi-chat-dots"></i> Chat</h6>
+    <p class="okr-card-hint">Shared discussion thread for this OKR's issuer, owner(s), and admins.</p>
+    <div id="okr-chat-wrap" class="okr-chat-wrap"></div>
+    <?php if ($can_post_chat): ?>
+    <div class="okr-chat-composer" id="okr-chat-composer">
+        <textarea class="form-control" id="okr-chat-input" rows="2" maxlength="4000"
+            placeholder="Write a message..."></textarea>
+        <div class="okr-form-error" id="okr-chat-error"></div>
+        <div class="okr-chat-composer-actions">
+            <button type="button" class="btn btn-primary btn-sm" id="okr-chat-send-btn">Send</button>
+        </div>
+    </div>
+    <?php endif; ?>
+</div>
+
+<div class="okr-card mt-3">
     <h6 class="okr-card-title"><i class="bi bi-clock-history"></i> Activity Log</h6>
     <?php if (empty($audit_logs)): ?>
     <div class="okr-empty-state">No activity recorded yet.</div>
@@ -372,8 +384,6 @@ $okr_view_config = [
     </div>
 </div>
 
-<link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
-<script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
 <script>
 var OKR_VIEW_CONFIG = <?php echo json_encode($okr_view_config); ?>;
 </script>

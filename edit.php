@@ -26,7 +26,7 @@ if (!$result || mysqli_num_rows($result) === 0) {
 $row  = mysqli_fetch_assoc($result);
 $card = okrFormatCard($row);
 
-$can_edit = (($okr_is_admin || $card['issuer_staff_id'] === (int)$id_user) && !$card['incentive_locked']);
+$can_edit = ($okr_is_admin || $card['issuer_staff_id'] === (int)$id_user);
 if (!$can_edit || $card['result_status'] === OKR_STATUS_SUSPENDED) {
     header('Location: /odb/okr/view.php?id=' . $card_id);
     exit;
@@ -64,35 +64,11 @@ if ($dept_res) {
     }
 }
 
-$levels = [];
-$level_res = mysqli_query($conn, 'SELECT level, label, rubric_text, base_rm FROM okr_levels ORDER BY level');
-if ($level_res) {
-    while ($lrow = mysqli_fetch_assoc($level_res)) {
-        $levels[] = [
-            'level'       => (int)$lrow['level'],
-            'label'       => $lrow['label'],
-            'rubric_text' => $lrow['rubric_text'],
-            'base_rm'     => (float)$lrow['base_rm'],
-        ];
-    }
-}
-
-$incentive_rules = [];
-$rule_res = mysqli_query($conn, 'SELECT id, code, label, payout_logic FROM okr_incentive_rules ORDER BY id');
-if ($rule_res) {
-    while ($rrow = mysqli_fetch_assoc($rule_res)) {
-        $incentive_rules[] = [
-            'id'           => (int)$rrow['id'],
-            'code'         => $rrow['code'],
-            'label'        => $rrow['label'],
-            'payout_logic' => $rrow['payout_logic'],
-        ];
-    }
-}
-
 $attachments     = okrFetchAttachments($conn, $card_id);
 $reference_links = okrFetchReferenceLinks($conn, $card_id);
 $audit_logs      = okrFetchAuditLogs($conn, $card_id);
+$chat_messages   = okrFetchChatMessages($conn, $card_id);
+$can_post_chat   = okrCanPostChat($card, $id_user, $okr_is_admin);
 
 // Timeline dropdown options: every assignable status except Suspended /
 // Completed with Extension (system-managed, see okrTimelineAssignableStatuses).
@@ -101,30 +77,22 @@ $timeline_status_options = array_values(array_filter($all_statuses, function ($s
     return $s['value'] !== OKR_STATUS_SUSPENDED && $s['value'] !== OKR_STATUS_COMPLETED_EXTENSION;
 }));
 
-// Per-status metadata for js/edit.js's live incentive-tile preview as the
-// user changes the Status dropdown - computed here once instead of edit.js
-// maintaining its own hardcoded copy of pill/tile classes and paid statuses.
-$status_meta = [];
-foreach ($all_statuses as $s) {
-    $status_meta[$s['value']] = [
-        'pays_incentive'       => (bool)$s['pays_incentive'],
-        'pill_class'           => okrPillClass($s['value']),
-        'incentive_tile_class' => okrIncentiveTileClass($s['value']),
-    ];
-}
-
 $okr_config = [
     'apiUrl'          => 'okr/backend.php',
+    'atemApiUrl'      => $_navbar_atem_folder . '/api.php',
+    'atemViewUrl'     => $_navbar_atem_folder . '/edit.php',
     'card'            => $card,
     'staff'           => $staff_list,
     'departments'     => $departments,
-    'levels'          => $levels,
-    'incentiveRules'  => $incentive_rules,
     'attachments'     => $attachments,
     'referenceLinks'  => $reference_links,
     'deptScopeIds'    => empty($card['dept_scope']) ? [] : okrDeptIdsFromCsv($card['dept_scope']),
     'backdateEnabled' => okrBackdateEnabled($conn),
-    'statusMeta'      => $status_meta,
+    'currentUserName' => $nama_staff ?? '',
+    'keyResultStatuses' => okrKeyResultAssignableStatuses($conn),
+    'chatMessages'    => $chat_messages,
+    'canPostChat'     => $can_post_chat,
+    'currentStaffId'  => (int)$id_user,
 ];
 ?>
 
@@ -172,63 +140,11 @@ $okr_config = [
                     </select>
                     <div class="okr-form-error" id="okr-type-error"></div>
                 </div>
-                <div class="col-md-6">
-                    <label for="okr-level" class="form-label">OKR Complexity Level <span
-                            class="okr-req">*</span></label>
-                    <select class="form-select" id="okr-level">
-                        <option value="">Select level</option>
-                    </select>
-                    <div class="okr-form-error" id="okr-level-error"></div>
-                </div>
-                <div class="col-md-6" id="okr-incentive-rule-wrap">
-                    <label for="okr-incentive-rule" class="form-label">Incentive Rule <span
-                            class="okr-req">*</span></label>
-                    <select class="form-select" id="okr-incentive-rule">
-                        <option value="">Select rule</option>
-                    </select>
-                    <div class="okr-form-error" id="okr-incentive-rule-error"></div>
-                </div>
-                <div class="col-md-6 d-flex flex-column">
-                    <label class="form-label invisible">Incentive Rule</label>
-                    <div class="d-flex align-items-center okr-incentive-rule-hint-row">
-                        <p class="okr-card-hint mb-0" id="okr-incentive-rule-hint">Select an incentive rule to see how
-                            the payout will be split.</p>
-                    </div>
-                    <div class="okr-form-error"></div>
-                </div>
-                <div class="col-12">
-                    <label class="form-label">Key Results <span class="okr-req">*</span></label>
-                    <div id="okr-key-results-editor"><?php echo $card['key_results']; ?></div>
-                    <div class="okr-form-error" id="okr-key-results-error"></div>
-                </div>
             </div>
         </div>
     </div>
 
     <div class="okr-bento-item okr-span-4">
-        <div class="okr-card mb-3">
-            <h6 class="okr-card-title"><i class="bi bi-cash-coin"></i> Estimated Incentive</h6>
-            <p class="okr-card-hint" id="okr-level-rubric">Select a difficulty level to see its rubric and RM.</p>
-            <div class="okr-incentive-tile <?php echo okrIncentiveTileClass($card['result_status']); ?> mt-2"
-                id="okr-incentive-tile">
-                <div class="okr-incentive-tile-label" id="okr-incentive-tile-label">
-                    <?php echo $card['pays_incentive'] ? 'Total Incentive' : 'Estimated Incentive'; ?></div>
-                <div class="okr-incentive-tile-value" id="okr-level-rm">RM0.00</div>
-            </div>
-            <div class="okr-incentive-breakdown" id="okr-incentive-breakdown" style="display:none;">
-                <div class="okr-incentive-stat" id="okr-incentive-stat1">
-                    <span class="okr-incentive-stat-label" id="okr-incentive-stat1-label">1st Owner</span>
-                    <span class="okr-incentive-stat-value" id="okr-incentive-stat1-value">RM0.00</span>
-                </div>
-                <div class="okr-incentive-stat" id="okr-incentive-stat2" style="display:none;">
-                    <span class="okr-incentive-stat-label" id="okr-incentive-stat2-label">2nd Owner</span>
-                    <span class="okr-incentive-stat-value" id="okr-incentive-stat2-value">RM0.00</span>
-                </div>
-            </div>
-            <p class="okr-card-hint mt-2">This shows an estimated incentive based on the selected level and rule. The
-                company reserves the right to determine the final payout under its incentive scheme.</p>
-        </div>
-
         <div class="okr-card mb-3">
             <h6 class="okr-card-title"><i class="bi bi-paperclip"></i> Attachment</h6>
             <p class="okr-card-hint">Upload supporting files (max 10MB each).</p>
@@ -264,7 +180,7 @@ $okr_config = [
                 jointly-run OKRs.</p>
 
             <div class="okr-arci-add">
-                <div class="okr-arci-add-grid">
+                <div class="okr-arci-add-grid okr-arci-add-grid-3">
                     <div>
                         <label class="form-label">Department</label>
                         <input type="text" class="form-control mb-1" id="okr-owner-dept-search"
@@ -283,28 +199,18 @@ $okr_config = [
                         <button type="button" class="btn btn-primary btn-sm mt-2 w-100" id="okr-owner-add-btn">Add
                             Selected</button>
                     </div>
-                </div>
-                <div class="okr-form-error" id="okr-owner-error"></div>
-            </div>
-
-            <div class="row g-3 mt-1">
-                <div class="col-md-6">
-                    <div class="okr-arci-col">
-                        <div class="okr-arci-col-head">
-                            <span><strong>A</strong> - Accountable (Owner)</span>
-                        </div>
-                        <div class="okr-arci-members" id="okr-owner-members">
-                            <div class="okr-arci-empty">No owners assigned</div>
+                    <div>
+                        <div class="okr-arci-col">
+                            <div class="okr-arci-col-head">
+                                <span><strong>A</strong> - Accountable (Owner)</span>
+                            </div>
+                            <div class="okr-arci-members" id="okr-owner-members">
+                                <div class="okr-arci-empty">No owners assigned</div>
+                            </div>
                         </div>
                     </div>
                 </div>
-                <div class="col-md-6" id="okr-owner2-purpose-wrap" style="display:none;">
-                    <label for="okr-owner2-purpose" class="form-label">Purpose of joint ownership</label>
-                    <input type="text" class="form-control" id="okr-owner2-purpose"
-                        placeholder="e.g. jointly run with trainee management team"
-                        value="<?php echo htmlspecialchars($card['owner2_purpose'] ?? ''); ?>">
-                    <div class="okr-form-error" id="okr-owner2-purpose-error"></div>
-                </div>
+                <div class="okr-form-error" id="okr-owner-error"></div>
             </div>
         </div>
     </div>
@@ -317,13 +223,19 @@ $okr_config = [
                 <div class="col-md-4">
                     <label for="okr-start" class="form-label">Start Date</label>
                     <input type="date" class="form-control" id="okr-start"
-                        value="<?php echo htmlspecialchars($card['start_date']); ?>" disabled>
+                        value="<?php echo htmlspecialchars($card['start_date']); ?>"
+                        <?php echo $okr_is_admin ? '' : 'disabled'; ?>>
                     <div class="okr-form-error" id="okr-start-error"></div>
+                    <?php if (!$okr_is_admin): ?>
+                    <p class="okr-card-hint mb-0">Dates are locked once an OKR is created; only an admin can change
+                        them.</p>
+                    <?php endif; ?>
                 </div>
                 <div class="col-md-4">
                     <label for="okr-end" class="form-label">End Date <span class="okr-req">*</span></label>
                     <input type="date" class="form-control" id="okr-end"
-                        value="<?php echo htmlspecialchars($card['end_date']); ?>">
+                        value="<?php echo htmlspecialchars($card['end_date']); ?>"
+                        <?php echo $okr_is_admin ? '' : 'disabled'; ?>>
                     <div class="okr-form-error" id="okr-end-error"></div>
                 </div>
                 <div class="col-md-4">
@@ -352,8 +264,7 @@ $okr_config = [
                     <p class="okr-card-hint">This OKR has been extended, so it can now only resolve as Completed with
                         Extension or Failed.</p>
                     <?php elseif ($card['extended']): ?>
-                    <p class="okr-card-hint">This OKR has been extended. As an admin, you can still set any status until
-                        it is marked as paid.</p>
+                    <p class="okr-card-hint">This OKR has been extended. As an admin, you can still set any status.</p>
                     <?php endif; ?>
                     <div class="okr-form-error" id="okr-status-error"></div>
                 </div>
@@ -406,6 +317,33 @@ $okr_config = [
 </div>
 
 <div class="okr-card mt-3">
+    <div class="okr-kr-header">
+        <h6 class="okr-card-title mb-0"><i class="bi bi-list-task"></i> Key Result Progress</h6>
+        <button type="button" class="btn btn-primary btn-sm" id="okr-kr-add-btn">Add Key Result</button>
+    </div>
+    <p class="okr-card-hint">Break this OKR down into Key Results, and optionally split a Key Result into
+        subtasks. A Key Result with subtasks shows its progress as the average of those subtasks.</p>
+    <div id="okr-kr-list" class="okr-kr-list"></div>
+    <div class="okr-form-error" id="okr-kr-error"></div>
+</div>
+
+<div class="okr-card mt-3" id="okr-chat-card">
+    <h6 class="okr-card-title"><i class="bi bi-chat-dots"></i> Chat</h6>
+    <p class="okr-card-hint">Shared discussion thread for this OKR's issuer, owner(s), and admins.</p>
+    <div id="okr-chat-wrap" class="okr-chat-wrap"></div>
+    <?php if ($can_post_chat): ?>
+    <div class="okr-chat-composer" id="okr-chat-composer">
+        <textarea class="form-control" id="okr-chat-input" rows="2" maxlength="4000"
+            placeholder="Write a message..."></textarea>
+        <div class="okr-form-error" id="okr-chat-error"></div>
+        <div class="okr-chat-composer-actions">
+            <button type="button" class="btn btn-primary btn-sm" id="okr-chat-send-btn">Send</button>
+        </div>
+    </div>
+    <?php endif; ?>
+</div>
+
+<div class="okr-card mt-3">
     <h6 class="okr-card-title"><i class="bi bi-clock-history"></i> Activity Log</h6>
     <?php if (empty($audit_logs)): ?>
     <div class="okr-empty-state">No activity recorded yet.</div>
@@ -452,11 +390,81 @@ $okr_config = [
     </div>
 </div>
 
+<!-- Add/Edit Key Result / Subtask modal -->
+<div class="modal fade" id="okr-kr-modal" tabindex="-1" aria-labelledby="okr-kr-modal-title" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="okr-kr-modal-title">Add Key Result</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="okr-kr-id" value="">
+                <input type="hidden" id="okr-kr-parent-id" value="">
+                <div class="mb-3">
+                    <label for="okr-kr-desc" class="form-label">Action Details <span class="okr-req">*</span></label>
+                    <textarea class="form-control" id="okr-kr-desc" rows="3"></textarea>
+                </div>
+                <div class="row g-2 mb-2">
+                    <div class="col-6">
+                        <label for="okr-kr-start" class="form-label">Start Date</label>
+                        <input type="date" class="form-control" id="okr-kr-start">
+                    </div>
+                    <div class="col-6">
+                        <label for="okr-kr-end" class="form-label">End Date</label>
+                        <input type="date" class="form-control" id="okr-kr-end">
+                    </div>
+                </div>
+                <div class="mb-2" id="okr-kr-status-wrap">
+                    <label for="okr-kr-status" class="form-label">Status</label>
+                    <select class="form-select" id="okr-kr-status">
+                        <?php foreach ($okr_config['keyResultStatuses'] as $st): ?>
+                        <option value="<?php echo (int)$st['id']; ?>"><?php echo htmlspecialchars($st['value']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Created By</label>
+                    <input type="text" class="form-control" id="okr-kr-created-by" readonly>
+                </div>
+                <div class="okr-form-error" id="okr-kr-modal-error"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="okr-kr-save-btn">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Link ATEM modal - picks an existing card from the real ATEM module -->
+<div class="modal fade" id="okr-kr-atem-modal" tabindex="-1" aria-labelledby="okr-kr-atem-modal-title"
+    aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="okr-kr-atem-modal-title">Link ATEM</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="okr-kr-atem-target-id" value="">
+                <div class="mb-2">
+                    <label for="okr-kr-atem-search" class="form-label">Search ATEM cards</label>
+                    <input type="text" class="form-control" id="okr-kr-atem-search" placeholder="Search by title...">
+                </div>
+                <div id="okr-kr-atem-list" class="okr-kr-atem-list"></div>
+                <div class="okr-form-error" id="okr-kr-atem-modal-error"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 var OKR_EDIT_CONFIG = <?php echo json_encode($okr_config); ?>;
 </script>
-<link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
-<script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
 <?php
 $page_js = 'okr/js/edit.js';
 include('footer.php');

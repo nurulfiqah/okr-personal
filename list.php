@@ -26,8 +26,7 @@ if ($list_dept_res) {
 $list_type_options = okrTypeValues($conn, false);
 
 // Year options driven by what's actually in the data, not a fixed range,
-// since this list spans every card the requester can see (unlike
-// Performance, which is scoped to payout years).
+// since this list spans every card the requester can see.
 $list_years = [];
 foreach ($cards as $c) {
     if (!empty($c['start_date'])) { $list_years[(int)substr($c['start_date'], 0, 4)] = true; }
@@ -144,18 +143,20 @@ $okr_list_config = [
         </div>
     </div>
 
-    <!-- Row 2: Level | Department | Owner | Issuer | Search | (buttons) -->
-    <div class="row row-cols-md-6 row-cols-2 g-2 mt-0 align-items-end">
+    <!-- Row 1b: Closure Date range -->
+    <div class="row row-cols-md-6 row-cols-2 g-2 mt-0">
         <div class="col">
-            <label class="form-label">Level</label>
-            <select class="form-select form-select-sm" id="okr-filter-level">
-                <option value="">All levels</option>
-                <option value="1">Level 1</option>
-                <option value="2">Level 2</option>
-                <option value="3">Level 3</option>
-                <option value="4">Level 4</option>
-            </select>
+            <label class="form-label">Closure Date From</label>
+            <input type="date" class="form-control form-control-sm" id="okr-filter-closure-start">
         </div>
+        <div class="col">
+            <label class="form-label">Closure Date To</label>
+            <input type="date" class="form-control form-control-sm" id="okr-filter-closure-end">
+        </div>
+    </div>
+
+    <!-- Row 2: Department | Owner | Issuer | Search | (buttons) -->
+    <div class="row row-cols-md-5 row-cols-2 g-2 mt-0 align-items-end">
         <div class="col">
             <label class="form-label">Department</label>
             <select class="form-select form-select-sm" id="okr-filter-dept">
@@ -221,11 +222,11 @@ $okr_list_config = [
                     <th class="okr-sortable" data-col="objective">Objective</th>
                     <th class="okr-sortable" data-col="issuer_name">Issuer</th>
                     <th>Owner(s)</th>
-                    <th class="okr-sortable" data-col="difficulty_level">Level</th>
                     <th>Type</th>
                     <th class="okr-sortable" data-col="start_date">Start Date</th>
                     <th class="okr-sortable" data-col="end_date">End Date</th>
                     <th class="okr-sortable" data-col="result_status">Status</th>
+                    <th class="okr-sortable" data-col="closure_date">Closure Date</th>
                     <th style="width:110px;">Action</th>
                 </tr>
             </thead>

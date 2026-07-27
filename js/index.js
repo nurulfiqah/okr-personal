@@ -18,11 +18,6 @@
         return (n || 0).toLocaleString('en-MY');
     }
 
-    function formatRM(n) {
-        var val = Math.round(n || 0);
-        return 'RM' + val.toLocaleString('en-MY');
-    }
-
     function setText(id, val) {
         var el = document.getElementById(id);
         if (el) { el.textContent = val; }
@@ -133,37 +128,7 @@
         setText('dash-closed',    formatNumber(closed));
         setText('dash-failed',    formatNumber(failed));
         setText('dash-fail-rate', failRate);
-        setText('dash-incentive', formatRM(data.incentive_total));
         setText('dash-overdue',   formatNumber(data.overdue_count || 0));
-
-        var tbody = document.getElementById('dash-level-body');
-        if (tbody && data.by_level) {
-            var html = '';
-            for (var i = 0; i < data.by_level.length; i++) {
-                var l = data.by_level[i];
-                var forecast = l.level_id === 1 ? 'RM0' : formatRM(l.forecast);
-                html += '<tr>' +
-                    '<td style="font-size:12px;font-weight:600;text-align:left;">' + l.label + '</td>' +
-                    '<td style="font-size:12px;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-level="' + l.level_id + '" data-nav-status="">' + l.cards + '</td>' +
-                    '<td style="font-size:12px;color:#0d6efd;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-level="' + l.level_id + '" data-nav-status="Completed,Completed with Extension">' + l.complete + '</td>' +
-                    '<td style="font-size:12px;color:#198754;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-level="' + l.level_id + '" data-nav-status="Completed with Excellence">' + l.excellence + '</td>' +
-                    '<td style="font-size:12px;color:#dc3545;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-level="' + l.level_id + '" data-nav-status="Failed">' + l.fail + '</td>' +
-                    '<td style="font-size:12px;text-align:left;">' + forecast + '</td>' +
-                    '</tr>';
-            }
-            tbody.innerHTML = html || '<tr><td colspan="6" class="text-muted" style="font-size:12px;">No data for the selected period.</td></tr>';
-            tbody.onclick = function (e) {
-                var td = e.target;
-                while (td && td !== tbody) {
-                    if (td.tagName === 'TD' && td.hasAttribute('data-nav-level')) {
-                        var navStatus = td.getAttribute('data-nav-status') || '';
-                        window.location.href = buildListUrl('', navStatus ? navStatus.split(',') : [], false, td.getAttribute('data-nav-level'));
-                        return;
-                    }
-                    td = td.parentNode;
-                }
-            };
-        }
 
         setWidth('bar-complete',   total > 0 ? Math.round((s.complete   || 0) / total * 100) : 0);
         setWidth('bar-excellence', total > 0 ? Math.round((s.excellence || 0) / total * 100) : 0);
@@ -195,7 +160,7 @@
                     while (td && td !== typeTbody) {
                         if (td.tagName === 'TD' && td.hasAttribute('data-nav-type')) {
                             var navStatus = td.getAttribute('data-nav-status') || '';
-                            window.location.href = buildListUrl('', navStatus ? navStatus.split(',') : [], false, '', '', td.getAttribute('data-nav-type'));
+                            window.location.href = buildListUrl('', navStatus ? navStatus.split(',') : [], false, '', td.getAttribute('data-nav-type'));
                             return;
                         }
                         td = td.parentNode;
@@ -215,7 +180,6 @@
                     var dFail     = dept.fail || 0;
                     var dCards    = dept.cards || 0;
                     var dFailRate = dCards > 0 ? (dFail / dCards * 100).toFixed(1) + '%' : '0%';
-                    var dForecast = dept.forecast > 0 ? formatRM(dept.forecast) : 'RM0';
                     var dId = dept.dept_id || '';
                     // Unassigned (dept_id 0, no dept scope on the issuer) has
                     // nothing valid to filter list.php by - render plain text.
@@ -227,7 +191,8 @@
                         '<td style="font-size:12px;color:#198754;text-align:left;' + dClickable + '"' + (dId ? ' data-nav-dept="' + dId + '" data-nav-status="Completed with Excellence"' : '') + '>' + (dept.excellence || 0) + '</td>' +
                         '<td style="font-size:12px;color:#dc3545;text-align:left;' + dClickable + '"' + (dId ? ' data-nav-dept="' + dId + '" data-nav-status="Failed"' : '') + '>' + dFail + '</td>' +
                         '<td style="font-size:12px;text-align:left;">' + dFailRate + '</td>' +
-                        '<td style="font-size:12px;text-align:left;">' + dForecast + '</td>' +
+                        '<td style="font-size:12px;color:#e11d48;text-align:left;' + dClickable + '"' + (dId ? ' data-nav-dept="' + dId + '" data-nav-status="Suspended"' : '') + '>' + (dept.suspended || 0) + '</td>' +
+                        '<td style="font-size:12px;color:#6610f2;text-align:left;' + dClickable + '"' + (dId ? ' data-nav-dept="' + dId + '" data-nav-status="Force Terminated"' : '') + '>' + (dept.force_terminated || 0) + '</td>' +
                         '</tr>';
                 }
                 deptTbody.innerHTML = dHtml;
@@ -238,14 +203,32 @@
                             var navDept = td.getAttribute('data-nav-dept');
                             if (!navDept) { return; }
                             var navStatus = td.getAttribute('data-nav-status') || '';
-                            window.location.href = buildListUrl('', navStatus ? navStatus.split(',') : [], false, '', navDept);
+                            window.location.href = buildListUrl('', navStatus ? navStatus.split(',') : [], false, navDept);
                             return;
                         }
                         td = td.parentNode;
                     }
                 };
             } else {
-                deptTbody.innerHTML = '<tr><td colspan="7" class="text-muted" style="font-size:12px;">No data for the selected period.</td></tr>';
+                deptTbody.innerHTML = '<tr><td colspan="8" class="text-muted" style="font-size:12px;">No data for the selected period.</td></tr>';
+            }
+        }
+
+        var staffSuspendTbody = document.getElementById('dash-staff-suspend-body');
+        if (staffSuspendTbody) {
+            if (data.by_staff_suspend && data.by_staff_suspend.length > 0) {
+                var ssHtml = '';
+                for (var s2 = 0; s2 < data.by_staff_suspend.length; s2++) {
+                    var staffRow = data.by_staff_suspend[s2];
+                    ssHtml += '<tr>' +
+                        '<td style="font-size:12px;font-weight:600;text-align:left;">' + escapeHtml(staffRow.staff_name) + '</td>' +
+                        '<td style="font-size:12px;color:#e11d48;text-align:left;">' + (staffRow.suspended || 0) + '</td>' +
+                        '<td style="font-size:12px;color:#6610f2;text-align:left;">' + (staffRow.force_terminated || 0) + '</td>' +
+                        '</tr>';
+                }
+                staffSuspendTbody.innerHTML = ssHtml;
+            } else {
+                staffSuspendTbody.innerHTML = '<tr><td colspan="3" class="text-muted" style="font-size:12px;">No suspended/force-terminated OKRs in this period.</td></tr>';
             }
         }
 
@@ -258,15 +241,14 @@
         setText('dash-active',    'err');
         setText('dash-closed',    'err');
         setText('dash-failed',    'err');
-        setText('dash-incentive', 'err');
         setText('dash-overdue',   'err');
-        var tbody = document.getElementById('dash-level-body');
-        if (tbody) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-danger" style="font-size:12px;">' + msg + '</td></tr>';
-        }
         var deptTbody = document.getElementById('dash-dept-body');
         if (deptTbody) {
-            deptTbody.innerHTML = '<tr><td colspan="7" class="text-danger" style="font-size:12px;">' + msg + '</td></tr>';
+            deptTbody.innerHTML = '<tr><td colspan="8" class="text-danger" style="font-size:12px;">' + msg + '</td></tr>';
+        }
+        var staffSuspendTbodyErr = document.getElementById('dash-staff-suspend-body');
+        if (staffSuspendTbodyErr) {
+            staffSuspendTbodyErr.innerHTML = '<tr><td colspan="3" class="text-danger" style="font-size:12px;">' + msg + '</td></tr>';
         }
     }
 
@@ -280,11 +262,11 @@
         '4': ['10-01', '12-31']
     };
 
-    // levelOverride/deptOverride/typeOverride let the breakdown-table row
-    // clicks (Type/Level/Department) target a specific value regardless of
-    // the dashboard's own filters; deptOverride falls back to the currently
+    // deptOverride/typeOverride let the breakdown-table row clicks
+    // (Type/Department) target a specific value regardless of the
+    // dashboard's own filters; deptOverride falls back to the currently
     // selected dash-filter-dept when not given, same as the plain stat cards.
-    function buildListUrl(statusOverride, statusesOverride, overdueOnly, levelOverride, deptOverride, typeOverride) {
+    function buildListUrl(statusOverride, statusesOverride, overdueOnly, deptOverride, typeOverride) {
         var yearEl    = document.getElementById('dash-filter-year');
         var monthEl   = document.getElementById('dash-filter-month');
         var quarterEl = document.getElementById('dash-filter-quarter');
@@ -299,7 +281,6 @@
         if (statusOverride) { params.push('status=' + encodeURIComponent(statusOverride)); }
         if (statusesOverride && statusesOverride.length) { params.push('statuses=' + encodeURIComponent(statusesOverride.join(','))); }
         if (overdueOnly) { params.push('overdue=1'); }
-        if (levelOverride) { params.push('level=' + encodeURIComponent(levelOverride)); }
         if (typeOverride)  { params.push('type=' + encodeURIComponent(typeOverride)); }
         if (year)  { params.push('year='  + encodeURIComponent(year)); }
         if (month) { params.push('month=' + encodeURIComponent(month)); }
@@ -383,11 +364,12 @@
         setText('dash-active',    '---');
         setText('dash-closed',    '---');
         setText('dash-failed',    '---');
-        setText('dash-incentive', '---');
         setText('dash-overdue',   '---');
 
         var deptTbody = document.getElementById('dash-dept-body');
-        if (deptTbody) { deptTbody.innerHTML = '<tr><td colspan="7" class="text-muted" style="font-size:12px;">Loading...</td></tr>'; }
+        if (deptTbody) { deptTbody.innerHTML = '<tr><td colspan="8" class="text-muted" style="font-size:12px;">Loading...</td></tr>'; }
+        var staffSuspendTbodyLoad = document.getElementById('dash-staff-suspend-body');
+        if (staffSuspendTbodyLoad) { staffSuspendTbodyLoad.innerHTML = '<tr><td colspan="3" class="text-muted" style="font-size:12px;">Loading...</td></tr>'; }
 
         var lbl = document.getElementById('dash-filter-label');
         if (lbl) { lbl.textContent = buildLabel(); }

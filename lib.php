@@ -23,6 +23,10 @@ define('OKR_STATUS_DRAFT', 'Draft');
 define('OKR_STATUS_COMPLETED', 'Completed');
 define('OKR_STATUS_SUSPENDED', 'Suspended');
 define('OKR_STATUS_COMPLETED_EXTENSION', 'Completed with Extension');
+// FORCE_TERMINATED: only ever set via the dedicated CEO/admin Force Terminate
+// action, and only reachable from Suspended - same system-managed treatment
+// as SUSPENDED itself, never directly assignable on the Timeline card.
+define('OKR_STATUS_FORCE_TERMINATED', 'Force Terminated');
 
 require_once __DIR__ . '/nas_config.php';
 
@@ -38,21 +42,13 @@ function okrCardSelectSql($where, $include_deleted = false) {
     return "SELECT c.*, ow.nama_staff AS owner_name, ow.department AS owner_department,
                    ow2.nama_staff AS owner2_name, ow2.department AS owner2_department,
                    iss.nama_staff AS issuer_name, iss.department AS issuer_department,
-                   lv.label AS level_label, lv.base_rm AS level_rm,
-                   os.value AS status_value, os.pays_incentive AS status_pays_incentive,
-                   ir.code AS incentive_rule_code, ir.label AS incentive_rule_label,
-                   inc.nama_staff AS incentivised_owner_name,
-                   lb.nama_staff AS locked_by_name, ub.nama_staff AS unlocked_by_name
+                   os.value AS status_value, rb.nama_staff AS rated_by_name
             FROM okr_cards c
             LEFT JOIN staff ow  ON c.owner_staff_id  = ow.id
             LEFT JOIN staff ow2 ON c.owner2_staff_id = ow2.id
             LEFT JOIN staff iss ON c.issuer_staff_id = iss.id
-            LEFT JOIN staff inc ON c.incentivised_owner_staff_id = inc.id
-            LEFT JOIN staff lb  ON c.locked_by = lb.id
-            LEFT JOIN staff ub  ON c.unlocked_by = ub.id
-            LEFT JOIN okr_levels lv ON c.difficulty_level = lv.level
+            LEFT JOIN staff rb  ON c.rated_by = rb.id
             LEFT JOIN okr_statuses os ON c.result_status = os.id
-            LEFT JOIN okr_incentive_rules ir ON c.incentive_rule = ir.id
             WHERE $deleted_clause$where";
 }
 
@@ -60,11 +56,7 @@ function okrFormatCard($row) {
     return [
         'id'                => (int)$row['id'],
         'objective'         => $row['objective'],
-        'key_results'       => $row['key_results'],
         'okr_type'          => $row['okr_type'],
-        'difficulty_level'  => (int)$row['difficulty_level'],
-        'level_label'       => $row['level_label'],
-        'level_rm'          => (float)$row['level_rm'],
         'owner_staff_id'    => (int)$row['owner_staff_id'],
         'owner_name'        => $row['owner_name'],
         'owner_department'  => $row['owner_department'],
@@ -72,11 +64,6 @@ function okrFormatCard($row) {
         'owner2_name'       => $row['owner2_name'],
         'owner2_department' => $row['owner2_department'],
         'owner2_purpose'    => $row['owner2_purpose'],
-        'incentive_rule'         => (int)$row['incentive_rule'],
-        'incentive_rule_code'    => $row['incentive_rule_code'],
-        'incentive_rule_label'   => $row['incentive_rule_label'],
-        'incentivised_owner_staff_id' => $row['incentivised_owner_staff_id'] !== null ? (int)$row['incentivised_owner_staff_id'] : null,
-        'incentivised_owner_name'    => $row['incentivised_owner_name'],
         'issuer_staff_id'   => (int)$row['issuer_staff_id'],
         'issuer_name'       => $row['issuer_name'],
         'issuer_department' => $row['issuer_department'],
@@ -86,6 +73,11 @@ function okrFormatCard($row) {
         'extended'          => (bool)$row['extended'],
         'extended_date'     => $row['extended_date'],
         'remarks'           => $row['remarks'],
+        'appeal_justification' => $row['appeal_justification'] ?? null,
+        'appealed_at'       => $row['appealed_at'] ?? null,
+        'rating'            => $row['rating'] !== null ? (float)$row['rating'] : null,
+        'rated_by_name'     => $row['rated_by_name'] ?? null,
+        'rated_at'          => $row['rated_at'] ?? null,
         // Final Due Date never mirrors the Extended Date target — it's
         // End Date until the OKR is actually resolved (closed_at set),
         // at which point it follows that closure date.
@@ -95,14 +87,7 @@ function okrFormatCard($row) {
         'closure_date'      => $row['closed_at'] ? substr($row['closed_at'], 0, 10) : null,
         'result_status_id'  => (int)$row['result_status'],
         'result_status'     => $row['status_value'],
-        'pays_incentive'    => (bool)($row['status_pays_incentive'] ?? false),
         'pill_class'        => okrPillClass($row['status_value']),
-        'incentive_locked'  => (bool)$row['incentive_locked'],
-        'payout_remark'     => $row['payout_remark'] ?? null,
-        'locked_by_name'    => $row['locked_by_name'] ?? null,
-        'locked_at'         => $row['locked_at'] ?? null,
-        'unlocked_by_name'  => $row['unlocked_by_name'] ?? null,
-        'unlocked_at'       => $row['unlocked_at'] ?? null,
         'closed_at'         => $row['closed_at'],
         'created_at'        => $row['created_at'],
         'deleted_at'        => $row['deleted_at'] ?? null,
@@ -131,14 +116,13 @@ function okrTypeValues($conn, $include_recycled = true) {
 function okrFetchStatuses($conn, $include_recycled = true) {
     $where = $include_recycled ? '' : 'WHERE recycle = 0';
     $statuses = [];
-    $result = mysqli_query($conn, "SELECT id, value, description, pays_incentive, sort_order, recycle
+    $result = mysqli_query($conn, "SELECT id, value, description, sort_order, recycle
                                     FROM okr_statuses $where ORDER BY sort_order ASC");
     if ($result) {
         while ($row = mysqli_fetch_assoc($result)) {
             $statuses[] = [
                 'id' => (int)$row['id'], 'value' => $row['value'], 'description' => $row['description'],
-                'pays_incentive' => (int)$row['pays_incentive'], 'sort_order' => (int)$row['sort_order'],
-                'recycle' => (int)$row['recycle'],
+                'sort_order' => (int)$row['sort_order'], 'recycle' => (int)$row['recycle'],
             ];
         }
     }
@@ -152,7 +136,7 @@ function okrFetchStatuses($conn, $include_recycled = true) {
 // renaming/adding/soft-deleting a status is picked up with no code change.
 function okrTimelineAssignableStatuses($conn) {
     $values = array_column(okrFetchStatuses($conn, false), 'value');
-    return array_values(array_diff($values, [OKR_STATUS_SUSPENDED, OKR_STATUS_COMPLETED_EXTENSION]));
+    return array_values(array_diff($values, [OKR_STATUS_SUSPENDED, OKR_STATUS_COMPLETED_EXTENSION, OKR_STATUS_FORCE_TERMINATED]));
 }
 
 // The only statuses an extended (and not admin) OKR can still resolve to -
@@ -161,390 +145,6 @@ function okrTimelineAssignableStatuses($conn) {
 // re-declared independently by backend.php and edit.php.
 function okrPostExtensionResolvableStatuses() {
     return [OKR_STATUS_COMPLETED, 'Extended', 'Failed'];
-}
-
-// Parses the Performance page's filter inputs (Year/Month/Quarter on
-// start_date, Department, Closure Date range on closed_at) into a single
-// $filter_sql fragment shared by staffPerformanceList/lockPayoutCards/
-// unlockPayoutCards/export_performance - keeps all four call sites in sync
-// instead of re-implementing the same parsing four times. Grade/struct are
-// returned separately since they filter on the owner, not the card (see
-// okrStaffPerformanceRows).
-function okrPerformanceFilterSql($input) {
-    $filter_year         = (int)($input['filter_year'] ?? 0);
-    $filter_month        = (int)($input['filter_month'] ?? 0);
-    $filter_quarter      = (int)($input['filter_quarter'] ?? 0);
-    $filter_dept_id      = (int)($input['filter_dept_id'] ?? 0);
-    $filter_grade        = (int)($input['filter_grade'] ?? 0);
-    $filter_struct       = (int)($input['filter_struct'] ?? 0);
-    $filter_closure_from = trim($input['filter_closure_from'] ?? '');
-    $filter_closure_to   = trim($input['filter_closure_to'] ?? '');
-
-    $filter_sql = '';
-    if ($filter_year > 0)  { $filter_sql .= " AND YEAR(c.start_date) = $filter_year"; }
-    if ($filter_month > 0) { $filter_sql .= " AND MONTH(c.start_date) = $filter_month"; }
-    elseif ($filter_quarter > 0) { $filter_sql .= " AND QUARTER(c.start_date) = $filter_quarter"; }
-    if ($filter_dept_id > 0) {
-        $filter_sql .= " AND (FIND_IN_SET($filter_dept_id, c.dept_scope) OR FIND_IN_SET($filter_dept_id, iss.department))";
-    }
-    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $filter_closure_from)) {
-        $filter_sql .= " AND c.closed_at >= '$filter_closure_from 00:00:00'";
-    }
-    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $filter_closure_to)) {
-        $filter_sql .= " AND c.closed_at <= '$filter_closure_to 23:59:59'";
-    }
-
-    return ['filter_sql' => $filter_sql, 'filter_grade' => $filter_grade, 'filter_struct' => $filter_struct];
-}
-
-// Per-owner performance breakdown (mirrors ATEM's staff performance scorecard,
-// computed directly since OKR has no separate aggregation service). A card
-// with a 2nd owner splits its RM per incentive_rule: RULE1 (id 1) pays the
-// incentivised owner 100%, everything else (RULE2) splits 50/50 - same
-// branching as view.php's Incentive box. $filter_sql is appended as-is to the
-// WHERE clause (same convention as backend.php's dashboardStats filters).
-// $filter_grade/$filter_struct filter on the owner's own staff.grade/struct
-// (not the issuer's) - applied after aggregation since a card's two owners
-// can have different grades/structs, so it can't be a single card-level WHERE.
-function okrStaffPerformanceRows($conn, $filter_sql, $filter_grade = 0, $filter_struct = 0) {
-    $query = "SELECT c.owner_staff_id, c.owner2_staff_id, c.incentive_rule, c.incentivised_owner_staff_id,
-                     c.incentive_locked, os.value AS result_status, os.pays_incentive, lv.base_rm AS level_rm
-              FROM okr_cards c
-              LEFT JOIN okr_levels lv ON c.difficulty_level = lv.level
-              LEFT JOIN okr_statuses os ON c.result_status = os.id
-              LEFT JOIN staff iss ON c.issuer_staff_id = iss.id
-              WHERE c.deleted_at IS NULL $filter_sql";
-    $result = mysqli_query($conn, $query);
-
-    $by_staff = [];
-    if ($result) {
-        while ($row = mysqli_fetch_assoc($result)) {
-            $status    = $row['result_status'];
-            $rm        = (float)$row['level_rm'];
-            $is_paid   = (int)$row['pays_incentive'] === 1;
-            $owner_id  = (int)$row['owner_staff_id'];
-            $owner2_id = $row['owner2_staff_id'] !== null ? (int)$row['owner2_staff_id'] : 0;
-
-            $shares = [];
-            if ($owner2_id > 0) {
-                if ((int)$row['incentive_rule'] === 1) {
-                    $incentivised_id = (int)$row['incentivised_owner_staff_id'];
-                    $other_id = ($incentivised_id === $owner_id) ? $owner2_id : $owner_id;
-                    $shares[$incentivised_id] = $rm;
-                    $shares[$other_id] = 0.0;
-                } else {
-                    $shares[$owner_id]  = $rm / 2;
-                    $shares[$owner2_id] = $rm / 2;
-                }
-            } else {
-                $shares[$owner_id] = $rm;
-            }
-
-            foreach ([$owner_id, $owner2_id] as $sid) {
-                if ($sid <= 0) { continue; }
-                if (!isset($by_staff[$sid])) {
-                    $by_staff[$sid] = [
-                        'staff_id' => $sid, 'name' => '', 'department' => '-', 'grade' => '-', 'struct' => '-',
-                        'total' => 0, 'complete' => 0, 'excellence' => 0,
-                        'active' => 0, 'extend' => 0, 'fail' => 0, 'forecast_rm' => 0.0,
-                        'locked' => 0,
-                    ];
-                }
-                $by_staff[$sid]['total']++;
-                // Completed with Extension folds into the same "complete" bucket
-                // as a plain Completed - it's still a Completed outcome, just one
-                // that went through an extension first (see updateCard).
-                if ($status === OKR_STATUS_COMPLETED || $status === OKR_STATUS_COMPLETED_EXTENSION) { $by_staff[$sid]['complete']++; }
-                if ($status === 'Completed with Excellence') { $by_staff[$sid]['excellence']++; }
-                if ($status === OKR_STATUS_ACTIVE) { $by_staff[$sid]['active']++; }
-                if ($status === 'Extended') { $by_staff[$sid]['extend']++; }
-                if ($status === 'Failed') { $by_staff[$sid]['fail']++; }
-                if ($is_paid) { $by_staff[$sid]['forecast_rm'] += $shares[$sid] ?? 0.0; }
-                if ($is_paid && (int)$row['incentive_locked'] === 1) { $by_staff[$sid]['locked']++; }
-            }
-        }
-    }
-
-    if (!empty($by_staff)) {
-        $dept_names = [];
-        $dept_res = mysqli_query($conn, 'SELECT id, depart_name FROM staff_department');
-        if ($dept_res) {
-            while ($d = mysqli_fetch_assoc($dept_res)) { $dept_names[(int)$d['id']] = $d['depart_name']; }
-        }
-
-        $grade_labels = [];
-        $gr = mysqli_query($conn, 'SELECT id, grade_name FROM staff_grade');
-        if ($gr) { while ($g = mysqli_fetch_assoc($gr)) { $grade_labels[(int)$g['id']] = $g['grade_name']; } }
-
-        $struct_labels = [];
-        $sr = mysqli_query($conn, 'SELECT id, struct_name FROM staff_struct');
-        if ($sr) { while ($s = mysqli_fetch_assoc($sr)) { $struct_labels[(int)$s['id']] = $s['struct_name']; } }
-
-        $ids = implode(',', array_keys($by_staff));
-        $staff_res = mysqli_query($conn, "SELECT id, nama_staff, department, grade, struct FROM staff WHERE id IN ($ids)");
-        if ($staff_res) {
-            while ($srow = mysqli_fetch_assoc($staff_res)) {
-                $sid = (int)$srow['id'];
-                $by_staff[$sid]['name'] = $srow['nama_staff'];
-                $dept_ids = okrDeptIdsFromCsv($srow['department']);
-                $by_staff[$sid]['department'] = (!empty($dept_ids) && isset($dept_names[$dept_ids[0]]))
-                    ? $dept_names[$dept_ids[0]] : '-';
-                $by_staff[$sid]['grade'] = isset($grade_labels[(int)$srow['grade']]) ? $grade_labels[(int)$srow['grade']] : '-';
-                $by_staff[$sid]['struct'] = isset($struct_labels[(int)$srow['struct']]) ? $struct_labels[(int)$srow['struct']] : '-';
-                if ($filter_grade > 0 && (int)$srow['grade'] !== $filter_grade) {
-                    unset($by_staff[$sid]);
-                    continue;
-                }
-                if ($filter_struct > 0 && (int)$srow['struct'] !== $filter_struct) {
-                    unset($by_staff[$sid]);
-                }
-            }
-        }
-    }
-
-    foreach ($by_staff as &$s) {
-        $payable = $s['complete'] + $s['excellence'];
-        $s['is_locked'] = ($payable > 0 && $s['locked'] === $payable);
-        $s['complete_total'] = $payable;
-    }
-    unset($s);
-
-    usort($by_staff, function ($a, $b) { return strcasecmp($a['name'], $b['name']); });
-    return array_values($by_staff);
-}
-
-// Detailed export rows: one row per (staff, card) pair - a card with two
-// owners produces two rows, one per role - mirroring ATEM's bulk export
-// (one row per ARCI role per ATEM). Pass $staff_id to restrict to a single
-// staff's rows (for the per-staff export), or $staff_id_list for a
-// multi-staff "Export Selected"; leave both empty for the full bulk export.
-function okrExportRows($conn, $filter_sql, $staff_id = 0, $staff_id_list = [], $filter_grade = 0, $filter_struct = 0) {
-    if ($staff_id > 0) {
-        $staff_condition = " AND (c.owner_staff_id = $staff_id OR c.owner2_staff_id = $staff_id)";
-    } elseif (!empty($staff_id_list)) {
-        $csv = implode(',', array_map('intval', $staff_id_list));
-        $staff_condition = " AND (c.owner_staff_id IN ($csv) OR c.owner2_staff_id IN ($csv))";
-    } else {
-        $staff_condition = '';
-    }
-    $query = "SELECT c.id, c.objective, c.okr_type, lv.label AS level_label, lv.base_rm AS level_rm,
-                     c.start_date, c.end_date, os.value AS result_status, os.pays_incentive,
-                     c.owner_staff_id, c.owner2_staff_id, c.incentive_rule, c.incentivised_owner_staff_id,
-                     iss.nama_staff AS issuer_name, ow2.nama_staff AS owner2_name, ir.label AS incentive_rule_label
-              FROM okr_cards c
-              LEFT JOIN okr_levels lv ON c.difficulty_level = lv.level
-              LEFT JOIN okr_statuses os ON c.result_status = os.id
-              LEFT JOIN staff iss ON c.issuer_staff_id = iss.id
-              LEFT JOIN staff ow2 ON c.owner2_staff_id = ow2.id
-              LEFT JOIN okr_incentive_rules ir ON c.incentive_rule = ir.id
-              WHERE c.deleted_at IS NULL $filter_sql$staff_condition
-              ORDER BY c.start_date DESC";
-    $result = mysqli_query($conn, $query);
-
-    $entries = [];
-    $involved_staff_ids = [];
-    if ($result) {
-        while ($row = mysqli_fetch_assoc($result)) {
-            $status    = $row['result_status'];
-            $rm        = (float)$row['level_rm'];
-            $is_paid   = (int)$row['pays_incentive'] === 1;
-            $owner_id  = (int)$row['owner_staff_id'];
-            $owner2_id = $row['owner2_staff_id'] !== null ? (int)$row['owner2_staff_id'] : 0;
-
-            $shares = [];
-            if ($owner2_id > 0) {
-                if ((int)$row['incentive_rule'] === 1) {
-                    $incentivised_id = (int)$row['incentivised_owner_staff_id'];
-                    $other_id = ($incentivised_id === $owner_id) ? $owner2_id : $owner_id;
-                    $shares[$incentivised_id] = $rm;
-                    $shares[$other_id] = 0.0;
-                } else {
-                    $shares[$owner_id]  = $rm / 2;
-                    $shares[$owner2_id] = $rm / 2;
-                }
-            } else {
-                $shares[$owner_id] = $rm;
-            }
-
-            $participants = [[$owner_id, 'Owner']];
-            if ($owner2_id > 0) { $participants[] = [$owner2_id, '2nd Owner']; }
-
-            foreach ($participants as $p) {
-                $sid = $p[0];
-                $role = $p[1];
-                if ($sid <= 0) { continue; }
-                if ($staff_id > 0 && $sid !== $staff_id) { continue; }
-                if (!empty($staff_id_list) && !in_array($sid, $staff_id_list, true)) { continue; }
-                $involved_staff_ids[$sid] = true;
-                $entries[] = [
-                    'staff_id'    => $sid,
-                    'year'        => date('Y', strtotime($row['start_date'])),
-                    'month'       => date('F', strtotime($row['start_date'])),
-                    'okr_id'      => 'OKR' . $row['id'],
-                    'title'       => $row['objective'],
-                    'okr_type'    => $row['okr_type'],
-                    'level'       => $row['level_label'],
-                    'start_date'  => $row['start_date'],
-                    'end_date'    => $row['end_date'],
-                    'issuer'      => $row['issuer_name'],
-                    'owner2_name' => $owner2_id > 0 ? $row['owner2_name'] : '',
-                    'role'        => $role,
-                    'status'      => $status,
-                    'incentive_rule_label' => $owner2_id > 0 ? $row['incentive_rule_label'] : '',
-                    'reward'      => $is_paid ? ($shares[$sid] ?? 0.0) : 0.0,
-                ];
-            }
-        }
-    }
-
-    $staff_info = [];
-    if (!empty($involved_staff_ids)) {
-        $dept_names = [];
-        $dr = mysqli_query($conn, 'SELECT id, depart_name FROM staff_department');
-        if ($dr) { while ($d = mysqli_fetch_assoc($dr)) { $dept_names[(int)$d['id']] = $d['depart_name']; } }
-
-        $grade_labels = [];
-        $gr = mysqli_query($conn, 'SELECT id, grade_name FROM staff_grade');
-        if ($gr) { while ($g = mysqli_fetch_assoc($gr)) { $grade_labels[(int)$g['id']] = $g['grade_name']; } }
-
-        $struct_labels = [];
-        $sr = mysqli_query($conn, 'SELECT id, struct_name FROM staff_struct');
-        if ($sr) { while ($s = mysqli_fetch_assoc($sr)) { $struct_labels[(int)$s['id']] = $s['struct_name']; } }
-
-        $ids = implode(',', array_keys($involved_staff_ids));
-        $staff_res = mysqli_query($conn, "SELECT id, nama_staff, department, grade, struct FROM staff WHERE id IN ($ids)");
-        if ($staff_res) {
-            while ($srow = mysqli_fetch_assoc($staff_res)) {
-                $sid = (int)$srow['id'];
-                $dept_ids = okrDeptIdsFromCsv($srow['department']);
-                $staff_info[$sid] = [
-                    'name'       => $srow['nama_staff'],
-                    'department' => (!empty($dept_ids) && isset($dept_names[$dept_ids[0]])) ? $dept_names[$dept_ids[0]] : '-',
-                    'grade'      => isset($grade_labels[(int)$srow['grade']]) ? $grade_labels[(int)$srow['grade']] : '-',
-                    'struct'     => isset($struct_labels[(int)$srow['struct']]) ? $struct_labels[(int)$srow['struct']] : '-',
-                    'grade_id'   => (int)$srow['grade'],
-                    'struct_id'  => (int)$srow['struct'],
-                ];
-            }
-        }
-    }
-
-    foreach ($entries as &$e) {
-        $info = isset($staff_info[$e['staff_id']]) ? $staff_info[$e['staff_id']] : ['name' => '-', 'department' => '-', 'grade' => '-', 'struct' => '-', 'grade_id' => 0, 'struct_id' => 0];
-        $e['name']       = $info['name'];
-        $e['department'] = $info['department'];
-        $e['grade']      = $info['grade'];
-        $e['struct']     = $info['struct'];
-        $e['grade_id']   = $info['grade_id'];
-        $e['struct_id']  = $info['struct_id'];
-    }
-    unset($e);
-
-    if ($filter_grade > 0) {
-        $entries = array_filter($entries, function ($e) use ($filter_grade) { return $e['grade_id'] === $filter_grade; });
-    }
-    if ($filter_struct > 0) {
-        $entries = array_filter($entries, function ($e) use ($filter_struct) { return $e['struct_id'] === $filter_struct; });
-    }
-    $entries = array_values($entries);
-
-    usort($entries, function ($a, $b) {
-        $cmp = strcasecmp($a['name'], $b['name']);
-        return $cmp !== 0 ? $cmp : strcmp($b['start_date'], $a['start_date']);
-    });
-    return $entries;
-}
-
-// Locks (incentive_locked = 1) every not-yet-locked incentive-paying card
-// (os.pays_incentive = 1) matching $filter_sql (+ optional single $staff_id,
-// or a $staff_id_list for "Lock Selected"), stamping locked_by/locked_at/
-// payout_remark (mirrors ATEM's payout audit fields on atems) and logging one
-// audit entry per card. Shared by backend.php's lockPayoutCards action and
-// export_performance.php (People Management's export auto-locks the same set
-// it just downloaded). Returns the count of cards locked.
-function okrLockPayoutCards($conn, $actor_id, $filter_sql, $staff_id = 0, $staff_id_list = [], $remark = '', $filter_grade = 0, $filter_struct = 0) {
-    if ($staff_id > 0) {
-        $filter_sql .= " AND (c.owner_staff_id = $staff_id OR c.owner2_staff_id = $staff_id)";
-    } elseif (!empty($staff_id_list)) {
-        $csv = implode(',', array_map('intval', $staff_id_list));
-        $filter_sql .= " AND (c.owner_staff_id IN ($csv) OR c.owner2_staff_id IN ($csv))";
-    }
-    // Grade/struct describe an owner, not the card, so match if either owner
-    // qualifies (a 2-owner card can have owners in different grades/structs).
-    if ($filter_grade > 0) {
-        $filter_sql .= " AND EXISTS (SELECT 1 FROM staff s WHERE s.id IN (c.owner_staff_id, c.owner2_staff_id) AND s.grade = $filter_grade)";
-    }
-    if ($filter_struct > 0) {
-        $filter_sql .= " AND EXISTS (SELECT 1 FROM staff s WHERE s.id IN (c.owner_staff_id, c.owner2_staff_id) AND s.struct = $filter_struct)";
-    }
-
-    // Lockable = pays incentive, read straight off the table's own flag
-    // instead of naming which specific statuses currently qualify.
-    $select_sql = "SELECT c.id FROM okr_cards c
-                   LEFT JOIN staff iss ON c.issuer_staff_id = iss.id
-                   LEFT JOIN okr_statuses os ON c.result_status = os.id
-                   WHERE c.deleted_at IS NULL AND c.incentive_locked = 0
-                     AND os.pays_incentive = 1
-                     $filter_sql";
-    $ids_result = mysqli_query($conn, $select_sql);
-    $ids = [];
-    if ($ids_result) {
-        while ($r = mysqli_fetch_assoc($ids_result)) { $ids[] = (int)$r['id']; }
-    }
-
-    if (!empty($ids)) {
-        $ids_csv = implode(',', $ids);
-        $remark_sql = "'" . mysqli_real_escape_string($conn, $remark) . "'";
-        mysqli_query($conn, "UPDATE okr_cards
-            SET incentive_locked = 1, locked_by = " . (int)$actor_id . ", locked_at = NOW(), payout_remark = $remark_sql
-            WHERE id IN ($ids_csv)");
-        foreach ($ids as $cid) {
-            okrLogAudit($conn, $cid, $actor_id, 'incentive_locked', null, 'Incentive locked for payout by People Management.');
-        }
-    }
-
-    return count($ids);
-}
-
-// Reverses okrLockPayoutCards: unlocks every currently-locked card matching
-// $filter_sql (+ optional single $staff_id, or $staff_id_list for
-// "Unlock Selected"), stamping unlocked_by/unlocked_at and logging one audit
-// entry per card. Returns the count of cards unlocked.
-function okrUnlockPayoutCards($conn, $actor_id, $filter_sql, $staff_id = 0, $staff_id_list = [], $filter_grade = 0, $filter_struct = 0) {
-    if ($staff_id > 0) {
-        $filter_sql .= " AND (c.owner_staff_id = $staff_id OR c.owner2_staff_id = $staff_id)";
-    } elseif (!empty($staff_id_list)) {
-        $csv = implode(',', array_map('intval', $staff_id_list));
-        $filter_sql .= " AND (c.owner_staff_id IN ($csv) OR c.owner2_staff_id IN ($csv))";
-    }
-    if ($filter_grade > 0) {
-        $filter_sql .= " AND EXISTS (SELECT 1 FROM staff s WHERE s.id IN (c.owner_staff_id, c.owner2_staff_id) AND s.grade = $filter_grade)";
-    }
-    if ($filter_struct > 0) {
-        $filter_sql .= " AND EXISTS (SELECT 1 FROM staff s WHERE s.id IN (c.owner_staff_id, c.owner2_staff_id) AND s.struct = $filter_struct)";
-    }
-
-    $select_sql = "SELECT c.id FROM okr_cards c
-                   LEFT JOIN staff iss ON c.issuer_staff_id = iss.id
-                   WHERE c.deleted_at IS NULL AND c.incentive_locked = 1
-                     $filter_sql";
-    $ids_result = mysqli_query($conn, $select_sql);
-    $ids = [];
-    if ($ids_result) {
-        while ($r = mysqli_fetch_assoc($ids_result)) { $ids[] = (int)$r['id']; }
-    }
-
-    if (!empty($ids)) {
-        $ids_csv = implode(',', $ids);
-        mysqli_query($conn, "UPDATE okr_cards
-            SET incentive_locked = 0, unlocked_by = " . (int)$actor_id . ", unlocked_at = NOW()
-            WHERE id IN ($ids_csv)");
-        foreach ($ids as $cid) {
-            okrLogAudit($conn, $cid, $actor_id, 'incentive_unlocked', null, 'Incentive unlocked by People Management.');
-        }
-    }
-
-    return count($ids);
 }
 
 function okrStatusIdByValue($conn, $value) {
@@ -572,6 +172,195 @@ function okrCountReferenceLinks($conn, $card_id) {
     $result = mysqli_query($conn, "SELECT COUNT(*) AS n FROM okr_reference_links WHERE card_id = " . (int)$card_id);
     $row = $result ? mysqli_fetch_assoc($result) : null;
     return $row ? (int)$row['n'] : 0;
+}
+
+// ---------------------------------------------------------------
+// Key Result Progress: a 2-level task list per card (Key Result rows FK to
+// okr_cards, Subtask rows FK to their parent Key Result via a
+// self-referential parent_id), mirroring iidas's project_detail.php
+// Progression Task / Subtask pattern. Only Key Results (parent_id NULL) can
+// be staged before the card exists (create.php); Subtasks require a real
+// parent id, so they're only addable once the card - and its Key Results -
+// are already saved (edit.php).
+// ---------------------------------------------------------------
+
+// The fixed subset of okr_statuses a Key Result/Subtask can be set to -
+// deliberately smaller than okrTimelineAssignableStatuses() (the OKR card's
+// own Timeline field): no Draft/Extended/Completed with Extension here, just
+// the four terminal-ish states that make sense for a single task row.
+function okrKeyResultAssignableStatuses($conn) {
+    $allowed = ['Active', OKR_STATUS_COMPLETED, 'Completed with Excellence', 'Failed'];
+    return array_values(array_filter(okrFetchStatuses($conn, false), function ($s) use ($allowed) {
+        return in_array($s['value'], $allowed, true);
+    }));
+}
+
+// Flat list ordered by id (creation order), each row carrying its own stored
+// status plus a computed 'display_status_value' and 'has_children' - a row
+// with subtasks shows a derived status instead of its own stored value
+// (mirrors iidas's parent-task auto-calc, previously done over percentages):
+// Completed only once every subtask is itself Completed or Completed with
+// Excellence, otherwise Active - so subtask statuses are the only ones a
+// user directly sets once a Key Result has any.
+function okrFetchKeyResults($conn, $card_id) {
+    $rows = [];
+    $result = mysqli_query($conn, "SELECT kr.id, kr.card_id, kr.parent_id, kr.description,
+                                           kr.atem_id, kr.status_id, kr.start_date, kr.end_date, kr.created_by, kr.created_at,
+                                           s.nama_staff AS creator_name, os.value AS status_value
+                                    FROM okr_key_results kr
+                                    LEFT JOIN staff s ON kr.created_by = s.id
+                                    LEFT JOIN okr_statuses os ON kr.status_id = os.id
+                                    WHERE kr.card_id = " . (int)$card_id . "
+                                    ORDER BY kr.id ASC");
+    if ($result) {
+        while ($row = mysqli_fetch_assoc($result)) {
+            $rows[] = [
+                'id'                => (int)$row['id'],
+                'card_id'           => (int)$row['card_id'],
+                'parent_id'         => $row['parent_id'] !== null ? (int)$row['parent_id'] : null,
+                'description'       => $row['description'],
+                'created_by'        => (int)$row['created_by'],
+                'creator_name'      => $row['creator_name'],
+                'atem_id'           => $row['atem_id'] !== null ? (int)$row['atem_id'] : null,
+                'status_id'         => (int)$row['status_id'],
+                'status_value'      => $row['status_value'],
+                'pill_class'        => okrPillClass($row['status_value']),
+                'start_date'        => $row['start_date'],
+                'end_date'          => $row['end_date'],
+                'created_at'        => $row['created_at'],
+            ];
+        }
+    }
+
+    $children_by_parent = [];
+    foreach ($rows as $r) {
+        if ($r['parent_id'] !== null) {
+            $children_by_parent[$r['parent_id']][] = $r['id'];
+        }
+    }
+    $by_id = [];
+    foreach ($rows as $i => $r) { $by_id[$r['id']] = $i; }
+
+    $completed_values = [OKR_STATUS_COMPLETED, 'Completed with Excellence'];
+
+    foreach ($rows as &$r) {
+        $has_children = isset($children_by_parent[$r['id']]);
+        $r['has_children'] = $has_children;
+        if ($has_children) {
+            $all_completed = true;
+            foreach ($children_by_parent[$r['id']] as $cid) {
+                if (!in_array($rows[$by_id[$cid]]['status_value'], $completed_values, true)) {
+                    $all_completed = false;
+                    break;
+                }
+            }
+            $r['display_status_value'] = $all_completed ? OKR_STATUS_COMPLETED : 'Active';
+        } else {
+            $r['display_status_value'] = $r['status_value'];
+        }
+        $r['display_pill_class'] = okrPillClass($r['display_status_value']);
+    }
+    unset($r);
+
+    return $rows;
+}
+
+function okrCountKeyResults($conn, $card_id) {
+    $result = mysqli_query($conn, "SELECT COUNT(*) AS n FROM okr_key_results WHERE card_id = " . (int)$card_id);
+    $row = $result ? mysqli_fetch_assoc($result) : null;
+    return $row ? (int)$row['n'] : 0;
+}
+
+// Stages a top-level Key Result in the session so it can be linked once
+// createCard succeeds (mirrors the reference-link staging above, for the
+// create form). Each staged entry also carries its own 'subtasks' map (keyed
+// by sub-token) and an optional 'atem_id' link - both resolved into real
+// rows/columns by okrFinalizeStagedKeyResults once the card exists.
+function okrStageKeyResult($description, $start_date, $end_date, $status_id) {
+    $token = uniqid('kr_', true);
+    $_SESSION['okr_draft_keyresults'] ??= [];
+    $_SESSION['okr_draft_keyresults'][$token] = [
+        'description'       => $description,
+        'start_date'        => $start_date ?: null,
+        'end_date'          => $end_date ?: null,
+        'status_id'         => $status_id,
+        'atem_id'           => null,
+        'subtasks'          => [],
+    ];
+    return $token;
+}
+
+function okrRemoveStagedKeyResult($token) {
+    if (!isset($_SESSION['okr_draft_keyresults'][$token])) {
+        return false;
+    }
+    unset($_SESSION['okr_draft_keyresults'][$token]);
+    return true;
+}
+
+// Subtasks of a staged Key Result can't reference a real parent_id yet, so
+// they nest inside their parent's session entry instead, keyed by their own
+// token - flattened into real rows (with the parent's real id) once
+// okrFinalizeStagedKeyResults runs.
+function okrStageKeyResultSubtask($parent_token, $description, $start_date, $end_date, $status_id) {
+    if (!isset($_SESSION['okr_draft_keyresults'][$parent_token])) {
+        return null;
+    }
+    $sub_token = uniqid('krsub_', true);
+    $_SESSION['okr_draft_keyresults'][$parent_token]['subtasks'][$sub_token] = [
+        'description'       => $description,
+        'start_date'        => $start_date ?: null,
+        'end_date'          => $end_date ?: null,
+        'status_id'         => $status_id,
+    ];
+    return $sub_token;
+}
+
+function okrRemoveStagedKeyResultSubtask($parent_token, $sub_token) {
+    if (!isset($_SESSION['okr_draft_keyresults'][$parent_token]['subtasks'][$sub_token])) {
+        return false;
+    }
+    unset($_SESSION['okr_draft_keyresults'][$parent_token]['subtasks'][$sub_token]);
+    return true;
+}
+
+// Links/unlinks an existing real ATEM card against a still-staged (top-level
+// only) Key Result - same "plain reference, no FK" rule as the real
+// linkKeyResultAtem/unlinkKeyResultAtem backend actions.
+function okrSetStagedKeyResultAtem($token, $atem_id) {
+    if (!isset($_SESSION['okr_draft_keyresults'][$token])) {
+        return false;
+    }
+    $_SESSION['okr_draft_keyresults'][$token]['atem_id'] = $atem_id ?: null;
+    return true;
+}
+
+function okrFinalizeStagedKeyResults($conn, $card_id, $created_by) {
+    if (empty($_SESSION['okr_draft_keyresults'])) {
+        return;
+    }
+    foreach ($_SESSION['okr_draft_keyresults'] as $kr) {
+        $desc_e = mysqli_real_escape_string($conn, $kr['description']);
+        $start_sql = $kr['start_date'] ? "'" . mysqli_real_escape_string($conn, $kr['start_date']) . "'" : 'NULL';
+        $end_sql = $kr['end_date'] ? "'" . mysqli_real_escape_string($conn, $kr['end_date']) . "'" : 'NULL';
+        $status_id = (int)($kr['status_id'] ?? 0);
+        $atem_sql = !empty($kr['atem_id']) ? (int)$kr['atem_id'] : 'NULL';
+        mysqli_query($conn, "INSERT INTO okr_key_results
+            (card_id, parent_id, description, atem_id, status_id, start_date, end_date, created_by)
+            VALUES ($card_id, NULL, '$desc_e', $atem_sql, $status_id, $start_sql, $end_sql, " . (int)$created_by . ")");
+        $parent_id = mysqli_insert_id($conn);
+
+        foreach (($kr['subtasks'] ?? []) as $sub) {
+            $sub_desc_e = mysqli_real_escape_string($conn, $sub['description']);
+            $sub_start_sql = $sub['start_date'] ? "'" . mysqli_real_escape_string($conn, $sub['start_date']) . "'" : 'NULL';
+            $sub_end_sql = $sub['end_date'] ? "'" . mysqli_real_escape_string($conn, $sub['end_date']) . "'" : 'NULL';
+            $sub_status_id = (int)($sub['status_id'] ?? 0);
+            mysqli_query($conn, "INSERT INTO okr_key_results
+                (card_id, parent_id, description, status_id, start_date, end_date, created_by)
+                VALUES ($card_id, $parent_id, '$sub_desc_e', $sub_status_id, $sub_start_sql, $sub_end_sql, " . (int)$created_by . ")");
+        }
+    }
+    $_SESSION['okr_draft_keyresults'] = [];
 }
 
 // Stages a reference link in the session so it can be linked once createCard
@@ -635,6 +424,142 @@ function okrFetchAuditLogs($conn, $card_id) {
         }
     }
     return $logs;
+}
+
+// ---------------------------------------------------------------
+// Chat Box: a per-card discussion thread, modeled after ATEM's Chat Box
+// (edit.php + atem/api.php's chat-list/chat-send/chat-edit/chat-unsend,
+// which proxy to atem-api). OKR has no Laravel API layer, so this is plain
+// local mysqli against okr_chat_messages instead of an HTTP round trip.
+// ---------------------------------------------------------------
+
+// 60 seconds - same edit/unsend window ATEM uses, enforced server-side here
+// (not just client-side) since backend.php is directly POST-able.
+define('OKR_CHAT_EDIT_WINDOW_SECONDS', 60);
+
+// Same "issuer, admin, or an owner" rule used for card-level access, applied
+// to who may post - ATEM's equivalent is "issuer, SuperAdmin, or any ARCI
+// member"; OKR has no multi-role ARCI, just up to two owners, so both are
+// treated the same as ATEM's ARCI members for chat purposes.
+function okrCanPostChat($card, $requester_id, $is_admin) {
+    if ($is_admin) {
+        return true;
+    }
+    $requester_id = (int)$requester_id;
+    return $requester_id === (int)$card['issuer_staff_id']
+        || (!empty($card['owner_staff_id']) && $requester_id === (int)$card['owner_staff_id'])
+        || (!empty($card['owner2_staff_id']) && $requester_id === (int)$card['owner2_staff_id']);
+}
+
+function okrFetchChatMessages($conn, $card_id) {
+    $messages = [];
+    $result = mysqli_query($conn, "SELECT m.id, m.sender_staff_id, m.message, m.created_at, m.updated_at,
+                                           s.nama_staff AS sender_name
+                                    FROM okr_chat_messages m
+                                    LEFT JOIN staff s ON m.sender_staff_id = s.id
+                                    WHERE m.card_id = " . (int)$card_id . " AND m.deleted_at IS NULL
+                                    ORDER BY m.created_at ASC, m.id ASC");
+    if ($result) {
+        while ($row = mysqli_fetch_assoc($result)) {
+            $messages[] = [
+                'id'               => (int)$row['id'],
+                'sender_staff_id'  => (int)$row['sender_staff_id'],
+                'sender_name'      => $row['sender_name'] ?: ('Staff #' . $row['sender_staff_id']),
+                'message'          => $row['message'],
+                'created_at'       => $row['created_at'],
+                'updated_at'       => $row['updated_at'],
+            ];
+        }
+    }
+    return $messages;
+}
+
+// Ownership + the edit window are both re-checked here against the
+// message's own sender_staff_id/created_at - never trusted from the client.
+function okrChatMessageEditable($conn, $message_id, $requester_id) {
+    $result = mysqli_query($conn, "SELECT sender_staff_id, created_at FROM okr_chat_messages
+                                    WHERE id = " . (int)$message_id . " AND deleted_at IS NULL");
+    if (!$result || mysqli_num_rows($result) === 0) {
+        return ['ok' => false, 'message' => 'Message not found.'];
+    }
+    $row = mysqli_fetch_assoc($result);
+    if ((int)$row['sender_staff_id'] !== (int)$requester_id) {
+        return ['ok' => false, 'message' => 'You can only edit or unsend your own messages.'];
+    }
+    if ((time() - strtotime($row['created_at'])) > OKR_CHAT_EDIT_WINDOW_SECONDS) {
+        return ['ok' => false, 'message' => 'This message can no longer be edited or unsent.'];
+    }
+    return ['ok' => true];
+}
+
+// ---------------------------------------------------------------
+// Suspend / Appeal / Force Terminate notifications - grade-5 (CEO/Board) and
+// SuperAdmin, the same population already allowed to suspend/unsuspend/force
+// terminate a card, is who receives the Appeal email. Union of staff.okr and
+// staff.atem mirrors the SuperAdmin flag used everywhere else in this repo.
+function okrCeoRecipients($conn) {
+    $recipients = [];
+    $result = mysqli_query($conn, "SELECT id, nama_staff, email FROM staff
+                                    WHERE recycle != 1 AND (grade = 5 OR okr = 1 OR atem = 1)");
+    if ($result) {
+        while ($row = mysqli_fetch_assoc($result)) {
+            $recipients[] = [
+                'staff_id' => (int)$row['id'],
+                'name'     => $row['nama_staff'],
+                'email'    => $row['email'],
+            ];
+        }
+    }
+    return $recipients;
+}
+
+// ---------------------------------------------------------------
+// In-app notifications ("Octopus notification") - scoped to chat messages
+// only for now. Plain local mysqli, unlike ATEM's aspirational Laravel-backed
+// notification bell (fully wired frontend, but no real backend endpoint
+// exists in that checkout - see okr/CLAUDE.md's Chat Box section) - OKR has
+// no API layer to proxy through, so this is genuinely implemented instead.
+// ---------------------------------------------------------------
+function okrNotifyChat($conn, $card_id, $recipient_staff_id) {
+    mysqli_query($conn, "INSERT INTO okr_notifications (staff_id, card_id, type)
+                          VALUES (" . (int)$recipient_staff_id . ", " . (int)$card_id . ", 'chat_message')");
+}
+
+function okrFetchNotifications($conn, $staff_id, $limit = 20) {
+    $notifications = [];
+    $result = mysqli_query($conn, "SELECT id, card_id, type, read_at, created_at
+                                    FROM okr_notifications
+                                    WHERE staff_id = " . (int)$staff_id . "
+                                    ORDER BY created_at DESC LIMIT " . (int)$limit);
+    if ($result) {
+        while ($row = mysqli_fetch_assoc($result)) {
+            $notifications[] = [
+                'id'         => (int)$row['id'],
+                'card_id'    => (int)$row['card_id'],
+                'type'       => $row['type'],
+                'read_at'    => $row['read_at'],
+                'created_at' => $row['created_at'],
+            ];
+        }
+    }
+    return $notifications;
+}
+
+function okrUnreadNotificationCount($conn, $staff_id) {
+    $result = mysqli_query($conn, "SELECT COUNT(*) AS n FROM okr_notifications
+                                    WHERE staff_id = " . (int)$staff_id . " AND read_at IS NULL");
+    $row = $result ? mysqli_fetch_assoc($result) : null;
+    return $row ? (int)$row['n'] : 0;
+}
+
+function okrMarkNotificationRead($conn, $notification_id, $staff_id) {
+    mysqli_query($conn, "UPDATE okr_notifications SET read_at = NOW()
+                          WHERE id = " . (int)$notification_id . " AND staff_id = " . (int)$staff_id . " AND read_at IS NULL");
+}
+
+function okrMarkAllNotificationsRead($conn, $staff_id) {
+    mysqli_query($conn, "UPDATE okr_notifications SET read_at = NOW()
+                          WHERE staff_id = " . (int)$staff_id . " AND read_at IS NULL");
 }
 
 function okrFetchAttachments($conn, $card_id) {
@@ -723,6 +648,7 @@ function okrClearDraftSession() {
         }
     }
     $_SESSION['okr_draft_reflinks'] = [];
+    $_SESSION['okr_draft_keyresults'] = [];
     unset($_SESSION['okr_draft_state']);
 }
 
@@ -821,19 +747,4 @@ function okrPillClass($status) {
         'Failed'                     => 'okr-pill-fail',
     ];
     return isset($map[$status]) ? $map[$status] : 'okr-pill-active';
-}
-
-// Incentive tile color follows the OKR's lifecycle stage, not just paid/unpaid:
-// Draft/Active = still in progress (blue), Extended = pending closure (yellow),
-// Failed/Suspended = won't pay out (red), Completed(+Excellence/+Extension) =
-// paid (green, default - no entry needed below).
-function okrIncentiveTileClass($status) {
-    $map = [
-        'Draft'     => 'okr-incentive-tile--blue',
-        'Active'    => 'okr-incentive-tile--blue',
-        'Extended'  => 'okr-incentive-tile--yellow',
-        'Failed'    => 'okr-incentive-tile--red',
-        'Suspended' => 'okr-incentive-tile--red',
-    ];
-    return isset($map[$status]) ? $map[$status] : '';
 }

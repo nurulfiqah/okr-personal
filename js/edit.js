@@ -9,7 +9,13 @@
     // same as create.php.
     var dirty = false;
     var leaving = false;
-    function markChanged() { dirty = true; }
+    // Chat is its own independent, immediately-saved action (not part of the
+    // OKR form's fields), so typing/sending a message must not trip the
+    // "unsaved changes" leave-guard below.
+    function markChanged(e) {
+        if (e && e.target && e.target.closest && e.target.closest('#okr-chat-card')) { return; }
+        dirty = true;
+    }
     document.addEventListener('input', markChanged, true);
     document.addEventListener('change', markChanged, true);
     window.addEventListener('beforeunload', function (e) {
@@ -70,40 +76,6 @@
         return bytes + ' B';
     }
 
-    // ---------------------------------------------------------------
-    // Key Results rich text editor (same Quill setup as create.php).
-    // ---------------------------------------------------------------
-    var keyResultsEditor = null;
-    if (typeof Quill !== 'undefined') {
-        keyResultsEditor = new Quill('#okr-key-results-editor', {
-            theme: 'snow',
-            modules: {
-                toolbar: [
-                    [{ 'header': [1, 2, 3, false] }],
-                    ['bold', 'italic', 'underline', 'strike'],
-                    [{ 'color': [] }, { 'background': [] }],
-                    [{ 'list': 'ordered' }, { 'list': 'bullet' }],
-                    [{ 'indent': '-1' }, { 'indent': '+1' }],
-                    [{ 'align': [] }],
-                    ['link', 'image'],
-                    ['clean']
-                ]
-            },
-            placeholder: 'Write the measurable results in detail here....'
-        });
-        keyResultsEditor.on('text-change', function (delta, old, source) {
-            if (source === 'user') { markChanged(); }
-        });
-    }
-
-    function keyResultsHtml() {
-        return keyResultsEditor && keyResultsEditor.getText().trim() !== '' ? keyResultsEditor.root.innerHTML : '';
-    }
-
-    var levelSelect = document.getElementById('okr-level');
-    var incentiveRuleSelect = document.getElementById('okr-incentive-rule');
-    var owner2PurposeWrap = document.getElementById('okr-owner2-purpose-wrap');
-    var incentiveRuleHint = document.getElementById('okr-incentive-rule-hint');
 
     function escapeHtml(s) {
         return String(s).replace(/[&<>"']/g, function (c) {
@@ -111,27 +83,11 @@
         });
     }
 
-    CFG.levels.forEach(function (lv) {
-        var opt = document.createElement('option');
-        opt.value = lv.level;
-        opt.textContent = lv.label + ' (RM' + Number(lv.base_rm).toFixed(2) + ')';
-        levelSelect.appendChild(opt);
-    });
-    (CFG.incentiveRules || []).forEach(function (rule) {
-        var opt = document.createElement('option');
-        opt.value = rule.id;
-        opt.textContent = rule.label;
-        incentiveRuleSelect.appendChild(opt);
-    });
-
     // ---------------------------------------------------------------
     // Owner(s): ATEM ARCI-style tagging widget, restricted to a single
-    // "A - Accountable" role capped at 2 members (OKR has no R/C/I). Whoever
-    // is ticked "Incentivised" receives the payout; the tick only appears
-    // once 2 owners are tagged and Rule 1 (single incentivised owner) is
-    // selected - Rule 2 splits 50/50 automatically and needs no ticking.
+    // "A - Accountable" role capped at 2 members (OKR has no R/C/I).
     // ---------------------------------------------------------------
-    var ownerState = []; // [{ staff_id, staff_name, dept_id, department_name, is_incentivised }]
+    var ownerState = []; // [{ staff_id, staff_name, dept_id, department_name }]
 
     var ownerDeptSelect = document.getElementById('okr-owner-dept-select');
     var ownerDeptSearch = document.getElementById('okr-owner-dept-search');
@@ -192,45 +148,22 @@
     ownerDeptSelect.addEventListener('change', renderOwnerStaffList);
     ownerStaffSearch.addEventListener('keyup', renderOwnerStaffList);
 
-    function selectedIncentiveRule() {
-        return (CFG.incentiveRules || []).filter(function (r) { return String(r.id) === incentiveRuleSelect.value; })[0];
-    }
-
-    function countIncentivisedOwners() {
-        var n = 0;
-        ownerState.forEach(function (m) { if (m.is_incentivised) { n++; } });
-        return n;
-    }
-
     function renderOwnerMembers() {
         if (ownerState.length === 0) {
             ownerMembersEl.innerHTML = '<div class="okr-arci-empty">No owners assigned</div>';
         } else {
-            var rule = selectedIncentiveRule();
-            var showTick = ownerState.length === 2 && rule && rule.code === 'RULE1';
-            var incCount = countIncentivisedOwners();
             var html = '';
             ownerState.forEach(function (m) {
-                var tickHtml = '';
-                if (showTick) {
-                    var atMax = !m.is_incentivised && incCount >= 1;
-                    tickHtml = '<label class="okr-arci-incentivised">'
-                        + '<input type="checkbox" class="okr-owner-incentivised-chk" data-staff="' + m.staff_id + '"'
-                        + (m.is_incentivised ? ' checked' : '')
-                        + (atMax ? ' disabled' : '') + '> Incentivised</label>';
-                }
                 html += '<div class="okr-arci-member">'
                     + '<div class="okr-arci-member-info">'
                     + '<div class="okr-arci-member-dept">(' + escapeHtml(m.department_name || '') + ')</div>'
                     + '<div class="okr-arci-member-name">' + escapeHtml(m.staff_name) + '</div>'
                     + '</div>'
-                    + tickHtml
                     + '<span class="okr-arci-remove" data-staff="' + m.staff_id + '" title="Remove">&times;</span>'
                     + '</div>';
             });
             ownerMembersEl.innerHTML = html;
         }
-        owner2PurposeWrap.style.display = ownerState.length === 2 ? 'block' : 'none';
     }
 
     ownerMembersEl.addEventListener('click', function (e) {
@@ -238,17 +171,7 @@
             var staffId = parseInt(e.target.getAttribute('data-staff'), 10);
             ownerState = ownerState.filter(function (m) { return m.staff_id !== staffId; });
             markChanged();
-            refreshIncentiveRuleVisibility();
-        }
-    });
-    ownerMembersEl.addEventListener('change', function (e) {
-        if (e.target.classList.contains('okr-owner-incentivised-chk')) {
-            var staffId = parseInt(e.target.getAttribute('data-staff'), 10);
-            var checked = e.target.checked;
-            ownerState.forEach(function (m) {
-                if (m.staff_id === staffId) { m.is_incentivised = checked; }
-            });
-            refreshIncentiveRuleVisibility();
+            refreshOwnerUI();
         }
     });
 
@@ -270,133 +193,39 @@
                 staff_id: parseInt(checks[i].value, 10),
                 staff_name: checks[i].getAttribute('data-name'),
                 dept_id: deptId ? parseInt(deptId, 10) : null,
-                department_name: deptName,
-                is_incentivised: false
+                department_name: deptName
             });
         }
         ownerDeptSelect.value = '';
         ownerStaffSearch.value = '';
         markChanged();
-        refreshIncentiveRuleVisibility();
+        refreshOwnerUI();
     });
 
-    function refreshIncentiveRuleVisibility() {
-        var selectedLevel = (CFG.levels || []).filter(function (l) { return String(l.level) === levelSelect.value; })[0];
-        var noPayout = !!(selectedLevel && Number(selectedLevel.base_rm) === 0);
-
-        incentiveRuleSelect.disabled = noPayout;
-
-        var rule = selectedIncentiveRule();
-        incentiveRuleHint.textContent = rule ? rule.payout_logic : 'Select an incentive rule to see how the payout will be split.';
-
+    function refreshOwnerUI() {
         renderOwnerMembers();
         renderOwnerStaffList();
-        refreshIncentiveBreakdown();
     }
 
-    var breakdownEl = document.getElementById('okr-incentive-breakdown');
-    var stat1El = document.getElementById('okr-incentive-stat1');
-    var stat1LabelEl = document.getElementById('okr-incentive-stat1-label');
-    var stat1ValueEl = document.getElementById('okr-incentive-stat1-value');
-    var stat2El = document.getElementById('okr-incentive-stat2');
-    var stat2LabelEl = document.getElementById('okr-incentive-stat2-label');
-    var stat2ValueEl = document.getElementById('okr-incentive-stat2-value');
-
-    function refreshIncentiveBreakdown() {
-        var selectedLevel = (CFG.levels || []).filter(function (l) { return String(l.level) === levelSelect.value; })[0];
-        var baseRm = selectedLevel ? Number(selectedLevel.base_rm) : 0;
-
-        if (ownerState.length === 0 || baseRm <= 0) {
-            breakdownEl.style.display = 'none';
-            return;
-        }
-
-        stat1LabelEl.textContent = '1st Owner · ' + ownerState[0].staff_name;
-
-        if (ownerState.length < 2) {
-            stat1El.classList.add('okr-incentive-stat--full');
-            stat1ValueEl.textContent = 'RM' + baseRm.toFixed(2);
-            stat2El.style.display = 'none';
-        } else {
-            stat1El.classList.remove('okr-incentive-stat--full');
-            stat2El.style.display = 'block';
-            stat2LabelEl.textContent = '2nd Owner · ' + ownerState[1].staff_name;
-
-            var rule = selectedIncentiveRule();
-            if (rule && rule.code === 'RULE2') {
-                stat1ValueEl.textContent = 'RM' + (baseRm / 2).toFixed(2);
-                stat2ValueEl.textContent = 'RM' + (baseRm / 2).toFixed(2);
-            } else if (rule && rule.code === 'RULE1') {
-                stat1ValueEl.textContent = ownerState[0].is_incentivised ? 'RM' + baseRm.toFixed(2) : 'RM0.00';
-                stat2ValueEl.textContent = ownerState[1].is_incentivised ? 'RM' + baseRm.toFixed(2) : 'RM0.00';
-            } else {
-                stat1ValueEl.textContent = 'RM0.00';
-                stat2ValueEl.textContent = 'RM0.00';
-            }
-        }
-        breakdownEl.style.display = 'grid';
-    }
-
-    // Prefill from the card's current saved owners/rule before wiring change handlers.
-    levelSelect.value = card.difficulty_level || '';
-    incentiveRuleSelect.value = card.incentive_rule || '';
-    [
-        { id: card.owner_staff_id, incentivised: card.incentivised_owner_staff_id },
-        { id: card.owner2_staff_id, incentivised: card.incentivised_owner_staff_id }
-    ].forEach(function (o) {
-        if (!o.id) { return; }
-        var staff = CFG.staff.filter(function (s) { return s.id === o.id; })[0];
+    // Prefill from the card's current saved owners before wiring change handlers.
+    [card.owner_staff_id, card.owner2_staff_id].forEach(function (ownerId) {
+        if (!ownerId) { return; }
+        var staff = CFG.staff.filter(function (s) { return s.id === ownerId; })[0];
         if (!staff) { return; }
         var deptId = (staff.deptIds || [])[0] || null;
         ownerState.push({
             staff_id: staff.id,
             staff_name: staff.name,
             dept_id: deptId,
-            department_name: departmentName(deptId),
-            is_incentivised: String(o.incentivised) === String(o.id)
+            department_name: departmentName(deptId)
         });
     });
-    refreshIncentiveRuleVisibility();
-
-    incentiveRuleSelect.addEventListener('change', refreshIncentiveRuleVisibility);
-
-    var levelRubricEl = document.getElementById('okr-level-rubric');
-    var levelRmEl = document.getElementById('okr-level-rm');
-
-    function refreshLevelPreview() {
-        var lv = CFG.levels.filter(function (l) { return String(l.level) === levelSelect.value; })[0];
-        if (lv) {
-            levelRubricEl.textContent = lv.rubric_text || '';
-            levelRmEl.textContent = 'RM' + Number(lv.base_rm).toFixed(2);
-        } else {
-            levelRubricEl.textContent = 'Select a difficulty level to see its rubric and RM.';
-            levelRmEl.textContent = 'RM0.00';
-        }
-        refreshIncentiveRuleVisibility();
-    }
-    refreshLevelPreview();
-    levelSelect.addEventListener('change', refreshLevelPreview);
+    refreshOwnerUI();
 
     // ---------------------------------------------------------------
     // Timeline: Start/End/Status + once-only Extended + auto Final Due Date.
     // ---------------------------------------------------------------
     var statusSelect = document.getElementById('okr-status');
-    var incentiveTileEl = document.getElementById('okr-incentive-tile');
-    var incentiveTileLabelEl = document.getElementById('okr-incentive-tile-label');
-    // Per-status pays_incentive/pill_class/incentive_tile_class, computed
-    // server-side from okr_statuses (see edit.php) instead of a hardcoded
-    // copy of the status->class mapping here.
-    var STATUS_META = CFG.statusMeta || {};
-
-    function refreshIncentiveTileStatus() {
-        var status = statusSelect.value;
-        var meta = STATUS_META[status] || {};
-        incentiveTileEl.classList.remove('okr-incentive-tile--blue', 'okr-incentive-tile--yellow', 'okr-incentive-tile--red');
-        if (meta.incentive_tile_class) { incentiveTileEl.classList.add(meta.incentive_tile_class); }
-        incentiveTileLabelEl.textContent = meta.pays_incentive ? 'Total Incentive' : 'Estimated Incentive';
-    }
-    refreshIncentiveTileStatus();
-    statusSelect.addEventListener('change', refreshIncentiveTileStatus);
 
     var startInput = document.getElementById('okr-start');
     var endInput = document.getElementById('okr-end');
@@ -630,6 +459,302 @@
     renderFiles();
 
     // ---------------------------------------------------------------
+    // Key Result Progress (real actions against the existing card - a
+    // 2-level Key Result / Subtask list, self-referential via parent_id,
+    // modeled after iidas's project_detail.php Progression Task widget)
+    // ---------------------------------------------------------------
+    var krList = []; // flat rows from listKeyResults: { id, parent_id, description, created_by, creator_name, atem_id, status_id, status_value, pill_class, start_date, end_date, has_children, display_status_value, display_pill_class }
+    var krListEl = document.getElementById('okr-kr-list');
+    var krModalEl = document.getElementById('okr-kr-modal');
+    var krModal = new bootstrap.Modal(krModalEl);
+    var krCreatedByInput = document.getElementById('okr-kr-created-by');
+    var krStartInput = document.getElementById('okr-kr-start');
+    var krEndInput = document.getElementById('okr-kr-end');
+    var krStatusSelect = document.getElementById('okr-kr-status');
+
+    // ATEM cards this user can see, keyed by id - resolved once per load so
+    // linked Key Results can show the real title instead of just "ATEM #123".
+    // ATEM lives in a separate service (atem-api behind atem/api.php), so this
+    // is a same-session AJAX call into the sibling module, not a DB join.
+    var atemMap = {};
+    var atemListCache = null;
+
+    function fetchAtemList(callback) {
+        if (atemListCache) { callback(atemListCache); return; }
+        fetch(CFG.atemApiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'list-atems' })
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                atemListCache = (res && res.success) ? (res.data || []) : [];
+                atemListCache.forEach(function (a) { atemMap[a.id] = a; });
+                callback(atemListCache);
+            })
+            .catch(function () { callback([]); });
+    }
+
+    function krChildren(parentId) {
+        return krList.filter(function (r) { return r.parent_id === parentId; });
+    }
+
+    function krRowHtml(row, index, isSubtask) {
+        var statusText = row.display_status_value || row.status_value;
+        var statusClass = 'okr-pill ' + (row.display_pill_class || row.pill_class);
+        var statusHint = row.has_children ? '<div class="okr-kr-progress-hint">From Subtasks</div>' : '';
+        var dates = '<span class="okr-kr-dates-value">' + (row.start_date || '-') + ' &rarr; ' + (row.end_date || '-') + '</span>';
+
+        var atemBadge = '';
+        if (row.atem_id) {
+            var atem = atemMap[row.atem_id];
+            var atemLabel = atem ? escapeHtml(atem.title) : ('ATEM #' + row.atem_id);
+            atemBadge = '<div class="okr-kr-atem-badge">'
+                + '<i class="bi bi-link-45deg"></i> '
+                + '<a href="' + CFG.atemViewUrl + '?id=' + row.atem_id + '" target="_blank" rel="noopener">' + atemLabel + '</a>'
+                + '<span class="okr-kr-atem-unlink" data-kr-id="' + row.id + '" title="Unlink">&times;</span>'
+                + '</div>';
+        }
+
+        return '<div class="okr-kr-row' + (isSubtask ? ' okr-kr-row--subtask' : '') + '" data-id="' + row.id + '">'
+            + '<div class="okr-kr-num">' + index + '</div>'
+            + '<div class="okr-kr-body">'
+            + '<div class="okr-kr-desc"><span class="okr-kr-desc-label">Action Details</span>' + escapeHtml(row.description) + atemBadge + '</div>'
+            + '<div><span class="okr-kr-dates-label">Dates</span>' + dates + '</div>'
+            + '<div><span class="okr-kr-assignee-label">Created By</span><span class="okr-kr-assignee-name">' + escapeHtml(row.creator_name || '') + '</span></div>'
+            + '<div><span class="okr-kr-progress-label">Status</span><span class="' + statusClass + '">' + escapeHtml(statusText) + '</span>' + statusHint + '</div>'
+            + '</div>'
+            + '<div class="okr-kr-actions">'
+            + '<button type="button" class="okr-kr-icon-btn okr-kr-icon-btn--edit okr-kr-edit" title="Edit"><i class="bi bi-pencil"></i></button>'
+            + '<button type="button" class="okr-kr-icon-btn okr-kr-icon-btn--delete okr-kr-delete" title="Delete"><i class="bi bi-x-lg"></i></button>'
+            + (isSubtask ? '' : '<button type="button" class="okr-kr-icon-btn okr-kr-icon-btn--add okr-kr-add-sub" title="Add Subtask"><i class="bi bi-plus-lg"></i></button>')
+            + (isSubtask ? '' : '<button type="button" class="okr-kr-icon-btn okr-kr-icon-btn--atem okr-kr-add-atem" title="Link ATEM"><i class="bi bi-file-earmark-plus"></i></button>')
+            + '</div>'
+            + '</div>';
+    }
+
+    function renderKeyResults() {
+        var topLevel = krList.filter(function (r) { return !r.parent_id; });
+        if (topLevel.length === 0) {
+            krListEl.innerHTML = '<div class="okr-kr-empty">No Key Results added yet.</div>';
+            return;
+        }
+        var html = '';
+        topLevel.forEach(function (row, i) {
+            html += krRowHtml(row, (i + 1), false);
+            krChildren(row.id).forEach(function (sub, j) {
+                html += krRowHtml(sub, (i + 1) + '.' + (j + 1), true);
+            });
+        });
+        krListEl.innerHTML = html;
+    }
+
+    function loadKeyResults() {
+        var body = new URLSearchParams();
+        body.set('action', 'listKeyResults');
+        body.set('id', card.id);
+        fetch(CFG.apiUrl + '?' + body.toString())
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (res.success) {
+                    krList = res.data || [];
+                    if (krList.some(function (r) { return r.atem_id; })) {
+                        fetchAtemList(function () { renderKeyResults(); });
+                    } else {
+                        renderKeyResults();
+                    }
+                } else {
+                    setError('okr-kr', res.message || 'Failed to load Key Results.');
+                }
+            })
+            .catch(function () {
+                setError('okr-kr', 'Network error while loading Key Results.');
+            });
+    }
+
+    function openKrModal(opts) {
+        setError('okr-kr-modal', '');
+        document.getElementById('okr-kr-id').value = opts.id || '';
+        document.getElementById('okr-kr-parent-id').value = opts.parent_id || '';
+        document.getElementById('okr-kr-desc').value = opts.description || '';
+        krStartInput.value = opts.start_date || '';
+        krEndInput.value = opts.end_date || '';
+        if (opts.status_id) { krStatusSelect.value = opts.status_id; }
+        else { krStatusSelect.selectedIndex = 0; }
+        krCreatedByInput.value = opts.id ? (opts.creatorName || '') : (CFG.currentUserName || '');
+        document.getElementById('okr-kr-modal-title').textContent = opts.parent_id ? (opts.id ? 'Edit Subtask' : 'Add Subtask') : (opts.id ? 'Edit Key Result' : 'Add Key Result');
+
+        var statusWrap = document.getElementById('okr-kr-status-wrap');
+        statusWrap.style.display = opts.hasChildren ? 'none' : '';
+
+        // Key Result dates must fall within the OKR's own Start/End Date.
+        krStartInput.min = startInput.value || '';
+        krStartInput.max = endInput.value || '';
+        krEndInput.min = startInput.value || '';
+        krEndInput.max = endInput.value || '';
+
+        krModal.show();
+    }
+
+    document.getElementById('okr-kr-add-btn').addEventListener('click', function () {
+        openKrModal({});
+    });
+
+    krListEl.addEventListener('click', function (e) {
+        var row = e.target.closest ? e.target.closest('.okr-kr-row') : null;
+        if (!row) { return; }
+        var id = parseInt(row.getAttribute('data-id'), 10);
+        var data = krList.filter(function (r) { return r.id === id; })[0];
+        if (!data) { return; }
+
+        if (e.target.closest('.okr-kr-atem-unlink')) {
+            var unlinkBody = new URLSearchParams();
+            unlinkBody.set('action', 'unlinkKeyResultAtem');
+            unlinkBody.set('id', id);
+            fetch(CFG.apiUrl, { method: 'POST', body: unlinkBody })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    if (res.success) { loadKeyResults(); }
+                    else { setError('okr-kr', res.message || 'Failed to unlink ATEM.'); }
+                })
+                .catch(function () { setError('okr-kr', 'Network error. Please try again.'); });
+        } else if (e.target.closest('.okr-kr-add-atem')) {
+            openAtemModal(id);
+        } else if (e.target.closest('.okr-kr-add-sub')) {
+            openKrModal({ parent_id: id });
+        } else if (e.target.closest('.okr-kr-edit')) {
+            openKrModal({
+                id: data.id,
+                parent_id: data.parent_id,
+                description: data.description,
+                start_date: data.start_date,
+                end_date: data.end_date,
+                creatorName: data.creator_name,
+                status_id: data.status_id,
+                hasChildren: data.has_children
+            });
+        } else if (e.target.closest('.okr-kr-delete')) {
+            if (!confirm('Delete this ' + (data.parent_id ? 'subtask' : 'Key Result') + '? This cannot be undone.')) { return; }
+            var body = new URLSearchParams();
+            body.set('action', 'deleteKeyResult');
+            body.set('id', id);
+            fetch(CFG.apiUrl, { method: 'POST', body: body })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    if (res.success) { loadKeyResults(); }
+                    else { setError('okr-kr', res.message || 'Failed to delete.'); }
+                })
+                .catch(function () { setError('okr-kr', 'Network error. Please try again.'); });
+        }
+    });
+
+    document.getElementById('okr-kr-save-btn').addEventListener('click', function () {
+        setError('okr-kr-modal', '');
+        var description = document.getElementById('okr-kr-desc').value.trim();
+        if (!description) {
+            setError('okr-kr-modal', 'Action Details is required.');
+            return;
+        }
+
+        var id = document.getElementById('okr-kr-id').value;
+        var parentId = document.getElementById('okr-kr-parent-id').value;
+
+        var body = new URLSearchParams();
+        body.set('action', id ? 'updateKeyResult' : 'createKeyResult');
+        if (id) {
+            body.set('id', id);
+        } else {
+            body.set('card_id', card.id);
+            if (parentId) { body.set('parent_id', parentId); }
+        }
+        body.set('description', description);
+        body.set('start_date', krStartInput.value);
+        body.set('end_date', krEndInput.value);
+        body.set('status_id', krStatusSelect.value);
+
+        fetch(CFG.apiUrl, { method: 'POST', body: body })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (res.success) {
+                    krModal.hide();
+                    loadKeyResults();
+                } else {
+                    setError('okr-kr-modal', res.message || 'Failed to save.');
+                }
+            })
+            .catch(function () {
+                setError('okr-kr-modal', 'Network error. Please try again.');
+            });
+    });
+
+    // ---------------------------------------------------------------
+    // Link ATEM modal - picks an existing card from the real ATEM module
+    // ---------------------------------------------------------------
+    var atemModalEl = document.getElementById('okr-kr-atem-modal');
+    var atemModal = new bootstrap.Modal(atemModalEl);
+    var atemSearchInput = document.getElementById('okr-kr-atem-search');
+    var atemListEl = document.getElementById('okr-kr-atem-list');
+    var atemTargetKrId = null;
+
+    function renderAtemOptions(items) {
+        if (items.length === 0) {
+            atemListEl.innerHTML = '<div class="okr-kr-empty">No ATEM cards found.</div>';
+            return;
+        }
+        var html = '';
+        items.forEach(function (a) {
+            html += '<div class="okr-kr-atem-row" data-atem-id="' + a.id + '">'
+                + '<div class="okr-kr-atem-row-title">' + escapeHtml(a.title || ('ATEM #' + a.id)) + '</div>'
+                + '<div class="okr-kr-atem-row-meta">' + escapeHtml(a.status || '') + '</div>'
+                + '</div>';
+        });
+        atemListEl.innerHTML = html;
+    }
+
+    function openAtemModal(krId) {
+        setError('okr-kr-atem-modal', '');
+        atemTargetKrId = krId;
+        atemSearchInput.value = '';
+        atemListEl.innerHTML = '<div class="okr-kr-empty">Loading...</div>';
+        atemModal.show();
+        fetchAtemList(function (items) { renderAtemOptions(items); });
+    }
+
+    atemSearchInput.addEventListener('input', function () {
+        var term = atemSearchInput.value.toLowerCase();
+        var items = (atemListCache || []).filter(function (a) {
+            return String(a.title || '').toLowerCase().indexOf(term) !== -1;
+        });
+        renderAtemOptions(items);
+    });
+
+    atemListEl.addEventListener('click', function (e) {
+        var row = e.target.closest('.okr-kr-atem-row');
+        if (!row || !atemTargetKrId) { return; }
+        var atemId = parseInt(row.getAttribute('data-atem-id'), 10);
+
+        var body = new URLSearchParams();
+        body.set('action', 'linkKeyResultAtem');
+        body.set('id', atemTargetKrId);
+        body.set('atem_id', atemId);
+        fetch(CFG.apiUrl, { method: 'POST', body: body })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (res.success) {
+                    atemModal.hide();
+                    loadKeyResults();
+                } else {
+                    setError('okr-kr-atem-modal', res.message || 'Failed to link ATEM.');
+                }
+            })
+            .catch(function () {
+                setError('okr-kr-atem-modal', 'Network error. Please try again.');
+            });
+    });
+
+    loadKeyResults();
+
+    // ---------------------------------------------------------------
     // Validation + save
     // ---------------------------------------------------------------
     function validate() {
@@ -639,9 +764,6 @@
         var objective = document.getElementById('okr-objective').value.trim();
         if (!objective) { setError('okr-objective', 'Objective is required.'); ok = false; }
 
-        var keyResults = keyResultsHtml();
-        if (!keyResults) { setError('okr-key-results', 'Key Results are required.'); ok = false; }
-
         if (referenceLinks.length === 0) {
             setError('reflink-section', 'At least one reference link (e.g. the Trello board) is required.');
             ok = false;
@@ -649,9 +771,6 @@
 
         var type = document.getElementById('okr-type').value;
         if (!type) { setError('okr-type', 'Select an OKR type.'); ok = false; }
-
-        var level = levelSelect.value;
-        if (!level) { setError('okr-level', 'Select a difficulty level.'); ok = false; }
 
         var start = document.getElementById('okr-start').value;
         if (!start) { setError('okr-start', 'Start date is required.'); ok = false; }
@@ -674,17 +793,6 @@
 
         if (ownerState.length === 0) { setError('okr-owner', 'An owner is required.'); ok = false; }
 
-        if (ownerState.length === 2) {
-            var rule = selectedIncentiveRule();
-            if (!rule) {
-                setError('okr-incentive-rule', 'Select an incentive rule.');
-                ok = false;
-            } else if (rule.code === 'RULE1' && countIncentivisedOwners() !== 1) {
-                setError('okr-owner', 'Tick which owner receives the incentive.');
-                ok = false;
-            }
-        }
-
         return ok;
     }
 
@@ -694,29 +802,15 @@
 
         var owner1 = ownerState[0] || {};
         var owner2 = ownerState[1] || {};
-        var incentivisedOwnerId = '';
-        if (ownerState.length === 1) {
-            incentivisedOwnerId = owner1.staff_id;
-        } else if (ownerState.length === 2) {
-            var rule2 = selectedIncentiveRule();
-            if (rule2 && rule2.code === 'RULE1') {
-                var incMember = ownerState.filter(function (m) { return m.is_incentivised; })[0];
-                incentivisedOwnerId = incMember ? incMember.staff_id : '';
-            }
-        }
 
         var payload = new URLSearchParams();
         payload.set('action', 'updateCard');
         payload.set('id', card.id);
         payload.set('objective', document.getElementById('okr-objective').value.trim());
-        payload.set('key_results', keyResultsHtml());
         payload.set('okr_type', document.getElementById('okr-type').value);
-        payload.set('difficulty_level', levelSelect.value);
         payload.set('owner_staff_id', owner1.staff_id || '');
         payload.set('owner2_staff_id', owner2.staff_id || '');
-        payload.set('owner2_purpose', document.getElementById('okr-owner2-purpose').value.trim());
-        payload.set('incentive_rule', incentiveRuleSelect.value);
-        payload.set('incentivised_owner_staff_id', incentivisedOwnerId);
+        payload.set('owner2_purpose', '');
         payload.set('dept_scope', deptScope);
         payload.set('start_date', document.getElementById('okr-start').value);
         payload.set('end_date', document.getElementById('okr-end').value);
@@ -747,4 +841,207 @@
         }
         submitSave();
     });
+
+    // ---------------------------------------------------------------
+    // Chat Box - per-card discussion thread, modeled after ATEM's Chat Box.
+    // Own messages can be edited/unsent within a 60s window (also enforced
+    // server-side); a 4s poll does a full resync so edits/unsends from other
+    // viewers propagate, mirroring ATEM's polling pattern.
+    // ---------------------------------------------------------------
+    var chatWrapEl = document.getElementById('okr-chat-wrap');
+    if (chatWrapEl && card.id) {
+        var CHAT_EDIT_WINDOW_MS = 60000;
+        var chatMessages = CFG.chatMessages ? CFG.chatMessages.slice() : [];
+        var chatInput = document.getElementById('okr-chat-input');
+        var chatSendBtn = document.getElementById('okr-chat-send-btn');
+
+        function chatWithinEditWindow(createdAt) {
+            var createdMs = new Date(String(createdAt).replace(' ', 'T')).getTime();
+            return (Date.now() - createdMs) < CHAT_EDIT_WINDOW_MS;
+        }
+
+        function chatBubbleHtml(m) {
+            var mine = CFG.currentStaffId && m.sender_staff_id === CFG.currentStaffId;
+            var canEdit = mine && chatWithinEditWindow(m.created_at);
+            var actions = canEdit
+                ? '<div class="okr-chat-bubble-actions">'
+                    + '<button type="button" class="okr-chat-edit-btn" data-id="' + m.id + '">Edit</button>'
+                    + '<button type="button" class="okr-chat-unsend-btn" data-id="' + m.id + '">Unsend</button>'
+                    + '</div>'
+                : '';
+            return '<div class="okr-chat-bubble' + (mine ? ' okr-chat-bubble-mine' : '') + '" data-message-id="' + m.id + '" data-created-at="' + escapeHtml(m.created_at) + '">'
+                + '<div class="okr-chat-bubble-header"><strong>' + escapeHtml(m.sender_name) + '</strong> <span class="okr-chat-bubble-time">' + escapeHtml(m.created_at) + '</span></div>'
+                + '<div class="okr-chat-bubble-body" id="okr-chat-body-' + m.id + '">' + escapeHtml(m.message) + '</div>'
+                + actions
+                + '</div>';
+        }
+
+        function renderChat() {
+            if (chatMessages.length === 0) {
+                chatWrapEl.innerHTML = '<div class="okr-empty-state">No messages yet.</div>';
+                return;
+            }
+            var html = '';
+            chatMessages.forEach(function (m) { html += chatBubbleHtml(m); });
+            chatWrapEl.innerHTML = html;
+            chatWrapEl.scrollTop = chatWrapEl.scrollHeight;
+        }
+
+        // Strips expired Edit/Unsend buttons every 5s without a full
+        // re-render, so the 60s window closes without waiting for a poll.
+        function refreshChatActionVisibility() {
+            chatMessages.forEach(function (m) {
+                var mine = CFG.currentStaffId && m.sender_staff_id === CFG.currentStaffId;
+                var bubble = chatWrapEl.querySelector('[data-message-id="' + m.id + '"]');
+                if (!bubble) { return; }
+                var actionsEl = bubble.querySelector('.okr-chat-bubble-actions');
+                var stillEditable = mine && chatWithinEditWindow(m.created_at);
+                if (!stillEditable && actionsEl) { actionsEl.remove(); }
+            });
+        }
+
+        function loadChatMessages() {
+            var body = new URLSearchParams();
+            body.set('action', 'listChatMessages');
+            body.set('id', card.id);
+            fetch(CFG.apiUrl + '?' + body.toString())
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    if (!res.success) { return; }
+                    var incoming = res.data || [];
+                    if (JSON.stringify(incoming) !== JSON.stringify(chatMessages)) {
+                        chatMessages = incoming;
+                        renderChat();
+                    }
+                })
+                .catch(function () {});
+        }
+
+        function sendChatMessage() {
+            var message = chatInput.value.trim();
+            if (!message) { return; }
+            setError('okr-chat', '');
+
+            var body = new URLSearchParams();
+            body.set('action', 'sendChatMessage');
+            body.set('id', card.id);
+            body.set('message', message);
+
+            fetch(CFG.apiUrl, { method: 'POST', body: body })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    if (res.success) {
+                        chatMessages.push({
+                            id: res.id,
+                            sender_staff_id: res.sender_staff_id,
+                            sender_name: res.sender_name,
+                            message: res.message,
+                            created_at: res.created_at,
+                            updated_at: res.updated_at
+                        });
+                        chatInput.value = '';
+                        renderChat();
+                    } else {
+                        setError('okr-chat', res.message || 'Failed to send message.');
+                    }
+                })
+                .catch(function () {
+                    setError('okr-chat', 'Network error. Please try again.');
+                });
+        }
+
+        function startEditChatMessage(id) {
+            var m = chatMessages.filter(function (x) { return x.id === id; })[0];
+            if (!m) { return; }
+            var bodyEl = document.getElementById('okr-chat-body-' + id);
+            if (!bodyEl) { return; }
+            bodyEl.innerHTML = '<textarea class="okr-chat-edit-textarea" rows="2">' + escapeHtml(m.message) + '</textarea>'
+                + '<div class="okr-chat-edit-actions">'
+                + '<button type="button" class="okr-chat-save-btn" data-id="' + id + '">Save</button>'
+                + '<button type="button" class="okr-chat-cancel-btn" data-id="' + id + '">Cancel</button>'
+                + '</div>';
+            bodyEl.querySelector('textarea').focus();
+        }
+
+        function cancelEditChatMessage(id) {
+            var m = chatMessages.filter(function (x) { return x.id === id; })[0];
+            var bodyEl = document.getElementById('okr-chat-body-' + id);
+            if (m && bodyEl) { bodyEl.textContent = m.message; }
+        }
+
+        function saveEditChatMessage(id) {
+            var bodyEl = document.getElementById('okr-chat-body-' + id);
+            if (!bodyEl) { return; }
+            var textarea = bodyEl.querySelector('textarea');
+            var message = textarea ? textarea.value.trim() : '';
+            if (!message) { return; }
+
+            var body = new URLSearchParams();
+            body.set('action', 'editChatMessage');
+            body.set('id', id);
+            body.set('message', message);
+
+            fetch(CFG.apiUrl, { method: 'POST', body: body })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    if (res.success) {
+                        var m = chatMessages.filter(function (x) { return x.id === id; })[0];
+                        if (m) { m.message = res.message; }
+                        renderChat();
+                    } else {
+                        alert(res.message || 'Failed to save message.');
+                    }
+                })
+                .catch(function () {
+                    alert('Network error. Please try again.');
+                });
+        }
+
+        function unsendChatMessage(id) {
+            if (!confirm('Unsend this message?')) { return; }
+            var body = new URLSearchParams();
+            body.set('action', 'unsendChatMessage');
+            body.set('id', id);
+            fetch(CFG.apiUrl, { method: 'POST', body: body })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    if (res.success) {
+                        chatMessages = chatMessages.filter(function (x) { return x.id !== id; });
+                        renderChat();
+                    } else {
+                        alert(res.message || 'Failed to unsend message.');
+                    }
+                })
+                .catch(function () {
+                    alert('Network error. Please try again.');
+                });
+        }
+
+        chatWrapEl.addEventListener('click', function (e) {
+            var editBtn = e.target.closest('.okr-chat-edit-btn');
+            var unsendBtn = e.target.closest('.okr-chat-unsend-btn');
+            var saveBtn = e.target.closest('.okr-chat-save-btn');
+            var cancelBtn = e.target.closest('.okr-chat-cancel-btn');
+            if (editBtn) { startEditChatMessage(parseInt(editBtn.getAttribute('data-id'), 10)); }
+            else if (unsendBtn) { unsendChatMessage(parseInt(unsendBtn.getAttribute('data-id'), 10)); }
+            else if (saveBtn) { saveEditChatMessage(parseInt(saveBtn.getAttribute('data-id'), 10)); }
+            else if (cancelBtn) { cancelEditChatMessage(parseInt(cancelBtn.getAttribute('data-id'), 10)); }
+        });
+
+        if (chatSendBtn) {
+            chatSendBtn.addEventListener('click', sendChatMessage);
+        }
+        if (chatInput) {
+            chatInput.addEventListener('keydown', function (e) {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                    e.preventDefault();
+                    sendChatMessage();
+                }
+            });
+        }
+
+        renderChat();
+        setInterval(loadChatMessages, 4000);
+        setInterval(refreshChatActionVisibility, 5000);
+    }
 })();

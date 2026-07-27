@@ -26,13 +26,14 @@ if (!isset($conn)) {
 }
 
 $username    = mysqli_real_escape_string($conn, $_SESSION['myusername']);
-$auth_result = mysqli_query($conn, "SELECT id, grade, department, okr, atem FROM staff WHERE username = '$username' AND recycle != 1");
+$auth_result = mysqli_query($conn, "SELECT id, nama_staff, grade, department, okr, atem FROM staff WHERE username = '$username' AND recycle != 1");
 if (!$auth_result || mysqli_num_rows($auth_result) === 0) {
     echo json_encode(['error' => 'Unauthorized']);
     exit;
 }
 $auth_row          = mysqli_fetch_assoc($auth_result);
 $requester_id      = (int)$auth_row['id'];
+$requester_name    = $auth_row['nama_staff'];
 $requester_grade   = (int)$auth_row['grade'];
 // SuperAdmin is the union of staff.okr and staff.atem.
 $requester_is_admin = ((int)$auth_row['okr'] === 1 || (int)$auth_row['atem'] === 1);
@@ -50,6 +51,7 @@ if ($requester_grade < 1 && !$requester_is_admin) {
 }
 
 require_once(__DIR__ . '/lib.php');
+require_once(__DIR__ . '/mailer.php');
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
@@ -87,11 +89,10 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
         $filter_sql .= " AND (c.owner_staff_id = $filter_staff_id OR c.owner2_staff_id = $filter_staff_id OR c.issuer_staff_id = $filter_staff_id)";
     }
 
-    $query = "SELECT c.id, c.okr_type, c.difficulty_level, os.value AS result_status, os.pays_incentive,
-                     c.start_date, c.end_date, lv.base_rm AS level_rm, lv.label AS level_label,
-                     iss.department AS issuer_department
+    $query = "SELECT c.id, c.okr_type, os.value AS result_status,
+                     c.start_date, c.end_date, c.issuer_staff_id,
+                     iss.nama_staff AS issuer_name, iss.department AS issuer_department
               FROM okr_cards c
-              LEFT JOIN okr_levels lv ON c.difficulty_level = lv.level
               LEFT JOIN okr_statuses os ON c.result_status = os.id
               LEFT JOIN staff iss ON c.issuer_staff_id = iss.id
               WHERE c.deleted_at IS NULL AND ($scope_where) $filter_sql";
@@ -105,17 +106,6 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
         }
     }
 
-    $levels = [];
-    $level_res = mysqli_query($conn, 'SELECT level, label FROM okr_levels ORDER BY level');
-    if ($level_res) {
-        while ($lrow = mysqli_fetch_assoc($level_res)) {
-            $levels[(int)$lrow['level']] = [
-                'level_id' => (int)$lrow['level'], 'label' => $lrow['label'],
-                'cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0,
-            ];
-        }
-    }
-
     $by_type = [];
     foreach (okrTypeValues($conn) as $_type) {
         $by_type[$_type] = [
@@ -125,6 +115,7 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     }
 
     $by_dept = [];
+    $by_staff = [];
     $total = 0;
     $active = 0;
     $extended = 0;
@@ -132,16 +123,12 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     $excellence = 0;
     $failed = 0;
     $overdue = 0;
-    $incentive_total = 0.0;
     $today = date('Y-m-d');
 
     if ($result) {
         while ($row = mysqli_fetch_assoc($result)) {
             $total++;
             $status = $row['result_status'];
-            $level  = (int)$row['difficulty_level'];
-            $rm     = (float)$row['level_rm'];
-            $is_paid = (int)$row['pays_incentive'] === 1;
             // Completed with Extension folds into the "complete" bucket
             // alongside a plain Completed - see updateCard.
             $is_complete = ($status === OKR_STATUS_COMPLETED || $status === OKR_STATUS_COMPLETED_EXTENSION);
@@ -152,15 +139,6 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
             if ($status === 'Completed with Excellence') { $excellence++; }
             if ($status === 'Failed') { $failed++; }
             if (($status === OKR_STATUS_ACTIVE || $status === 'Extended') && $row['end_date'] < $today) { $overdue++; }
-            if ($is_paid) { $incentive_total += $rm; }
-
-            if (isset($levels[$level])) {
-                $levels[$level]['cards']++;
-                if ($is_complete) { $levels[$level]['complete']++; }
-                if ($status === 'Completed with Excellence') { $levels[$level]['excellence']++; }
-                if ($status === 'Failed') { $levels[$level]['fail']++; }
-                if ($is_paid) { $levels[$level]['forecast'] += $rm; }
-            }
 
             $dept_ids = okrDeptIdsFromCsv($row['issuer_department']);
             $dept_id  = !empty($dept_ids) ? $dept_ids[0] : 0;
@@ -168,14 +146,32 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
                 $by_dept[$dept_id] = [
                     'dept_id' => $dept_id,
                     'dept_name' => $dept_id > 0 && isset($dept_names[$dept_id]) ? $dept_names[$dept_id] : 'Unassigned',
-                    'cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0,
+                    'cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0,
+                    'suspended' => 0, 'force_terminated' => 0,
                 ];
             }
             $by_dept[$dept_id]['cards']++;
             if ($is_complete) { $by_dept[$dept_id]['complete']++; }
             if ($status === 'Completed with Excellence') { $by_dept[$dept_id]['excellence']++; }
             if ($status === 'Failed') { $by_dept[$dept_id]['fail']++; }
-            if ($is_paid) { $by_dept[$dept_id]['forecast'] += $rm; }
+            if ($status === OKR_STATUS_SUSPENDED) { $by_dept[$dept_id]['suspended']++; }
+            if ($status === OKR_STATUS_FORCE_TERMINATED) { $by_dept[$dept_id]['force_terminated']++; }
+
+            // Top offenders for the Suspended & Force Terminated ranking -
+            // keyed by issuer, only tallying the two statuses that matter
+            // there so a staff member with no suspensions never shows up.
+            $issuer_id = (int)$row['issuer_staff_id'];
+            if ($status === OKR_STATUS_SUSPENDED || $status === OKR_STATUS_FORCE_TERMINATED) {
+                if (!isset($by_staff[$issuer_id])) {
+                    $by_staff[$issuer_id] = [
+                        'staff_id' => $issuer_id,
+                        'staff_name' => $row['issuer_name'] ?: ('Staff #' . $issuer_id),
+                        'suspended' => 0, 'force_terminated' => 0,
+                    ];
+                }
+                if ($status === OKR_STATUS_SUSPENDED) { $by_staff[$issuer_id]['suspended']++; }
+                if ($status === OKR_STATUS_FORCE_TERMINATED) { $by_staff[$issuer_id]['force_terminated']++; }
+            }
 
             if (isset($by_type[$row['okr_type']])) {
                 if ($is_complete) { $by_type[$row['okr_type']]['complete']++; }
@@ -187,6 +183,14 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
         }
     }
 
+    // Top 10 offenders by (suspended + force_terminated) count, most first -
+    // sorted server-side so index.js just renders the array as-is.
+    $by_staff_suspend = array_values($by_staff);
+    usort($by_staff_suspend, function ($a, $b) {
+        return ($b['suspended'] + $b['force_terminated']) - ($a['suspended'] + $a['force_terminated']);
+    });
+    $by_staff_suspend = array_slice($by_staff_suspend, 0, 10);
+
     echo json_encode([
         'success' => true,
         'data' => [
@@ -196,146 +200,11 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
                 'excellence' => $excellence, 'failed' => $failed,
             ],
             'overdue_count' => $overdue,
-            'incentive_total' => $incentive_total,
-            'by_level' => array_values($levels),
             'by_department' => array_values($by_dept),
             'by_type' => array_values($by_type),
+            'by_staff_suspend' => $by_staff_suspend,
         ],
     ]);
-    exit;
-}
-
-// Per-staff performance scorecard (mirrors ATEM's staff_performance list),
-// restricted to senior management/admin same as the ATEM equivalent.
-if ($action === 'staffPerformanceList' && $_SERVER['REQUEST_METHOD'] === 'GET') {
-    if ($requester_grade < 4 && !$requester_is_admin) {
-        echo json_encode(['error' => 'Unauthorized']);
-        exit;
-    }
-
-    $f = okrPerformanceFilterSql($_GET);
-
-    echo json_encode(['success' => true, 'data' => okrStaffPerformanceRows($conn, $f['filter_sql'], $f['filter_grade'], $f['filter_struct'])]);
-    exit;
-}
-
-// Locks the incentive on every Complete/Complete with Excellence card matching
-// the current Performance filter, so it can no longer be edited, deleted, or
-// suspended - the OKR equivalent of a payout being finalised. Restricted to
-// People Management (staff_department id 17) or admin.
-if ($action === 'lockPayoutCards' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    $is_ppm = in_array(17, $requester_dept_ids, true);
-    if (!$requester_is_admin && !$is_ppm) {
-        echo json_encode(['success' => false, 'message' => 'Only People Management or admin can lock payouts.']);
-        exit;
-    }
-
-    $f = okrPerformanceFilterSql($_POST);
-
-    $lock_staff_id = (int)($_POST['staff_id'] ?? 0);
-    $lock_staff_id_list = [];
-    if (!empty($_POST['staff_ids'])) {
-        foreach (explode(',', $_POST['staff_ids']) as $_sid) {
-            $_sid = (int)trim($_sid);
-            if ($_sid > 0) { $lock_staff_id_list[] = $_sid; }
-        }
-    }
-    $lock_remark = trim($_POST['remark'] ?? '');
-    $locked_count = okrLockPayoutCards($conn, $requester_id, $f['filter_sql'], $lock_staff_id, $lock_staff_id_list, $lock_remark, $f['filter_grade'], $f['filter_struct']);
-
-    echo json_encode(['success' => true, 'locked_count' => $locked_count]);
-    exit;
-}
-
-// Reverses lockPayoutCards: unlocks every currently-locked card matching the
-// filter, in case People Management locked something in error. Same
-// restriction as locking itself.
-if ($action === 'unlockPayoutCards' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    $is_ppm = in_array(17, $requester_dept_ids, true);
-    if (!$requester_is_admin && !$is_ppm) {
-        echo json_encode(['success' => false, 'message' => 'Only People Management or admin can unlock payouts.']);
-        exit;
-    }
-
-    $f = okrPerformanceFilterSql($_POST);
-
-    $unlock_staff_id = (int)($_POST['staff_id'] ?? 0);
-    $unlock_staff_id_list = [];
-    if (!empty($_POST['staff_ids'])) {
-        foreach (explode(',', $_POST['staff_ids']) as $_sid) {
-            $_sid = (int)trim($_sid);
-            if ($_sid > 0) { $unlock_staff_id_list[] = $_sid; }
-        }
-    }
-    $unlocked_count = okrUnlockPayoutCards($conn, $requester_id, $f['filter_sql'], $unlock_staff_id, $unlock_staff_id_list, $f['filter_grade'], $f['filter_struct']);
-
-    echo json_encode(['success' => true, 'unlocked_count' => $unlocked_count]);
-    exit;
-}
-
-// Drill-down for one staff member's cards under the same filters as above.
-if ($action === 'staffOkrList' && $_SERVER['REQUEST_METHOD'] === 'GET') {
-    if ($requester_grade < 4 && !$requester_is_admin) {
-        echo json_encode(['error' => 'Unauthorized']);
-        exit;
-    }
-
-    $staff_id = (int)($_GET['staff_id'] ?? 0);
-    if ($staff_id <= 0) {
-        echo json_encode(['success' => false, 'message' => 'Invalid staff.']);
-        exit;
-    }
-
-    $f = okrPerformanceFilterSql($_GET);
-    $filter_sql = $f['filter_sql'];
-
-    $query = "SELECT c.id, c.objective, c.okr_type, lv.label AS level_label, lv.base_rm AS level_rm,
-                     c.start_date, c.end_date, os.value AS result_status, os.pays_incentive,
-                     c.owner_staff_id, c.owner2_staff_id, c.incentive_rule, c.incentivised_owner_staff_id
-              FROM okr_cards c
-              LEFT JOIN okr_levels lv ON c.difficulty_level = lv.level
-              LEFT JOIN okr_statuses os ON c.result_status = os.id
-              LEFT JOIN staff iss ON c.issuer_staff_id = iss.id
-              WHERE c.deleted_at IS NULL AND (c.owner_staff_id = $staff_id OR c.owner2_staff_id = $staff_id) $filter_sql
-              ORDER BY c.start_date DESC";
-    $result = mysqli_query($conn, $query);
-
-    $cards = [];
-    if ($result) {
-        while ($row = mysqli_fetch_assoc($result)) {
-            $status  = $row['result_status'];
-            $rm      = (float)$row['level_rm'];
-            $is_paid = (int)$row['pays_incentive'] === 1;
-            $owner_id  = (int)$row['owner_staff_id'];
-            $owner2_id = $row['owner2_staff_id'] !== null ? (int)$row['owner2_staff_id'] : 0;
-
-            $share = 0.0;
-            if ($owner2_id > 0) {
-                if ((int)$row['incentive_rule'] === 1) {
-                    $share = ((int)$row['incentivised_owner_staff_id'] === $staff_id) ? $rm : 0.0;
-                } else {
-                    $share = $rm / 2;
-                }
-            } else {
-                $share = $rm;
-            }
-
-            $cards[] = [
-                'id'           => (int)$row['id'],
-                'objective'    => $row['objective'],
-                'okr_type'     => $row['okr_type'],
-                'level_label'  => $row['level_label'],
-                'start_date'   => $row['start_date'],
-                'end_date'     => $row['end_date'],
-                'result_status' => $status,
-                'pill_class'   => okrPillClass($status),
-                'role'         => ($owner2_id === $staff_id) ? '2nd Owner' : 'Owner',
-                'rm_share'     => $is_paid ? $share : 0.0,
-            ];
-        }
-    }
-
-    echo json_encode(['success' => true, 'data' => $cards]);
     exit;
 }
 
@@ -358,8 +227,8 @@ if ($action === 'getCard' && $_SERVER['REQUEST_METHOD'] === 'GET') {
         'reference_links' => okrFetchReferenceLinks($conn, $id),
         'attachments'     => okrFetchAttachments($conn, $id),
         'audit_logs'      => okrFetchAuditLogs($conn, $id),
-        'can_edit'        => (($requester_is_admin || (int)$row['issuer_staff_id'] === $requester_id) && !(bool)$row['incentive_locked']),
-        'can_suspend'     => (($requester_is_admin || $requester_grade === 5) && !(bool)$row['incentive_locked']),
+        'can_edit'        => ($requester_is_admin || (int)$row['issuer_staff_id'] === $requester_id),
+        'can_suspend'     => ($requester_is_admin || $requester_grade === 5),
     ]);
     exit;
 }
@@ -395,20 +264,16 @@ if ($action === 'createCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $mode        = trim($_POST['mode'] ?? 'final');
     $objective   = trim($_POST['objective'] ?? '');
-    $key_results = trim($_POST['key_results'] ?? '');
     $okr_type    = trim($_POST['okr_type'] ?? '');
-    $level       = (int)($_POST['difficulty_level'] ?? 0);
     $owner_id    = (int)($_POST['owner_staff_id'] ?? 0);
     $owner2_id   = (int)($_POST['owner2_staff_id'] ?? 0);
     $owner2_purpose = trim($_POST['owner2_purpose'] ?? '');
-    $incentive_rule = (int)($_POST['incentive_rule'] ?? 1);
-    $incentivised_owner_id = (int)($_POST['incentivised_owner_staff_id'] ?? 0);
     $dept_scope  = trim($_POST['dept_scope'] ?? '');
     $start_date  = trim($_POST['start_date'] ?? '');
     $end_date    = trim($_POST['end_date'] ?? '');
 
-    if ($objective === '' || $key_results === '') {
-        echo json_encode(['success' => false, 'message' => 'Objective and Key Results are required.']);
+    if ($objective === '') {
+        echo json_encode(['success' => false, 'message' => 'Objective is required.']);
         exit;
     }
     // A draft doesn't need its reference link lined up yet (e.g. the Trello
@@ -422,10 +287,6 @@ if ($action === 'createCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['success' => false, 'message' => 'Invalid OKR type.']);
         exit;
     }
-    if ($level < 1 || $level > 4) {
-        echo json_encode(['success' => false, 'message' => 'Invalid difficulty level.']);
-        exit;
-    }
     if ($owner_id <= 0) {
         echo json_encode(['success' => false, 'message' => 'An owner is required.']);
         exit;
@@ -434,20 +295,12 @@ if ($action === 'createCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['success' => false, 'message' => 'Owner and 2nd Owner must be different people.']);
         exit;
     }
-    if (!in_array($incentive_rule, [1, 2], true)) {
-        echo json_encode(['success' => false, 'message' => 'Invalid incentive rule.']);
+    // Issuer must register as one of the Owner(s) (OKR's ARCI-equivalent) -
+    // enforced going forward only, existing cards with issuer != owner are
+    // untouched.
+    if ($requester_id !== $owner_id && $requester_id !== $owner2_id) {
+        echo json_encode(['success' => false, 'message' => 'The issuer must be tagged as one of this OKR\'s owner(s).']);
         exit;
-    }
-    if ($owner2_id > 0) {
-        if ($incentive_rule === 2) {
-            $incentivised_owner_id = 0;
-        } elseif ($incentivised_owner_id !== $owner_id && $incentivised_owner_id !== $owner2_id) {
-            echo json_encode(['success' => false, 'message' => 'Select which owner receives the incentive.']);
-            exit;
-        }
-    } else {
-        $incentive_rule = 1;
-        $incentivised_owner_id = $owner_id;
     }
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $start_date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end_date)) {
         echo json_encode(['success' => false, 'message' => 'Start and end dates are required.']);
@@ -468,12 +321,10 @@ if ($action === 'createCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $dept_scope_safe = implode(',', $dept_ids);
 
     $objective_e   = mysqli_real_escape_string($conn, $objective);
-    $key_results_e = mysqli_real_escape_string($conn, $key_results);
     $okr_type_e    = mysqli_real_escape_string($conn, $okr_type);
     $owner2_purpose_e = mysqli_real_escape_string($conn, $owner2_purpose);
     $owner2_sql       = $owner2_id > 0 ? $owner2_id : 'NULL';
     $owner2_purpose_sql = $owner2_id > 0 ? "'$owner2_purpose_e'" : 'NULL';
-    $incentivised_owner_sql = $incentivised_owner_id > 0 ? $incentivised_owner_id : 'NULL';
 
     // Always resolve the status id explicitly rather than relying on
     // okr_cards.result_status's DB column default - okr_statuses' ids are
@@ -484,18 +335,26 @@ if ($action === 'createCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $status_id = $mode === 'draft' ? 1 : 2;
     }
 
+    // difficulty_level is a NOT NULL column with a foreign key into okr_levels
+    // (no default) - the incentive system that column belonged to is retired,
+    // but the schema itself is untouched, so every insert must still supply a
+    // valid level. Level 1 always exists (it's the RM0 "no incentive" level
+    // from the old system) and is otherwise unused now. key_results is also
+    // NOT NULL with no default - the field was removed from the UI (slated
+    // for replacement), so every insert supplies an empty string.
     $insert = "INSERT INTO okr_cards
         (objective, key_results, okr_type, difficulty_level,
-         owner_staff_id, owner2_staff_id, owner2_purpose, incentive_rule, incentivised_owner_staff_id,
+         owner_staff_id, owner2_staff_id, owner2_purpose,
          issuer_staff_id, dept_scope, start_date, end_date, result_status)
-        VALUES ('$objective_e', '$key_results_e', '$okr_type_e', $level,
-                $owner_id, $owner2_sql, $owner2_purpose_sql, $incentive_rule, $incentivised_owner_sql,
+        VALUES ('$objective_e', '', '$okr_type_e', 1,
+                $owner_id, $owner2_sql, $owner2_purpose_sql,
                 $requester_id, '$dept_scope_safe', '$start_date', '$end_date', $status_id)";
 
     if (mysqli_query($conn, $insert)) {
         $new_id = mysqli_insert_id($conn);
         okrFinalizeStagedAttachments($conn, $new_id, $requester_id);
         okrFinalizeStagedReferenceLinks($conn, $new_id, $requester_id);
+        okrFinalizeStagedKeyResults($conn, $new_id, $requester_id);
         unset($_SESSION['okr_draft_state']);
         okrLogAudit($conn, $new_id, $requester_id, 'created', null, $mode === 'draft' ? 'OKR card saved as draft.' : 'OKR card created.');
         echo json_encode(['success' => true, 'id' => $new_id]);
@@ -566,6 +425,133 @@ if ($action === 'removeStagedReferenceLink' && $_SERVER['REQUEST_METHOD'] === 'P
     exit;
 }
 
+// Stages a top-level Key Result (for the create form, before the card exists
+// yet). Subtasks and ATEM links can also be staged against its token below -
+// see stageKeyResultSubtask/stageKeyResultAtemLink.
+if ($action === 'stageKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if ($requester_grade < 3 && !$requester_is_admin) {
+        echo json_encode(['success' => false, 'message' => 'Unauthorized.']);
+        exit;
+    }
+    $description = trim($_POST['description'] ?? '');
+    if ($description === '') {
+        echo json_encode(['success' => false, 'message' => 'Action details are required.']);
+        exit;
+    }
+    $start_date = trim($_POST['start_date'] ?? '') ?: null;
+    $end_date   = trim($_POST['end_date'] ?? '') ?: null;
+    $status_id  = (int)($_POST['status_id'] ?? 0);
+    $allowed_statuses = okrKeyResultAssignableStatuses($conn);
+    $allowed_ids = array_column($allowed_statuses, 'id');
+    if (!in_array($status_id, $allowed_ids, true)) {
+        echo json_encode(['success' => false, 'message' => 'Select a valid status.']);
+        exit;
+    }
+    $status_value = array_column($allowed_statuses, 'value', 'id')[$status_id];
+
+    $token = okrStageKeyResult($description, $start_date, $end_date, $status_id);
+
+    echo json_encode([
+        'success'      => true,
+        'token'        => $token,
+        'description'  => $description,
+        'creator_name' => $requester_name,
+        'start_date'   => $start_date,
+        'end_date'     => $end_date,
+        'status_id'    => $status_id,
+        'status_value' => $status_value,
+        'pill_class'   => okrPillClass($status_value),
+    ]);
+    exit;
+}
+
+if ($action === 'removeStagedKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $token = $_POST['token'] ?? '';
+    okrRemoveStagedKeyResult($token);
+    echo json_encode(['success' => true]);
+    exit;
+}
+
+// Stages a Subtask under a still-staged top-level Key Result (create form,
+// before the card - and its Key Results - exist yet). Mirrors createKeyResult's
+// real-row version, but nests inside the parent's session entry instead of a
+// real parent_id.
+if ($action === 'stageKeyResultSubtask' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if ($requester_grade < 3 && !$requester_is_admin) {
+        echo json_encode(['success' => false, 'message' => 'Unauthorized.']);
+        exit;
+    }
+    $parent_token = $_POST['parent_token'] ?? '';
+    $description = trim($_POST['description'] ?? '');
+    if ($parent_token === '' || $description === '') {
+        echo json_encode(['success' => false, 'message' => 'Parent Key Result and action details are required.']);
+        exit;
+    }
+    $start_date = trim($_POST['start_date'] ?? '') ?: null;
+    $end_date   = trim($_POST['end_date'] ?? '') ?: null;
+    $status_id  = (int)($_POST['status_id'] ?? 0);
+    $allowed_statuses = okrKeyResultAssignableStatuses($conn);
+    $allowed_ids = array_column($allowed_statuses, 'id');
+    if (!in_array($status_id, $allowed_ids, true)) {
+        echo json_encode(['success' => false, 'message' => 'Select a valid status.']);
+        exit;
+    }
+    $status_value = array_column($allowed_statuses, 'value', 'id')[$status_id];
+
+    $sub_token = okrStageKeyResultSubtask($parent_token, $description, $start_date, $end_date, $status_id);
+    if ($sub_token === null) {
+        echo json_encode(['success' => false, 'message' => 'Parent Key Result not found.']);
+        exit;
+    }
+
+    echo json_encode([
+        'success'      => true,
+        'token'        => $sub_token,
+        'parent_token' => $parent_token,
+        'description'  => $description,
+        'creator_name' => $requester_name,
+        'start_date'   => $start_date,
+        'end_date'     => $end_date,
+        'status_id'    => $status_id,
+        'status_value' => $status_value,
+        'pill_class'   => okrPillClass($status_value),
+    ]);
+    exit;
+}
+
+if ($action === 'removeStagedKeyResultSubtask' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $parent_token = $_POST['parent_token'] ?? '';
+    $token = $_POST['token'] ?? '';
+    okrRemoveStagedKeyResultSubtask($parent_token, $token);
+    echo json_encode(['success' => true]);
+    exit;
+}
+
+// Links/unlinks an existing real ATEM card against a still-staged top-level
+// Key Result. Same "plain int reference, no FK" rule as linkKeyResultAtem -
+// the frontend resolves the title by calling atem/api.php directly.
+if ($action === 'stageKeyResultAtemLink' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $token = $_POST['token'] ?? '';
+    $atem_id = (int)($_POST['atem_id'] ?? 0);
+    if ($token === '' || $atem_id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Invalid Key Result or ATEM.']);
+        exit;
+    }
+    if (!okrSetStagedKeyResultAtem($token, $atem_id)) {
+        echo json_encode(['success' => false, 'message' => 'Key Result not found.']);
+        exit;
+    }
+    echo json_encode(['success' => true]);
+    exit;
+}
+
+if ($action === 'removeStagedKeyResultAtemLink' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $token = $_POST['token'] ?? '';
+    okrSetStagedKeyResultAtem($token, null);
+    echo json_encode(['success' => true]);
+    exit;
+}
+
 // Adds a reference link directly onto an already-saved card (used from view.php).
 if ($action === 'addReferenceLink' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $id   = (int)($_POST['id'] ?? 0);
@@ -576,7 +562,7 @@ if ($action === 'addReferenceLink' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT issuer_staff_id, incentive_locked FROM okr_cards WHERE id = $id AND deleted_at IS NULL");
+    $check = mysqli_query($conn, "SELECT issuer_staff_id FROM okr_cards WHERE id = $id AND deleted_at IS NULL");
     if (!$check || mysqli_num_rows($check) === 0) {
         echo json_encode(['success' => false, 'message' => 'Card not found.']);
         exit;
@@ -584,10 +570,6 @@ if ($action === 'addReferenceLink' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $card = mysqli_fetch_assoc($check);
     if (!$requester_is_admin && (int)$card['issuer_staff_id'] !== $requester_id) {
         echo json_encode(['success' => false, 'message' => 'Only the issuer can add reference links.']);
-        exit;
-    }
-    if ((bool)$card['incentive_locked']) {
-        echo json_encode(['success' => false, 'message' => 'This OKR is locked after payout and can no longer be changed.']);
         exit;
     }
 
@@ -611,7 +593,7 @@ if ($action === 'deleteReferenceLink' && $_SERVER['REQUEST_METHOD'] === 'POST') 
         exit;
     }
 
-    $query = "SELECT rl.card_id, rl.name, c.issuer_staff_id, c.incentive_locked
+    $query = "SELECT rl.card_id, rl.name, c.issuer_staff_id
               FROM okr_reference_links rl
               JOIN okr_cards c ON rl.card_id = c.id
               WHERE rl.id = $link_id AND c.deleted_at IS NULL";
@@ -625,10 +607,6 @@ if ($action === 'deleteReferenceLink' && $_SERVER['REQUEST_METHOD'] === 'POST') 
         echo json_encode(['success' => false, 'message' => 'Only the issuer can remove reference links.']);
         exit;
     }
-    if ((bool)$row['incentive_locked']) {
-        echo json_encode(['success' => false, 'message' => 'This OKR is locked after payout and can no longer be changed.']);
-        exit;
-    }
     if (okrCountReferenceLinks($conn, $row['card_id']) <= 1) {
         echo json_encode(['success' => false, 'message' => 'At least one reference link is required — add another before removing this one.']);
         exit;
@@ -636,6 +614,275 @@ if ($action === 'deleteReferenceLink' && $_SERVER['REQUEST_METHOD'] === 'POST') 
 
     mysqli_query($conn, "DELETE FROM okr_reference_links WHERE id = $link_id");
     okrLogAudit($conn, $row['card_id'], $requester_id, 'reference_link_removed', null, 'Removed reference link: ' . $row['name']);
+    echo json_encode(['success' => true]);
+    exit;
+}
+
+// Key Result Progress: read for an already-saved card (used by edit.php and
+// view.php). Read access mirrors the card's own visibility scope, not just
+// the issuer/admin edit gate - anyone who can see the card sees its
+// Key Results.
+if ($action === 'listKeyResults' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+    $id = (int)($_GET['id'] ?? 0);
+    if ($id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Invalid card.']);
+        exit;
+    }
+    $scope_where = okrScopeWhere($requester_id, $requester_grade, $requester_dept_ids, $requester_is_admin);
+    $check = mysqli_query($conn, "SELECT id FROM okr_cards c WHERE c.id = $id AND c.deleted_at IS NULL AND ($scope_where)");
+    if (!$check || mysqli_num_rows($check) === 0) {
+        echo json_encode(['success' => false, 'message' => 'Card not found or not accessible.']);
+        exit;
+    }
+    echo json_encode(['success' => true, 'data' => okrFetchKeyResults($conn, $id)]);
+    exit;
+}
+
+// Adds a Key Result (parent_id blank) or a Subtask (parent_id set) directly
+// onto an already-saved card. Same edit gate as updateCard: issuer or admin,
+// and not Suspended.
+if ($action === 'createKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $card_id = (int)($_POST['card_id'] ?? 0);
+    $description = trim($_POST['description'] ?? '');
+    if ($card_id <= 0 || $description === '') {
+        echo json_encode(['success' => false, 'message' => 'Card and action details are required.']);
+        exit;
+    }
+
+    $check = mysqli_query($conn, "SELECT c.issuer_staff_id, os.value AS status_value
+                                   FROM okr_cards c LEFT JOIN okr_statuses os ON c.result_status = os.id
+                                   WHERE c.id = $card_id AND c.deleted_at IS NULL");
+    if (!$check || mysqli_num_rows($check) === 0) {
+        echo json_encode(['success' => false, 'message' => 'Card not found.']);
+        exit;
+    }
+    $card = mysqli_fetch_assoc($check);
+    if (!$requester_is_admin && (int)$card['issuer_staff_id'] !== $requester_id) {
+        echo json_encode(['success' => false, 'message' => 'Only the issuer can add Key Results.']);
+        exit;
+    }
+    if ($card['status_value'] === 'Suspended') {
+        echo json_encode(['success' => false, 'message' => 'Unsuspend this OKR before editing it.']);
+        exit;
+    }
+
+    $parent_id = (int)($_POST['parent_id'] ?? 0) ?: null;
+    if ($parent_id !== null) {
+        $parent_check = mysqli_query($conn, "SELECT id FROM okr_key_results WHERE id = $parent_id AND card_id = $card_id AND parent_id IS NULL");
+        if (!$parent_check || mysqli_num_rows($parent_check) === 0) {
+            echo json_encode(['success' => false, 'message' => 'Invalid parent Key Result.']);
+            exit;
+        }
+    }
+
+    $start_date = trim($_POST['start_date'] ?? '') ?: null;
+    $end_date   = trim($_POST['end_date'] ?? '') ?: null;
+    $status_id  = (int)($_POST['status_id'] ?? 0);
+    $allowed_statuses = okrKeyResultAssignableStatuses($conn);
+    $allowed_ids = array_column($allowed_statuses, 'id');
+    if (!in_array($status_id, $allowed_ids, true)) {
+        echo json_encode(['success' => false, 'message' => 'Select a valid status.']);
+        exit;
+    }
+    $status_value = array_column($allowed_statuses, 'value', 'id')[$status_id];
+
+    $description_e = mysqli_real_escape_string($conn, $description);
+    $parent_sql = $parent_id !== null ? $parent_id : 'NULL';
+    $start_sql = $start_date !== null ? "'" . mysqli_real_escape_string($conn, $start_date) . "'" : 'NULL';
+    $end_sql = $end_date !== null ? "'" . mysqli_real_escape_string($conn, $end_date) . "'" : 'NULL';
+
+    $insert = "INSERT INTO okr_key_results
+        (card_id, parent_id, description, status_id, start_date, end_date, created_by)
+        VALUES ($card_id, $parent_sql, '$description_e', $status_id, $start_sql, $end_sql, $requester_id)";
+    if (mysqli_query($conn, $insert)) {
+        $new_id = mysqli_insert_id($conn);
+        okrLogAudit($conn, $card_id, $requester_id, $parent_id !== null ? 'subtask_added' : 'key_result_added', null,
+            ($parent_id !== null ? 'Added subtask: ' : 'Added Key Result: ') . $description);
+        echo json_encode([
+            'success'      => true,
+            'id'           => $new_id,
+            'creator_name' => $requester_name,
+            'status_id'    => $status_id,
+            'status_value' => $status_value,
+            'pill_class'   => okrPillClass($status_value),
+        ]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Database error: ' . mysqli_error($conn)]);
+    }
+    exit;
+}
+
+if ($action === 'updateKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $id = (int)($_POST['id'] ?? 0);
+    if ($id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Invalid Key Result.']);
+        exit;
+    }
+
+    $check = mysqli_query($conn, "SELECT kr.card_id, kr.parent_id, c.issuer_staff_id, os.value AS status_value
+                                   FROM okr_key_results kr
+                                   JOIN okr_cards c ON kr.card_id = c.id
+                                   LEFT JOIN okr_statuses os ON c.result_status = os.id
+                                   WHERE kr.id = $id AND c.deleted_at IS NULL");
+    if (!$check || mysqli_num_rows($check) === 0) {
+        echo json_encode(['success' => false, 'message' => 'Key Result not found.']);
+        exit;
+    }
+    $kr = mysqli_fetch_assoc($check);
+    if (!$requester_is_admin && (int)$kr['issuer_staff_id'] !== $requester_id) {
+        echo json_encode(['success' => false, 'message' => 'Only the issuer can edit Key Results.']);
+        exit;
+    }
+    if ($kr['status_value'] === 'Suspended') {
+        echo json_encode(['success' => false, 'message' => 'Unsuspend this OKR before editing it.']);
+        exit;
+    }
+
+    $description = trim($_POST['description'] ?? '');
+    if ($description === '') {
+        echo json_encode(['success' => false, 'message' => 'Action details are required.']);
+        exit;
+    }
+    $start_date = trim($_POST['start_date'] ?? '') ?: null;
+    $end_date   = trim($_POST['end_date'] ?? '') ?: null;
+    $status_id  = (int)($_POST['status_id'] ?? 0);
+    $allowed_statuses = okrKeyResultAssignableStatuses($conn);
+    $allowed_ids = array_column($allowed_statuses, 'id');
+    if (!in_array($status_id, $allowed_ids, true)) {
+        echo json_encode(['success' => false, 'message' => 'Select a valid status.']);
+        exit;
+    }
+    $status_value = array_column($allowed_statuses, 'value', 'id')[$status_id];
+
+    $description_e = mysqli_real_escape_string($conn, $description);
+    $start_sql = $start_date !== null ? "'" . mysqli_real_escape_string($conn, $start_date) . "'" : 'NULL';
+    $end_sql = $end_date !== null ? "'" . mysqli_real_escape_string($conn, $end_date) . "'" : 'NULL';
+
+    $update = "UPDATE okr_key_results SET
+        description = '$description_e',
+        start_date = $start_sql, end_date = $end_sql, status_id = $status_id
+        WHERE id = $id";
+    if (mysqli_query($conn, $update)) {
+        okrLogAudit($conn, $kr['card_id'], $requester_id,
+            $kr['parent_id'] !== null ? 'subtask_updated' : 'key_result_updated', null,
+            ($kr['parent_id'] !== null ? 'Updated subtask: ' : 'Updated Key Result: ') . $description);
+        echo json_encode([
+            'success'      => true,
+            'status_id'    => $status_id,
+            'status_value' => $status_value,
+            'pill_class'   => okrPillClass($status_value),
+        ]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Database error: ' . mysqli_error($conn)]);
+    }
+    exit;
+}
+
+// Deleting a Key Result cascades to its Subtasks (ON DELETE CASCADE).
+if ($action === 'deleteKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $id = (int)($_POST['id'] ?? 0);
+    if ($id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Invalid Key Result.']);
+        exit;
+    }
+
+    $check = mysqli_query($conn, "SELECT kr.card_id, kr.parent_id, kr.description, c.issuer_staff_id, os.value AS status_value
+                                   FROM okr_key_results kr
+                                   JOIN okr_cards c ON kr.card_id = c.id
+                                   LEFT JOIN okr_statuses os ON c.result_status = os.id
+                                   WHERE kr.id = $id AND c.deleted_at IS NULL");
+    if (!$check || mysqli_num_rows($check) === 0) {
+        echo json_encode(['success' => false, 'message' => 'Key Result not found.']);
+        exit;
+    }
+    $kr = mysqli_fetch_assoc($check);
+    if (!$requester_is_admin && (int)$kr['issuer_staff_id'] !== $requester_id) {
+        echo json_encode(['success' => false, 'message' => 'Only the issuer can remove Key Results.']);
+        exit;
+    }
+    if ($kr['status_value'] === 'Suspended') {
+        echo json_encode(['success' => false, 'message' => 'Unsuspend this OKR before editing it.']);
+        exit;
+    }
+
+    mysqli_query($conn, "DELETE FROM okr_key_results WHERE id = $id");
+    okrLogAudit($conn, $kr['card_id'], $requester_id,
+        $kr['parent_id'] !== null ? 'subtask_removed' : 'key_result_removed', null,
+        ($kr['parent_id'] !== null ? 'Removed subtask: ' : 'Removed Key Result: ') . $kr['description']);
+    echo json_encode(['success' => true]);
+    exit;
+}
+
+// Links a Key Result to an existing card in the real ATEM module. ATEM lives
+// in a separate Laravel service (atem-api), not this database, so atem_id is
+// a bare int reference only - never validated/joined against here. The
+// frontend resolves it for display by calling atem/api.php directly (same
+// session, same origin).
+if ($action === 'linkKeyResultAtem' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $id = (int)($_POST['id'] ?? 0);
+    $atem_id = (int)($_POST['atem_id'] ?? 0);
+    if ($id <= 0 || $atem_id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Invalid Key Result or ATEM.']);
+        exit;
+    }
+
+    $check = mysqli_query($conn, "SELECT kr.card_id, kr.parent_id, kr.description, c.issuer_staff_id, os.value AS status_value
+                                   FROM okr_key_results kr
+                                   JOIN okr_cards c ON kr.card_id = c.id
+                                   LEFT JOIN okr_statuses os ON c.result_status = os.id
+                                   WHERE kr.id = $id AND c.deleted_at IS NULL");
+    if (!$check || mysqli_num_rows($check) === 0) {
+        echo json_encode(['success' => false, 'message' => 'Key Result not found.']);
+        exit;
+    }
+    $kr = mysqli_fetch_assoc($check);
+    if (!$requester_is_admin && (int)$kr['issuer_staff_id'] !== $requester_id) {
+        echo json_encode(['success' => false, 'message' => 'Only the issuer can link an ATEM.']);
+        exit;
+    }
+    if ($kr['status_value'] === 'Suspended') {
+        echo json_encode(['success' => false, 'message' => 'Unsuspend this OKR before editing it.']);
+        exit;
+    }
+
+    mysqli_query($conn, "UPDATE okr_key_results SET atem_id = $atem_id WHERE id = $id");
+    okrLogAudit($conn, $kr['card_id'], $requester_id,
+        $kr['parent_id'] !== null ? 'subtask_atem_linked' : 'key_result_atem_linked', null,
+        'Linked ATEM #' . $atem_id . ' to: ' . $kr['description']);
+    echo json_encode(['success' => true]);
+    exit;
+}
+
+if ($action === 'unlinkKeyResultAtem' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $id = (int)($_POST['id'] ?? 0);
+    if ($id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Invalid Key Result.']);
+        exit;
+    }
+
+    $check = mysqli_query($conn, "SELECT kr.card_id, kr.parent_id, kr.description, c.issuer_staff_id, os.value AS status_value
+                                   FROM okr_key_results kr
+                                   JOIN okr_cards c ON kr.card_id = c.id
+                                   LEFT JOIN okr_statuses os ON c.result_status = os.id
+                                   WHERE kr.id = $id AND c.deleted_at IS NULL");
+    if (!$check || mysqli_num_rows($check) === 0) {
+        echo json_encode(['success' => false, 'message' => 'Key Result not found.']);
+        exit;
+    }
+    $kr = mysqli_fetch_assoc($check);
+    if (!$requester_is_admin && (int)$kr['issuer_staff_id'] !== $requester_id) {
+        echo json_encode(['success' => false, 'message' => 'Only the issuer can unlink an ATEM.']);
+        exit;
+    }
+    if ($kr['status_value'] === 'Suspended') {
+        echo json_encode(['success' => false, 'message' => 'Unsuspend this OKR before editing it.']);
+        exit;
+    }
+
+    mysqli_query($conn, "UPDATE okr_key_results SET atem_id = NULL WHERE id = $id");
+    okrLogAudit($conn, $kr['card_id'], $requester_id,
+        $kr['parent_id'] !== null ? 'subtask_atem_unlinked' : 'key_result_atem_unlinked', null,
+        'Unlinked ATEM from: ' . $kr['description']);
     echo json_encode(['success' => true]);
     exit;
 }
@@ -648,7 +895,7 @@ if ($action === 'addAttachment' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT issuer_staff_id, incentive_locked FROM okr_cards WHERE id = $id AND deleted_at IS NULL");
+    $check = mysqli_query($conn, "SELECT issuer_staff_id FROM okr_cards WHERE id = $id AND deleted_at IS NULL");
     if (!$check || mysqli_num_rows($check) === 0) {
         echo json_encode(['success' => false, 'message' => 'Card not found.']);
         exit;
@@ -656,10 +903,6 @@ if ($action === 'addAttachment' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $card = mysqli_fetch_assoc($check);
     if (!$requester_is_admin && (int)$card['issuer_staff_id'] !== $requester_id) {
         echo json_encode(['success' => false, 'message' => 'Only the issuer can add attachments.']);
-        exit;
-    }
-    if ((bool)$card['incentive_locked']) {
-        echo json_encode(['success' => false, 'message' => 'This OKR is locked after payout and can no longer be changed.']);
         exit;
     }
 
@@ -707,7 +950,7 @@ if ($action === 'deleteAttachment' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $query = "SELECT a.card_id, a.stored_name, a.original_name, c.issuer_staff_id, c.incentive_locked
+    $query = "SELECT a.card_id, a.stored_name, a.original_name, c.issuer_staff_id
               FROM okr_card_attachments a
               JOIN okr_cards c ON a.card_id = c.id
               WHERE a.id = $attachment_id AND c.deleted_at IS NULL";
@@ -719,10 +962,6 @@ if ($action === 'deleteAttachment' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $row = mysqli_fetch_assoc($result);
     if (!$requester_is_admin && (int)$row['issuer_staff_id'] !== $requester_id) {
         echo json_encode(['success' => false, 'message' => 'Only the issuer can remove attachments.']);
-        exit;
-    }
-    if ((bool)$row['incentive_locked']) {
-        echo json_encode(['success' => false, 'message' => 'This OKR is locked after payout and can no longer be changed.']);
         exit;
     }
 
@@ -740,8 +979,8 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT c.issuer_staff_id, c.incentive_locked, c.objective, c.key_results, c.okr_type, c.difficulty_level,
-                                          c.owner_staff_id, c.owner2_staff_id, c.owner2_purpose, c.incentive_rule, c.incentivised_owner_staff_id, c.dept_scope,
+    $check = mysqli_query($conn, "SELECT c.issuer_staff_id, c.objective, c.okr_type,
+                                          c.owner_staff_id, c.owner2_staff_id, c.owner2_purpose, c.dept_scope,
                                           c.start_date, c.end_date, c.extended, c.extended_date, c.remarks, os.value AS status_value
                                    FROM okr_cards c LEFT JOIN okr_statuses os ON c.result_status = os.id
                                    WHERE c.id = $id AND c.deleted_at IS NULL");
@@ -754,42 +993,35 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['success' => false, 'message' => 'Only the issuer can edit this OKR.']);
         exit;
     }
-    if ((bool)$card['incentive_locked']) {
-        echo json_encode(['success' => false, 'message' => 'This OKR is locked after payout and can no longer be changed.']);
-        exit;
-    }
     if ($card['status_value'] === 'Suspended') {
         echo json_encode(['success' => false, 'message' => 'Unsuspend this OKR before editing it.']);
         exit;
     }
 
     $objective   = trim($_POST['objective'] ?? '');
-    $key_results = trim($_POST['key_results'] ?? '');
     $okr_type    = trim($_POST['okr_type'] ?? '');
-    $level       = (int)($_POST['difficulty_level'] ?? 0);
     $owner_id    = (int)($_POST['owner_staff_id'] ?? 0);
     $owner2_id   = (int)($_POST['owner2_staff_id'] ?? 0);
     $owner2_purpose = trim($_POST['owner2_purpose'] ?? '');
-    $incentive_rule = (int)($_POST['incentive_rule'] ?? 1);
-    $incentivised_owner_id = (int)($_POST['incentivised_owner_staff_id'] ?? 0);
     $dept_scope  = trim($_POST['dept_scope'] ?? '');
-    $start_date  = trim($_POST['start_date'] ?? '');
-    $end_date    = trim($_POST['end_date'] ?? '');
+    // Start/End Date are locked once an OKR is created - only an admin can
+    // still change them; a non-admin issuer's posted values are silently
+    // ignored in favour of whatever is already saved (mirrors the Start Date
+    // input already being disabled client-side, just extended to End Date
+    // too and enforced server-side so it can't be bypassed).
+    $start_date  = $requester_is_admin ? trim($_POST['start_date'] ?? '') : $card['start_date'];
+    $end_date    = $requester_is_admin ? trim($_POST['end_date'] ?? '') : $card['end_date'];
     $status      = trim($_POST['result_status'] ?? OKR_STATUS_ACTIVE);
     $extended    = ($_POST['extended'] ?? '') === '1';
     $extended_date = trim($_POST['extended_date'] ?? '');
     $remarks     = trim($_POST['remarks'] ?? '');
 
-    if ($objective === '' || $key_results === '') {
-        echo json_encode(['success' => false, 'message' => 'Objective and Key Results are required.']);
+    if ($objective === '') {
+        echo json_encode(['success' => false, 'message' => 'Objective is required.']);
         exit;
     }
     if ($okr_type !== $card['okr_type'] && !in_array($okr_type, okrTypeValues($conn, false), true)) {
         echo json_encode(['success' => false, 'message' => 'Invalid OKR type.']);
-        exit;
-    }
-    if ($level < 1 || $level > 4) {
-        echo json_encode(['success' => false, 'message' => 'Invalid difficulty level.']);
         exit;
     }
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $start_date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end_date)) {
@@ -809,8 +1041,7 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     // Completed, Failed, or stay Extended while still ongoing. This specific
     // 3-way resolution is a business rule, not something read off the table,
     // so these names stay literal (they have no other identity elsewhere).
-    // Admins are exempt from this restriction: they may set any status until
-    // the OKR is paid (incentive_locked), which is already enforced above.
+    // Admins are exempt from this restriction and may set any status.
     if ((bool)$card['extended'] && !in_array($status, okrPostExtensionResolvableStatuses(), true) && !$requester_is_admin) {
         echo json_encode(['success' => false, 'message' => 'This OKR has been extended, so it can now only resolve as Completed or Failed.']);
         exit;
@@ -836,21 +1067,6 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['success' => false, 'message' => 'Owner and 2nd Owner must be different people.']);
         exit;
     }
-    if (!in_array($incentive_rule, [1, 2], true)) {
-        echo json_encode(['success' => false, 'message' => 'Invalid incentive rule.']);
-        exit;
-    }
-    if ($owner2_id > 0) {
-        if ($incentive_rule === 2) {
-            $incentivised_owner_id = 0;
-        } elseif ($incentivised_owner_id !== $owner_id && $incentivised_owner_id !== $owner2_id) {
-            echo json_encode(['success' => false, 'message' => 'Select which owner receives the incentive.']);
-            exit;
-        }
-    } else {
-        $incentive_rule = 1;
-        $incentivised_owner_id = $owner_id;
-    }
 
     $dept_ids = [];
     foreach (explode(',', $dept_scope) as $_d) {
@@ -862,13 +1078,11 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $dept_scope_safe = implode(',', $dept_ids);
 
     $objective_e   = mysqli_real_escape_string($conn, $objective);
-    $key_results_e = mysqli_real_escape_string($conn, $key_results);
     $okr_type_e    = mysqli_real_escape_string($conn, $okr_type);
     $owner2_purpose_e = mysqli_real_escape_string($conn, $owner2_purpose);
     $remarks_e     = mysqli_real_escape_string($conn, $remarks);
     $owner2_sql       = $owner2_id > 0 ? $owner2_id : 'NULL';
     $owner2_purpose_sql = $owner2_id > 0 ? "'$owner2_purpose_e'" : 'NULL';
-    $incentivised_owner_sql = $incentivised_owner_id > 0 ? $incentivised_owner_id : 'NULL';
     $extended_sql = $extended ? 1 : 0;
     $extended_date_sql = $extended_date !== '' ? "'$extended_date'" : 'NULL';
 
@@ -904,10 +1118,9 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     // Locking is a separate action from completing (handled elsewhere) — a
     // Complete status alone does not lock the card from further edits.
     $update = "UPDATE okr_cards SET
-        objective = '$objective_e', key_results = '$key_results_e',
-        okr_type = '$okr_type_e', difficulty_level = $level,
+        objective = '$objective_e',
+        okr_type = '$okr_type_e',
         owner_staff_id = $owner_id, owner2_staff_id = $owner2_sql, owner2_purpose = $owner2_purpose_sql,
-        incentive_rule = $incentive_rule, incentivised_owner_staff_id = $incentivised_owner_sql,
         dept_scope = '$dept_scope_safe', start_date = '$start_date', end_date = '$end_date',
         extended = $extended_sql, extended_date = $extended_date_sql, remarks = '$remarks_e',
         result_status = $status_id$closed_sql
@@ -916,14 +1129,10 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (mysqli_query($conn, $update)) {
         $changes = [];
         if ($card['objective'] !== $objective) { $changes['objective'] = [$card['objective'], $objective]; }
-        if ($card['key_results'] !== $key_results) { $changes['key_results'] = [$card['key_results'], $key_results]; }
         if ($card['okr_type'] !== $okr_type) { $changes['okr_type'] = [$card['okr_type'], $okr_type]; }
-        if ((int)$card['difficulty_level'] !== $level) { $changes['difficulty_level'] = [(int)$card['difficulty_level'], $level]; }
         if ((int)$card['owner_staff_id'] !== $owner_id) { $changes['owner_staff_id'] = [(int)$card['owner_staff_id'], $owner_id]; }
         if ((int)$card['owner2_staff_id'] !== $owner2_id) { $changes['owner2_staff_id'] = [(int)$card['owner2_staff_id'], $owner2_id]; }
         if ((string)$card['owner2_purpose'] !== $owner2_purpose) { $changes['owner2_purpose'] = [$card['owner2_purpose'], $owner2_purpose]; }
-        if ((int)$card['incentive_rule'] !== $incentive_rule) { $changes['incentive_rule'] = [(int)$card['incentive_rule'], $incentive_rule]; }
-        if ((int)$card['incentivised_owner_staff_id'] !== $incentivised_owner_id) { $changes['incentivised_owner_staff_id'] = [(int)$card['incentivised_owner_staff_id'], $incentivised_owner_id]; }
         if ($card['dept_scope'] !== $dept_scope_safe) { $changes['dept_scope'] = [$card['dept_scope'], $dept_scope_safe]; }
         if ($card['start_date'] !== $start_date) { $changes['start_date'] = [$card['start_date'], $start_date]; }
         if ($card['end_date'] !== $end_date) { $changes['end_date'] = [$card['end_date'], $end_date]; }
@@ -948,7 +1157,7 @@ if ($action === 'deleteCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT c.issuer_staff_id, c.incentive_locked, os.value AS status_value
+    $check = mysqli_query($conn, "SELECT c.issuer_staff_id, os.value AS status_value
                                    FROM okr_cards c LEFT JOIN okr_statuses os ON c.result_status = os.id
                                    WHERE c.id = $id AND c.deleted_at IS NULL");
     if (!$check || mysqli_num_rows($check) === 0) {
@@ -965,10 +1174,6 @@ if ($action === 'deleteCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             echo json_encode(['success' => false, 'message' => 'Only an admin can delete an OKR once it is no longer a Draft.']);
             exit;
         }
-    }
-    if ((bool)$card['incentive_locked']) {
-        echo json_encode(['success' => false, 'message' => 'This OKR is locked after payout and can no longer be deleted.']);
-        exit;
     }
 
     if (mysqli_query($conn, "UPDATE okr_cards SET deleted_at = NOW() WHERE id = $id")) {
@@ -1028,18 +1233,17 @@ if ($action === 'suspendCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT c.incentive_locked, os.value AS status_value
-                                   FROM okr_cards c LEFT JOIN okr_statuses os ON c.result_status = os.id
+    $check = mysqli_query($conn, "SELECT c.objective, c.issuer_staff_id, os.value AS status_value,
+                                          s.nama_staff AS issuer_name, s.email AS issuer_email
+                                   FROM okr_cards c
+                                   LEFT JOIN okr_statuses os ON c.result_status = os.id
+                                   LEFT JOIN staff s ON c.issuer_staff_id = s.id
                                    WHERE c.id = $id AND c.deleted_at IS NULL");
     if (!$check || mysqli_num_rows($check) === 0) {
         echo json_encode(['success' => false, 'message' => 'Card not found.']);
         exit;
     }
     $card = mysqli_fetch_assoc($check);
-    if ((bool)$card['incentive_locked']) {
-        echo json_encode(['success' => false, 'message' => 'This OKR is locked after payout and can no longer be changed.']);
-        exit;
-    }
 
     $reason = trim($_POST['reason'] ?? '');
     if ($reason === '') {
@@ -1047,12 +1251,18 @@ if ($action === 'suspendCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $status_id = okrStatusIdByValue($conn, 'Suspended');
+    $status_id = okrStatusIdByValue($conn, OKR_STATUS_SUSPENDED);
     $reason_e  = mysqli_real_escape_string($conn, $reason);
-    $update = "UPDATE okr_cards SET result_status = $status_id, closed_by = $requester_id, closed_at = NOW(), remarks = '$reason_e' WHERE id = $id";
+    $update = "UPDATE okr_cards SET result_status = $status_id, closed_by = $requester_id, closed_at = NOW(),
+               remarks = '$reason_e', appeal_justification = NULL, appealed_at = NULL WHERE id = $id";
     if (mysqli_query($conn, $update)) {
         okrLogAudit($conn, $id, $requester_id, 'suspended',
-            ['result_status' => [$card['status_value'], 'Suspended']], 'Suspended by CEO: ' . $reason);
+            ['result_status' => [$card['status_value'], OKR_STATUS_SUSPENDED]], 'Suspended by CEO: ' . $reason);
+
+        // Best-effort - a mail failure must never affect this response, the
+        // status change already committed above.
+        sendOkrSuspensionEmail($card['issuer_email'], $card['issuer_name'], $id, $card['objective'], $reason, $requester_name);
+
         echo json_encode(['success' => true]);
     } else {
         echo json_encode(['success' => false, 'message' => 'Database error: ' . mysqli_error($conn)]);
@@ -1071,7 +1281,7 @@ if ($action === 'unsuspendCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT c.incentive_locked, os.value AS status_value
+    $check = mysqli_query($conn, "SELECT os.value AS status_value
                                    FROM okr_cards c LEFT JOIN okr_statuses os ON c.result_status = os.id
                                    WHERE c.id = $id AND c.deleted_at IS NULL");
     if (!$check || mysqli_num_rows($check) === 0) {
@@ -1079,34 +1289,309 @@ if ($action === 'unsuspendCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     $card = mysqli_fetch_assoc($check);
-    if ($card['status_value'] !== 'Suspended') {
+    if ($card['status_value'] !== OKR_STATUS_SUSPENDED) {
         echo json_encode(['success' => false, 'message' => 'This OKR is not suspended.']);
         exit;
     }
 
-    // Restore whatever status the card had right before it was suspended
-    // (e.g. Completed), instead of always reopening it as Active.
-    $restore_status = OKR_STATUS_ACTIVE;
-    $log_result = mysqli_query($conn, "SELECT changes FROM okr_audit_logs
-                                        WHERE card_id = $id AND event = 'suspended'
-                                        ORDER BY created_at DESC LIMIT 1");
-    if ($log_result && ($log_row = mysqli_fetch_assoc($log_result)) && $log_row['changes']) {
-        $changes = json_decode($log_row['changes'], true);
-        if (isset($changes['result_status'][0]) && $changes['result_status'][0] !== '') {
-            $restore_status = $changes['result_status'][0];
-        }
-    }
-
-    $status_id = okrStatusIdByValue($conn, $restore_status);
-    $closed_sql = $restore_status === OKR_STATUS_ACTIVE ? ', closed_by = NULL, closed_at = NULL' : '';
-    $update = "UPDATE okr_cards SET result_status = $status_id$closed_sql WHERE id = $id";
+    // Unsuspend always reopens as Active (write off Closure Date) - it no
+    // longer restores whatever status the card had before it was suspended.
+    $status_id = okrStatusIdByValue($conn, OKR_STATUS_ACTIVE);
+    $update = "UPDATE okr_cards SET result_status = $status_id, closed_by = NULL, closed_at = NULL,
+               appeal_justification = NULL, appealed_at = NULL WHERE id = $id";
     if (mysqli_query($conn, $update)) {
         okrLogAudit($conn, $id, $requester_id, 'unsuspended',
-            ['result_status' => ['Suspended', $restore_status]], 'Unsuspended by CEO.');
+            ['result_status' => [OKR_STATUS_SUSPENDED, OKR_STATUS_ACTIVE]], 'Unsuspended by CEO. Reopened as Active.');
         echo json_encode(['success' => true]);
     } else {
         echo json_encode(['success' => false, 'message' => 'Database error: ' . mysqli_error($conn)]);
     }
+    exit;
+}
+
+// Issuer appeals a suspension by submitting a justification - one pending
+// appeal per suspension cycle (cleared on unsuspend/force-terminate). Emails
+// every CEO/admin recipient (okrCeoRecipients) with the justification + OKR
+// number and a plain login-gated deep link (see mailer.php's comment on why
+// this isn't a magic bypass link).
+if ($action === 'appealSuspension' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $id = (int)($_POST['id'] ?? 0);
+    $justification = trim($_POST['justification'] ?? '');
+    if ($id <= 0 || $justification === '') {
+        echo json_encode(['success' => false, 'message' => 'A justification is required to appeal.']);
+        exit;
+    }
+
+    $check = mysqli_query($conn, "SELECT c.objective, c.issuer_staff_id, c.appealed_at, os.value AS status_value,
+                                          s.nama_staff AS issuer_name
+                                   FROM okr_cards c
+                                   LEFT JOIN okr_statuses os ON c.result_status = os.id
+                                   LEFT JOIN staff s ON c.issuer_staff_id = s.id
+                                   WHERE c.id = $id AND c.deleted_at IS NULL");
+    if (!$check || mysqli_num_rows($check) === 0) {
+        echo json_encode(['success' => false, 'message' => 'Card not found.']);
+        exit;
+    }
+    $card = mysqli_fetch_assoc($check);
+    if ((int)$card['issuer_staff_id'] !== $requester_id) {
+        echo json_encode(['success' => false, 'message' => 'Only the issuer can appeal a suspension.']);
+        exit;
+    }
+    if ($card['status_value'] !== OKR_STATUS_SUSPENDED) {
+        echo json_encode(['success' => false, 'message' => 'This OKR is not suspended.']);
+        exit;
+    }
+    if (!empty($card['appealed_at'])) {
+        echo json_encode(['success' => false, 'message' => 'An appeal has already been submitted for this suspension.']);
+        exit;
+    }
+
+    $justification_e = mysqli_real_escape_string($conn, $justification);
+    $update = "UPDATE okr_cards SET appeal_justification = '$justification_e', appealed_at = NOW() WHERE id = $id";
+    if (mysqli_query($conn, $update)) {
+        okrLogAudit($conn, $id, $requester_id, 'appealed', null, 'Appeal submitted: ' . $justification);
+
+        foreach (okrCeoRecipients($conn) as $recipient) {
+            sendOkrAppealEmail($recipient['email'], $recipient['name'], $id, $card['objective'], $justification, $card['issuer_name']);
+        }
+
+        echo json_encode(['success' => true, 'appealed_at' => date('Y-m-d H:i:s')]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Database error: ' . mysqli_error($conn)]);
+    }
+    exit;
+}
+
+// CEO/admin forcibly terminates a suspended OKR - the other branch of the
+// Suspend > Appeal > Active/Force Terminate flow. Only reachable from
+// Suspended, same remark requirement as Suspend itself.
+if ($action === 'forceTerminateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if ($requester_grade !== 5 && !$requester_is_admin) {
+        echo json_encode(['success' => false, 'message' => 'Only the CEO can force terminate an OKR.']);
+        exit;
+    }
+    $id = (int)($_POST['id'] ?? 0);
+    $remark = trim($_POST['remark'] ?? '');
+    if ($id <= 0 || $remark === '') {
+        echo json_encode(['success' => false, 'message' => 'A remark is required to force terminate an OKR.']);
+        exit;
+    }
+
+    $check = mysqli_query($conn, "SELECT os.value AS status_value
+                                   FROM okr_cards c LEFT JOIN okr_statuses os ON c.result_status = os.id
+                                   WHERE c.id = $id AND c.deleted_at IS NULL");
+    if (!$check || mysqli_num_rows($check) === 0) {
+        echo json_encode(['success' => false, 'message' => 'Card not found.']);
+        exit;
+    }
+    $card = mysqli_fetch_assoc($check);
+    if ($card['status_value'] !== OKR_STATUS_SUSPENDED) {
+        echo json_encode(['success' => false, 'message' => 'Only a suspended OKR can be force terminated.']);
+        exit;
+    }
+
+    $status_id = okrStatusIdByValue($conn, OKR_STATUS_FORCE_TERMINATED);
+    $remark_e  = mysqli_real_escape_string($conn, $remark);
+    $update = "UPDATE okr_cards SET result_status = $status_id, closed_by = $requester_id, closed_at = NOW(),
+               remarks = '$remark_e', appeal_justification = NULL, appealed_at = NULL WHERE id = $id";
+    if (mysqli_query($conn, $update)) {
+        okrLogAudit($conn, $id, $requester_id, 'force_terminated',
+            ['result_status' => [OKR_STATUS_SUSPENDED, OKR_STATUS_FORCE_TERMINATED]], 'Force terminated by CEO: ' . $remark);
+        echo json_encode(['success' => true]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Database error: ' . mysqli_error($conn)]);
+    }
+    exit;
+}
+
+// CEO/admin-only quality rating: 0-5 stars in half-star steps. Not gated on
+// incentive_locked or status - a rating can be given/changed any time.
+if ($action === 'rateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if ($requester_grade !== 5 && !$requester_is_admin) {
+        echo json_encode(['success' => false, 'message' => 'Only the CEO or admin can rate an OKR.']);
+        exit;
+    }
+    $id = (int)($_POST['id'] ?? 0);
+    if ($id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Invalid card.']);
+        exit;
+    }
+    $rating = isset($_POST['rating']) && $_POST['rating'] !== '' ? (float)$_POST['rating'] : null;
+    if ($rating !== null && (($rating * 2) != round($rating * 2) || $rating < 0 || $rating > 5)) {
+        echo json_encode(['success' => false, 'message' => 'Rating must be between 0 and 5, in half-star steps.']);
+        exit;
+    }
+
+    $check = mysqli_query($conn, "SELECT rating FROM okr_cards WHERE id = $id AND deleted_at IS NULL");
+    if (!$check || mysqli_num_rows($check) === 0) {
+        echo json_encode(['success' => false, 'message' => 'Card not found.']);
+        exit;
+    }
+    $card = mysqli_fetch_assoc($check);
+
+    $now = date('Y-m-d H:i:s');
+    $rating_sql = $rating !== null ? $rating : 'NULL';
+    $rated_by_sql = $rating !== null ? $requester_id : 'NULL';
+    $rated_at_sql = $rating !== null ? "'$now'" : 'NULL';
+    $update = "UPDATE okr_cards SET rating = $rating_sql, rated_by = $rated_by_sql, rated_at = $rated_at_sql WHERE id = $id";
+    if (mysqli_query($conn, $update)) {
+        $old_rating = $card['rating'] !== null ? (float)$card['rating'] : null;
+        okrLogAudit($conn, $id, $requester_id, 'rated',
+            ['rating' => [$old_rating, $rating]],
+            $rating !== null ? ('Rated ' . $rating . ' / 5.') : 'Rating cleared.');
+
+        $rater_name = null;
+        if ($rating !== null) {
+            $rater_res = mysqli_query($conn, "SELECT nama_staff FROM staff WHERE id = $requester_id");
+            if ($rater_res && ($rater_row = mysqli_fetch_assoc($rater_res))) {
+                $rater_name = $rater_row['nama_staff'];
+            }
+        }
+
+        echo json_encode([
+            'success'   => true,
+            'rating'    => $rating,
+            'rated_by_name' => $rater_name,
+            'rated_at'  => $rating !== null ? $now : null,
+        ]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Database error: ' . mysqli_error($conn)]);
+    }
+    exit;
+}
+
+// Chat Box: a per-card discussion thread, modeled after ATEM's Chat Box.
+// Visible to everyone who can view the card (same scope as the card itself);
+// posting is narrower - issuer, admin, or one of the card's owner(s).
+if ($action === 'listChatMessages' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+    $id = (int)($_GET['id'] ?? 0);
+    if ($id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Invalid card.']);
+        exit;
+    }
+    $scope_where = okrScopeWhere($requester_id, $requester_grade, $requester_dept_ids, $requester_is_admin);
+    $check = mysqli_query($conn, "SELECT id FROM okr_cards c WHERE c.id = $id AND c.deleted_at IS NULL AND ($scope_where)");
+    if (!$check || mysqli_num_rows($check) === 0) {
+        echo json_encode(['success' => false, 'message' => 'Card not found or not accessible.']);
+        exit;
+    }
+    echo json_encode(['success' => true, 'data' => okrFetchChatMessages($conn, $id)]);
+    exit;
+}
+
+if ($action === 'sendChatMessage' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $id = (int)($_POST['id'] ?? 0);
+    $message = trim($_POST['message'] ?? '');
+    if ($id <= 0 || $message === '') {
+        echo json_encode(['success' => false, 'message' => 'A message is required.']);
+        exit;
+    }
+
+    $check = mysqli_query($conn, okrCardSelectSql("c.id = $id AND c.deleted_at IS NULL"));
+    if (!$check || mysqli_num_rows($check) === 0) {
+        echo json_encode(['success' => false, 'message' => 'Card not found.']);
+        exit;
+    }
+    $card = okrFormatCard(mysqli_fetch_assoc($check));
+    if (!okrCanPostChat($card, $requester_id, $requester_is_admin)) {
+        echo json_encode(['success' => false, 'message' => 'Only the issuer, owner(s), or admin can post here.']);
+        exit;
+    }
+
+    $message_e = mysqli_real_escape_string($conn, $message);
+    $insert = "INSERT INTO okr_chat_messages (card_id, sender_staff_id, message) VALUES ($id, $requester_id, '$message_e')";
+    if (mysqli_query($conn, $insert)) {
+        $new_id = mysqli_insert_id($conn);
+
+        // "Octopus notification" for the issuer - scoped to chat only for
+        // now. Skip when the issuer is the one sending (no point notifying
+        // yourself).
+        if ($card['issuer_staff_id'] !== $requester_id) {
+            okrNotifyChat($conn, $id, $card['issuer_staff_id']);
+        }
+
+        echo json_encode([
+            'success'         => true,
+            'id'              => $new_id,
+            'sender_staff_id' => $requester_id,
+            'sender_name'     => $requester_name,
+            'message'         => $message,
+            'created_at'      => date('Y-m-d H:i:s'),
+            'updated_at'      => date('Y-m-d H:i:s'),
+        ]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Database error: ' . mysqli_error($conn)]);
+    }
+    exit;
+}
+
+if ($action === 'editChatMessage' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $id = (int)($_POST['id'] ?? 0);
+    $message = trim($_POST['message'] ?? '');
+    if ($id <= 0 || $message === '') {
+        echo json_encode(['success' => false, 'message' => 'A message is required.']);
+        exit;
+    }
+
+    $editable = okrChatMessageEditable($conn, $id, $requester_id);
+    if (!$editable['ok']) {
+        echo json_encode(['success' => false, 'message' => $editable['message']]);
+        exit;
+    }
+
+    $message_e = mysqli_real_escape_string($conn, $message);
+    if (mysqli_query($conn, "UPDATE okr_chat_messages SET message = '$message_e' WHERE id = $id")) {
+        echo json_encode(['success' => true, 'message' => $message]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Database error: ' . mysqli_error($conn)]);
+    }
+    exit;
+}
+
+if ($action === 'unsendChatMessage' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $id = (int)($_POST['id'] ?? 0);
+    if ($id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Invalid message.']);
+        exit;
+    }
+
+    $editable = okrChatMessageEditable($conn, $id, $requester_id);
+    if (!$editable['ok']) {
+        echo json_encode(['success' => false, 'message' => $editable['message']]);
+        exit;
+    }
+
+    if (mysqli_query($conn, "UPDATE okr_chat_messages SET deleted_at = NOW() WHERE id = $id")) {
+        echo json_encode(['success' => true]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Database error: ' . mysqli_error($conn)]);
+    }
+    exit;
+}
+
+// Octopus notification bell - scoped to chat messages only, all actions
+// scoped to $requester_id (a staff member only ever sees/marks their own).
+if ($action === 'listNotifications' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+    echo json_encode([
+        'success'      => true,
+        'data'         => okrFetchNotifications($conn, $requester_id),
+        'unread_count' => okrUnreadNotificationCount($conn, $requester_id),
+    ]);
+    exit;
+}
+
+if ($action === 'markNotificationRead' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $id = (int)($_POST['id'] ?? 0);
+    if ($id > 0) {
+        okrMarkNotificationRead($conn, $id, $requester_id);
+    }
+    echo json_encode(['success' => true]);
+    exit;
+}
+
+if ($action === 'markAllNotificationsRead' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    okrMarkAllNotificationsRead($conn, $requester_id);
+    echo json_encode(['success' => true]);
     exit;
 }
 

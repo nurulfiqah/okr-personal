@@ -139,15 +139,6 @@ input, select, textarea, button {
   text-align: left;
 }
 
-.okr-incentive-rule-hint-row {
-  min-height: 38px;
-}
-
-#okr-incentive-rule-hint {
-  font-size: 12px;
-  margin: 0;
-}
-
 .okr-card-title-row {
   display: flex;
   justify-content: space-between;
@@ -344,6 +335,45 @@ textarea.form-control {
   vertical-align: baseline;
 }
 
+/* Star rating (0-5, half-star steps). Read-only display everywhere;
+   CFG.canRate (CEO/admin) additionally get clickable half-star hit zones
+   overlaid on each star, wired in js/view.js. */
+.okr-star-rating {
+  margin-top: 4px;
+}
+
+.okr-star-display {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+}
+
+.okr-star {
+  position: relative;
+  display: inline-block;
+  flex: 1 1 0;
+  text-align: center;
+  font-size: 40px;
+  line-height: 1;
+  color: #f5a623;
+}
+
+.okr-star-hit {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  cursor: pointer;
+}
+
+.okr-star-hit-left {
+  left: 0;
+}
+
+.okr-star-hit-right {
+  right: 0;
+}
+
 /* Owner(s) ARCI-style tagging widget (single "A - Accountable" role, max 2) */
 .okr-arci-add {
   background-color: #f8f9fa;
@@ -357,6 +387,10 @@ textarea.form-control {
   grid-template-columns: 1fr 2fr;
   gap: 12px;
   align-items: stretch;
+}
+
+.okr-arci-add-grid-3 {
+  grid-template-columns: 1fr 1.2fr 1fr;
 }
 
 .okr-arci-add-grid > div {
@@ -460,34 +494,6 @@ textarea.form-control {
   font-style: italic;
   text-align: center;
   padding: 12px 0;
-}
-
-.okr-arci-incentivised {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  color: #6c757d;
-  cursor: pointer;
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-.okr-arci-incentivised input[type="checkbox"] {
-  width: 13px;
-  height: 13px;
-  cursor: pointer;
-}
-
-.okr-arci-incentivised-badge {
-  display: inline-block;
-  font-size: 10px;
-  color: #198754;
-  border: 1px solid #198754;
-  border-radius: 3px;
-  padding: 1px 4px;
-  flex-shrink: 0;
-  white-space: nowrap;
 }
 
 @media (max-width: 768px) {
@@ -669,7 +675,6 @@ textarea.form-control {
 .okr-stat-value--blue   { color: #0d6efd; }
 .okr-stat-value--green  { color: #198754; }
 .okr-stat-value--red    { color: #dc3545; }
-.okr-stat-value--orange { color: #fd7e14; }
 
 /* ---------------------------------------------------------------
    Timeline: "Extended?" checkbox — force left-aligned, checkbox
@@ -686,99 +691,6 @@ textarea.form-control {
   float: none;
   margin-left: 0;
   margin-top: 0;
-}
-
-/* ---------------------------------------------------------------
-   Incentive paid tile (Incentive card, only when actually paid out)
---------------------------------------------------------------- */
-.okr-incentive-tile {
-  position: relative;
-  overflow: hidden;
-  background: linear-gradient(135deg, #22c581, #0d8a53 55%, #0a6b40);
-  border-radius: 10px;
-  padding: 14px 18px;
-  color: #fff;
-  box-shadow: 0 6px 16px rgba(13, 138, 83, 0.35);
-}
-
-.okr-incentive-tile::after {
-  content: '';
-  position: absolute;
-  top: -60%;
-  right: -20%;
-  width: 140px;
-  height: 140px;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.18), transparent 70%);
-  pointer-events: none;
-}
-
-.okr-incentive-tile--blue {
-  background: linear-gradient(135deg, #2f8fe0, #0a5aa8 55%, #003b73);
-  box-shadow: 0 6px 16px rgba(10, 90, 168, 0.35);
-}
-
-.okr-incentive-tile--yellow {
-  background: linear-gradient(135deg, #f5b83d, #d98d0b 55%, #a86a06);
-  box-shadow: 0 6px 16px rgba(217, 141, 11, 0.35);
-}
-
-.okr-incentive-tile--red {
-  background: linear-gradient(135deg, #e5636f, #c9303f 55%, #99202c);
-  box-shadow: 0 6px 16px rgba(201, 48, 63, 0.35);
-}
-
-.okr-incentive-tile-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  opacity: 0.9;
-}
-
-.okr-incentive-tile-value {
-  font-size: 1.6rem;
-  font-weight: 700;
-  margin-top: 2px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
-}
-
-.okr-incentive-breakdown {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.okr-incentive-stat {
-  background-color: #f8f9fa;
-  border: 1px solid #eef0f2;
-  border-radius: 8px;
-  padding: 8px 10px;
-  /* Grid items default to min-width:auto, so a long unbreakable name would
-     force the track to expand instead of truncating - allow it to shrink. */
-  min-width: 0;
-}
-
-.okr-incentive-stat--full {
-  grid-column: 1 / -1;
-}
-
-.okr-incentive-stat-label {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  font-size: 11px;
-  color: #6c757d;
-  line-height: 1.3;
-}
-
-.okr-incentive-stat-value {
-  display: block;
-  font-size: 15px;
-  font-weight: 700;
-  color: #212529;
-  margin-top: 2px;
 }
 
 .okr-stat-label {
@@ -1081,33 +993,414 @@ textarea.form-control {
 }
 
 /* ---------------------------------------------------------------
-   Quill rich text editor (Key Results)
-   .okr-bento uses align-items: stretch, and Quill's own CSS sets
-   .ql-container to height:100%. Combined, the editor tries to fill a
-   stretched ancestor height while its real content (toolbar + text
-   area) is taller, so it overflows past the card border. Force the
-   container back to an auto/content height instead.
+   Key Result Progress (nested task list, mirrors iidas's
+   project_detail.php Progression Task / Subtask widget)
 --------------------------------------------------------------- */
-#okr-key-results-editor.ql-container {
-  height: auto;
-  border-bottom-left-radius: 6px;
-  border-bottom-right-radius: 6px;
+.okr-kr-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
 }
 
-#okr-key-results-editor .ql-editor {
-  min-height: 260px;
-  max-height: 400px;
+.okr-kr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.okr-kr-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #e9ecef;
+  border-left: 4px solid #7c5cff;
+  border-radius: 8px;
+  background-color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.okr-kr-row--subtask {
+  margin-left: 32px;
+  background-color: #eef5fc;
+  border-color: #d7e8f7;
+  border-left: 4px solid #2f8fe0;
+}
+
+.okr-kr-num {
+  flex-shrink: 0;
+  width: 28px;
+  padding-top: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #7c5cff;
+  text-align: center;
+}
+
+.okr-kr-row--subtask .okr-kr-num {
+  color: #2f8fe0;
+}
+
+.okr-kr-body {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.okr-kr-desc-label,
+.okr-kr-dates-label,
+.okr-kr-assignee-label,
+.okr-kr-progress-label {
+  font-size: 11px;
+  color: #6c757d;
+  margin-bottom: 2px;
+  display: block;
+}
+
+.okr-kr-dates-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #000;
+}
+
+.okr-kr-desc textarea {
+  width: 100%;
+  min-height: 60px;
+  resize: vertical;
+  font-size: 13px;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.okr-kr-dates {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.okr-kr-dates input[type="date"] {
+  font-size: 12px;
+  padding: 4px 6px;
+}
+
+.okr-kr-assignee-name {
+  font-size: 13px;
+  color: #000;
+  font-weight: 600;
+}
+
+.okr-kr-progress-hint {
+  font-size: 10px;
+  color: #adb5bd;
+}
+
+.okr-kr-actions {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  padding-top: 4px;
+}
+
+.okr-kr-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  line-height: 1;
+  color: #6c757d;
+  cursor: pointer;
+}
+
+.okr-kr-icon-btn:hover {
+  opacity: 0.7;
+}
+
+.okr-kr-icon-btn:disabled {
+  color: #ced4da !important;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.okr-kr-icon-btn--edit {
+  color: #f0ad4e;
+}
+
+.okr-kr-icon-btn--delete {
+  color: #e53935;
+}
+
+.okr-kr-icon-btn--add {
+  color: #2f8fe0;
+}
+
+.okr-kr-icon-btn--atem {
+  color: #f39c12;
+}
+
+.okr-kr-empty {
+  font-size: 12px;
+  color: #adb5bd;
+  font-style: italic;
+  text-align: center;
+  padding: 16px 0;
+}
+
+.okr-kr-atem-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background-color: #fff3e0;
+  border: 1px solid #ffe0b2;
+  font-size: 11px;
+  color: #b8720a;
+}
+
+.okr-kr-atem-badge a {
+  color: #b8720a;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.okr-kr-atem-badge a:hover {
+  text-decoration: underline;
+}
+
+.okr-kr-atem-unlink {
+  cursor: pointer;
+  color: #e53935;
+  font-weight: bold;
+}
+
+.okr-kr-atem-list {
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+}
+
+.okr-kr-atem-row {
+  padding: 8px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid #f1f1f1;
+  font-size: 13px;
+}
+
+.okr-kr-atem-row:last-child {
+  border-bottom: none;
+}
+
+.okr-kr-atem-row:hover {
+  background-color: #f8f9fa;
+}
+
+.okr-kr-atem-row-title {
+  font-weight: 500;
+  color: #212529;
+}
+
+.okr-kr-atem-row-meta {
+  font-size: 11px;
+  color: #6c757d;
+}
+
+@media (max-width: 768px) {
+  .okr-kr-body {
+    grid-template-columns: 1fr;
+  }
+
+  .okr-kr-row--subtask {
+    margin-left: 12px;
+  }
+}
+
+/* ---------------------------------------------------------------
+   Chat Box (per-card discussion thread, mirrors ATEM's Chat Box)
+--------------------------------------------------------------- */
+.okr-chat-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 4px 2px;
+}
+
+.okr-chat-bubble {
+  align-self: flex-start;
+  max-width: 80%;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  background-color: #f8f9fa;
+  padding: 8px 10px;
+}
+
+.okr-chat-bubble-mine {
+  align-self: flex-end;
+  background-color: #eef5ff;
+  border-color: #d7e8fb;
+}
+
+.okr-chat-bubble-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: #6c757d;
+  margin-bottom: 4px;
+}
+
+.okr-chat-bubble-time {
+  white-space: nowrap;
+}
+
+.okr-chat-bubble-body {
+  font-size: 13px;
+  color: #212529;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.okr-chat-bubble-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.okr-chat-edit-btn,
+.okr-chat-unsend-btn,
+.okr-chat-save-btn,
+.okr-chat-cancel-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  color: #0d6efd;
+  cursor: pointer;
+}
+
+.okr-chat-unsend-btn {
+  color: #e53935;
+}
+
+.okr-chat-edit-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.okr-chat-edit-textarea {
+  width: 100%;
+  font-size: 13px;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  padding: 6px 8px;
+  resize: vertical;
+}
+
+.okr-chat-composer {
+  margin-top: 12px;
+}
+
+.okr-chat-composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+/* ---------------------------------------------------------------
+   Suspend / Appeal / Force Terminate notice
+--------------------------------------------------------------- */
+.okr-alert-notice {
+  background-color: #fff3cd;
+  border: 1px solid #ffe69c;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #664d03;
+}
+
+/* ---------------------------------------------------------------
+   Notification bell (navbar)
+--------------------------------------------------------------- */
+.okr-notif-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background-color: #dc3545;
+  color: #fff;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 5px;
+  min-width: 16px;
+  text-align: center;
+}
+
+.okr-hidden {
+  display: none !important;
+}
+
+.okr-notif-menu {
+  width: 320px;
+  max-width: 90vw;
+  padding: 0;
+}
+
+.okr-notif-menu-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e9ecef;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.okr-notif-list {
+  max-height: 320px;
   overflow-y: auto;
 }
 
-.okr-quill-readonly.ql-container {
-  background-color: #e9ecef;
-  min-height: 0;
+.okr-notif-empty {
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: #adb5bd;
 }
 
-.okr-quill-readonly .ql-editor {
-  min-height: 0;
-  color: #6c757d;
+.okr-notif-item {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f1f1f1;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.okr-notif-item:hover {
+  background-color: #f8f9fa;
+}
+
+.okr-notif-item-unread {
+  background-color: #eef5ff;
+}
+
+.okr-notif-item-time {
+  font-size: 11px;
+  color: #adb5bd;
+  margin-top: 2px;
 }
 
 /* ---------------------------------------------------------------
