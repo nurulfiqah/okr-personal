@@ -86,9 +86,8 @@
         var atemMap = {};
 
         var krRowHtml = function (row, index, isSubtask) {
-            var statusText = row.display_status_value || row.status_value;
-            var statusClass = 'okr-pill ' + (row.display_pill_class || row.pill_class);
-            var statusHint = row.has_children ? '<div class="okr-kr-progress-hint">From Subtasks</div>' : '';
+            var statusText = row.status_value;
+            var statusClass = 'okr-pill ' + row.pill_class;
             var dates = '<span class="okr-kr-dates-value">' + (row.start_date || '-') + ' &rarr; ' + (row.end_date || '-') + '</span>';
 
             var atemBadge = '';
@@ -107,7 +106,7 @@
                 + '<div class="okr-kr-desc"><span class="okr-kr-desc-label">Action Details</span>' + escapeHtml(row.description) + atemBadge + '</div>'
                 + '<div><span class="okr-kr-dates-label">Dates</span>' + dates + '</div>'
                 + '<div><span class="okr-kr-assignee-label">Created By</span><span class="okr-kr-assignee-name">' + escapeHtml(row.creator_name || '') + '</span></div>'
-                + '<div><span class="okr-kr-progress-label">Status</span><span class="' + statusClass + '">' + escapeHtml(statusText) + '</span>' + statusHint + '</div>'
+                + '<div><span class="okr-kr-progress-label">Status</span><span class="' + statusClass + '">' + escapeHtml(statusText) + '</span></div>'
                 + '</div>'
                 + '</div>';
         };

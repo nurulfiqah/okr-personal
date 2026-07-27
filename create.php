@@ -355,6 +355,49 @@ $okr_config = [
                 </div>
                 <div id="okr-kr-atem-list" class="okr-kr-atem-list"></div>
                 <div class="okr-form-error" id="okr-kr-atem-modal-error"></div>
+
+                <div class="okr-kr-atem-divider">or</div>
+                <button type="button" class="btn btn-outline-primary btn-sm w-100" id="okr-kr-atem-create-toggle">+
+                    Create New ATEM</button>
+                <div id="okr-kr-atem-create-wrap" style="display:none;" class="mt-2">
+                    <div class="mb-2">
+                        <label for="okr-kr-atem-create-desc" class="form-label">Action Details <span
+                                class="okr-req">*</span></label>
+                        <textarea class="form-control" id="okr-kr-atem-create-desc" rows="3"></textarea>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label for="okr-kr-atem-create-start" class="form-label">Start Date <span
+                                    class="okr-req">*</span></label>
+                            <input type="date" class="form-control" id="okr-kr-atem-create-start">
+                        </div>
+                        <div class="col-6">
+                            <label for="okr-kr-atem-create-end" class="form-label">End Date <span
+                                    class="okr-req">*</span></label>
+                            <input type="date" class="form-control" id="okr-kr-atem-create-end">
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label for="okr-kr-atem-create-dept" class="form-label">Department <span
+                                class="okr-req">*</span></label>
+                        <select class="form-select" id="okr-kr-atem-create-dept">
+                            <option value="">Select department</option>
+                            <?php foreach ($departments as $d): ?>
+                            <option value="<?php echo (int)$d['id']; ?>"><?php echo htmlspecialchars($d['name']); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label for="okr-kr-atem-create-staff" class="form-label">PIC (Assigned Staff) <span
+                                class="okr-req">*</span></label>
+                        <select class="form-select" id="okr-kr-atem-create-staff">
+                            <option value="">Select department first</option>
+                        </select>
+                    </div>
+                    <div class="okr-form-error" id="okr-kr-atem-create-error"></div>
+                    <button type="button" class="btn btn-primary btn-sm w-100 mt-2"
+                        id="okr-kr-atem-create-save-btn">Create &amp; Link</button>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>

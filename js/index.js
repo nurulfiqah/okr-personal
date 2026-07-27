@@ -192,7 +192,10 @@
                         '<td style="font-size:12px;color:#dc3545;text-align:left;' + dClickable + '"' + (dId ? ' data-nav-dept="' + dId + '" data-nav-status="Failed"' : '') + '>' + dFail + '</td>' +
                         '<td style="font-size:12px;text-align:left;">' + dFailRate + '</td>' +
                         '<td style="font-size:12px;color:#e11d48;text-align:left;' + dClickable + '"' + (dId ? ' data-nav-dept="' + dId + '" data-nav-status="Suspended"' : '') + '>' + (dept.suspended || 0) + '</td>' +
-                        '<td style="font-size:12px;color:#6610f2;text-align:left;' + dClickable + '"' + (dId ? ' data-nav-dept="' + dId + '" data-nav-status="Force Terminated"' : '') + '>' + (dept.force_terminated || 0) + '</td>' +
+                        // Force Terminate isn't a real status (it sets Failed +
+                        // a flag - see backend.php), so this column isn't a
+                        // clickable list.php status-filter link like the others.
+                        '<td style="font-size:12px;color:#6610f2;text-align:left;">' + (dept.force_terminated || 0) + '</td>' +
                         '</tr>';
                 }
                 deptTbody.innerHTML = dHtml;

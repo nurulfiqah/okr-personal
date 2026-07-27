@@ -24,8 +24,12 @@ if (!$result || mysqli_num_rows($result) === 0) {
 $row  = mysqli_fetch_assoc($result);
 $card = okrFormatCard($row);
 
-$can_suspend = ($okr_is_admin || $okr_permission === 5);
-$can_rate    = ($okr_is_admin || $okr_permission === 5);
+// Failed is a terminal outcome (including force-terminated cards, which are
+// just Failed + a flag) - once an OKR is Failed there's nothing left for the
+// CEO to suspend (it's already resolved) and nothing left to rate.
+$is_terminal_failed = ($card['result_status'] === 'Failed');
+$can_suspend = ($okr_is_admin || $okr_permission === 5) && !$is_terminal_failed;
+$can_rate    = ($okr_is_admin || $okr_permission === 5) && !$is_terminal_failed;
 // Force Terminate uses the same gate as Suspend/Unsuspend (grade 5/admin).
 $can_force_terminate = $can_suspend;
 // Only the issuer can appeal, only while Suspended, only once per
@@ -154,7 +158,18 @@ $okr_view_config = [
         <?php if ($card['result_status'] === OKR_STATUS_SUSPENDED): ?>
         <div class="okr-card">
             <div class="okr-alert-notice mb-2">
-                Any unattended suspended OKR will be terminated after 30 days.
+                <div><i class="bi bi-slash-circle"></i> <strong>This OKR card has been suspended.</strong>
+                    Unsuspending it will restore it to Active status.
+                    <?php if ($card['closed_by_name']): ?>
+                    <span class="okr-alert-notice-meta">Suspended by
+                        <?php echo htmlspecialchars($card['closed_by_name']); ?>
+                        <?php if ($card['closed_at']): ?>
+                        on <?php echo htmlspecialchars(date('d-m-Y H:i', strtotime($card['closed_at']))); ?>
+                        <?php endif; ?>
+                    </span>
+                    <?php endif; ?>
+                </div>
+                <div class="mt-1">Any unattended suspended OKR will be terminated after 30 days.</div>
             </div>
         </div>
         <?php endif; ?>

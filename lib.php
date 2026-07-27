@@ -23,10 +23,6 @@ define('OKR_STATUS_DRAFT', 'Draft');
 define('OKR_STATUS_COMPLETED', 'Completed');
 define('OKR_STATUS_SUSPENDED', 'Suspended');
 define('OKR_STATUS_COMPLETED_EXTENSION', 'Completed with Extension');
-// FORCE_TERMINATED: only ever set via the dedicated CEO/admin Force Terminate
-// action, and only reachable from Suspended - same system-managed treatment
-// as SUSPENDED itself, never directly assignable on the Timeline card.
-define('OKR_STATUS_FORCE_TERMINATED', 'Force Terminated');
 
 require_once __DIR__ . '/nas_config.php';
 
@@ -42,12 +38,14 @@ function okrCardSelectSql($where, $include_deleted = false) {
     return "SELECT c.*, ow.nama_staff AS owner_name, ow.department AS owner_department,
                    ow2.nama_staff AS owner2_name, ow2.department AS owner2_department,
                    iss.nama_staff AS issuer_name, iss.department AS issuer_department,
-                   os.value AS status_value, rb.nama_staff AS rated_by_name
+                   os.value AS status_value, rb.nama_staff AS rated_by_name,
+                   cb.nama_staff AS closed_by_name
             FROM okr_cards c
             LEFT JOIN staff ow  ON c.owner_staff_id  = ow.id
             LEFT JOIN staff ow2 ON c.owner2_staff_id = ow2.id
             LEFT JOIN staff iss ON c.issuer_staff_id = iss.id
             LEFT JOIN staff rb  ON c.rated_by = rb.id
+            LEFT JOIN staff cb  ON c.closed_by = cb.id
             LEFT JOIN okr_statuses os ON c.result_status = os.id
             WHERE $deleted_clause$where";
 }
@@ -75,6 +73,7 @@ function okrFormatCard($row) {
         'remarks'           => $row['remarks'],
         'appeal_justification' => $row['appeal_justification'] ?? null,
         'appealed_at'       => $row['appealed_at'] ?? null,
+        'force_terminated'  => !empty($row['force_terminated']),
         'rating'            => $row['rating'] !== null ? (float)$row['rating'] : null,
         'rated_by_name'     => $row['rated_by_name'] ?? null,
         'rated_at'          => $row['rated_at'] ?? null,
@@ -89,6 +88,7 @@ function okrFormatCard($row) {
         'result_status'     => $row['status_value'],
         'pill_class'        => okrPillClass($row['status_value']),
         'closed_at'         => $row['closed_at'],
+        'closed_by_name'    => $row['closed_by_name'] ?? null,
         'created_at'        => $row['created_at'],
         'deleted_at'        => $row['deleted_at'] ?? null,
     ];
@@ -136,7 +136,7 @@ function okrFetchStatuses($conn, $include_recycled = true) {
 // renaming/adding/soft-deleting a status is picked up with no code change.
 function okrTimelineAssignableStatuses($conn) {
     $values = array_column(okrFetchStatuses($conn, false), 'value');
-    return array_values(array_diff($values, [OKR_STATUS_SUSPENDED, OKR_STATUS_COMPLETED_EXTENSION, OKR_STATUS_FORCE_TERMINATED]));
+    return array_values(array_diff($values, [OKR_STATUS_SUSPENDED, OKR_STATUS_COMPLETED_EXTENSION]));
 }
 
 // The only statuses an extended (and not admin) OKR can still resolve to -
@@ -232,33 +232,22 @@ function okrFetchKeyResults($conn, $card_id) {
         }
     }
 
+    // has_children is kept as metadata only (still used for numbering/render
+    // decisions) - the status itself is no longer auto-derived from
+    // subtasks. A Key Result with mixed subtask outcomes (e.g. one Completed,
+    // one Failed) has no single obviously-correct computed status, so the
+    // user just sets the main Key Result's status directly instead.
     $children_by_parent = [];
     foreach ($rows as $r) {
         if ($r['parent_id'] !== null) {
             $children_by_parent[$r['parent_id']][] = $r['id'];
         }
     }
-    $by_id = [];
-    foreach ($rows as $i => $r) { $by_id[$r['id']] = $i; }
-
-    $completed_values = [OKR_STATUS_COMPLETED, 'Completed with Excellence'];
 
     foreach ($rows as &$r) {
-        $has_children = isset($children_by_parent[$r['id']]);
-        $r['has_children'] = $has_children;
-        if ($has_children) {
-            $all_completed = true;
-            foreach ($children_by_parent[$r['id']] as $cid) {
-                if (!in_array($rows[$by_id[$cid]]['status_value'], $completed_values, true)) {
-                    $all_completed = false;
-                    break;
-                }
-            }
-            $r['display_status_value'] = $all_completed ? OKR_STATUS_COMPLETED : 'Active';
-        } else {
-            $r['display_status_value'] = $r['status_value'];
-        }
-        $r['display_pill_class'] = okrPillClass($r['display_status_value']);
+        $r['has_children'] = isset($children_by_parent[$r['id']]);
+        $r['display_status_value'] = $r['status_value'];
+        $r['display_pill_class'] = $r['pill_class'];
     }
     unset($r);
 
@@ -327,12 +316,21 @@ function okrRemoveStagedKeyResultSubtask($parent_token, $sub_token) {
 // Links/unlinks an existing real ATEM card against a still-staged (top-level
 // only) Key Result - same "plain reference, no FK" rule as the real
 // linkKeyResultAtem/unlinkKeyResultAtem backend actions.
+// Looks in both places a staged token can live - a top-level Key Result, or
+// nested inside one as a Subtask - since Link ATEM is available on both.
 function okrSetStagedKeyResultAtem($token, $atem_id) {
-    if (!isset($_SESSION['okr_draft_keyresults'][$token])) {
-        return false;
+    if (isset($_SESSION['okr_draft_keyresults'][$token])) {
+        $_SESSION['okr_draft_keyresults'][$token]['atem_id'] = $atem_id ?: null;
+        return true;
     }
-    $_SESSION['okr_draft_keyresults'][$token]['atem_id'] = $atem_id ?: null;
-    return true;
+    foreach ($_SESSION['okr_draft_keyresults'] ?? [] as $parent_token => &$kr) {
+        if (isset($kr['subtasks'][$token])) {
+            $kr['subtasks'][$token]['atem_id'] = $atem_id ?: null;
+            return true;
+        }
+    }
+    unset($kr);
+    return false;
 }
 
 function okrFinalizeStagedKeyResults($conn, $card_id, $created_by) {
@@ -355,9 +353,10 @@ function okrFinalizeStagedKeyResults($conn, $card_id, $created_by) {
             $sub_start_sql = $sub['start_date'] ? "'" . mysqli_real_escape_string($conn, $sub['start_date']) . "'" : 'NULL';
             $sub_end_sql = $sub['end_date'] ? "'" . mysqli_real_escape_string($conn, $sub['end_date']) . "'" : 'NULL';
             $sub_status_id = (int)($sub['status_id'] ?? 0);
+            $sub_atem_sql = !empty($sub['atem_id']) ? (int)$sub['atem_id'] : 'NULL';
             mysqli_query($conn, "INSERT INTO okr_key_results
-                (card_id, parent_id, description, status_id, start_date, end_date, created_by)
-                VALUES ($card_id, $parent_id, '$sub_desc_e', $sub_status_id, $sub_start_sql, $sub_end_sql, " . (int)$created_by . ")");
+                (card_id, parent_id, description, atem_id, status_id, start_date, end_date, created_by)
+                VALUES ($card_id, $parent_id, '$sub_desc_e', $sub_atem_sql, $sub_status_id, $sub_start_sql, $sub_end_sql, " . (int)$created_by . ")");
         }
     }
     $_SESSION['okr_draft_keyresults'] = [];

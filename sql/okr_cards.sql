@@ -41,6 +41,7 @@ CREATE TABLE `okr_cards` (
   `remarks` text,
   `appeal_justification` text,
   `appealed_at` datetime DEFAULT NULL,
+  `force_terminated` tinyint(1) NOT NULL DEFAULT '0',
   `rating` decimal(2,1) DEFAULT NULL,
   `rated_by` int DEFAULT NULL,
   `rated_at` datetime DEFAULT NULL,

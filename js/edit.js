@@ -500,9 +500,8 @@
     }
 
     function krRowHtml(row, index, isSubtask) {
-        var statusText = row.display_status_value || row.status_value;
-        var statusClass = 'okr-pill ' + (row.display_pill_class || row.pill_class);
-        var statusHint = row.has_children ? '<div class="okr-kr-progress-hint">From Subtasks</div>' : '';
+        var statusText = row.status_value;
+        var statusClass = 'okr-pill ' + row.pill_class;
         var dates = '<span class="okr-kr-dates-value">' + (row.start_date || '-') + ' &rarr; ' + (row.end_date || '-') + '</span>';
 
         var atemBadge = '';
@@ -522,13 +521,13 @@
             + '<div class="okr-kr-desc"><span class="okr-kr-desc-label">Action Details</span>' + escapeHtml(row.description) + atemBadge + '</div>'
             + '<div><span class="okr-kr-dates-label">Dates</span>' + dates + '</div>'
             + '<div><span class="okr-kr-assignee-label">Created By</span><span class="okr-kr-assignee-name">' + escapeHtml(row.creator_name || '') + '</span></div>'
-            + '<div><span class="okr-kr-progress-label">Status</span><span class="' + statusClass + '">' + escapeHtml(statusText) + '</span>' + statusHint + '</div>'
+            + '<div><span class="okr-kr-progress-label">Status</span><span class="' + statusClass + '">' + escapeHtml(statusText) + '</span></div>'
             + '</div>'
             + '<div class="okr-kr-actions">'
             + '<button type="button" class="okr-kr-icon-btn okr-kr-icon-btn--edit okr-kr-edit" title="Edit"><i class="bi bi-pencil"></i></button>'
             + '<button type="button" class="okr-kr-icon-btn okr-kr-icon-btn--delete okr-kr-delete" title="Delete"><i class="bi bi-x-lg"></i></button>'
             + (isSubtask ? '' : '<button type="button" class="okr-kr-icon-btn okr-kr-icon-btn--add okr-kr-add-sub" title="Add Subtask"><i class="bi bi-plus-lg"></i></button>')
-            + (isSubtask ? '' : '<button type="button" class="okr-kr-icon-btn okr-kr-icon-btn--atem okr-kr-add-atem" title="Link ATEM"><i class="bi bi-file-earmark-plus"></i></button>')
+            + '<button type="button" class="okr-kr-icon-btn okr-kr-icon-btn--atem okr-kr-add-atem" title="Link ATEM"><i class="bi bi-file-earmark-plus"></i></button>'
             + '</div>'
             + '</div>';
     }
@@ -584,9 +583,6 @@
         krCreatedByInput.value = opts.id ? (opts.creatorName || '') : (CFG.currentUserName || '');
         document.getElementById('okr-kr-modal-title').textContent = opts.parent_id ? (opts.id ? 'Edit Subtask' : 'Add Subtask') : (opts.id ? 'Edit Key Result' : 'Add Key Result');
 
-        var statusWrap = document.getElementById('okr-kr-status-wrap');
-        statusWrap.style.display = opts.hasChildren ? 'none' : '';
-
         // Key Result dates must fall within the OKR's own Start/End Date.
         krStartInput.min = startInput.value || '';
         krStartInput.max = endInput.value || '';
@@ -630,8 +626,7 @@
                 start_date: data.start_date,
                 end_date: data.end_date,
                 creatorName: data.creator_name,
-                status_id: data.status_id,
-                hasChildren: data.has_children
+                status_id: data.status_id
             });
         } else if (e.target.closest('.okr-kr-delete')) {
             if (!confirm('Delete this ' + (data.parent_id ? 'subtask' : 'Key Result') + '? This cannot be undone.')) { return; }
@@ -696,6 +691,14 @@
     var atemListEl = document.getElementById('okr-kr-atem-list');
     var atemTargetKrId = null;
 
+    // atem-api's status field isn't always a plain string across endpoints -
+    // fall back gracefully instead of stringifying an object into the UI.
+    function atemStatusLabel(a) {
+        if (typeof a.status === 'string') { return a.status; }
+        if (a.status && typeof a.status === 'object' && a.status.value) { return a.status.value; }
+        return '';
+    }
+
     function renderAtemOptions(items) {
         if (items.length === 0) {
             atemListEl.innerHTML = '<div class="okr-kr-empty">No ATEM cards found.</div>';
@@ -705,7 +708,7 @@
         items.forEach(function (a) {
             html += '<div class="okr-kr-atem-row" data-atem-id="' + a.id + '">'
                 + '<div class="okr-kr-atem-row-title">' + escapeHtml(a.title || ('ATEM #' + a.id)) + '</div>'
-                + '<div class="okr-kr-atem-row-meta">' + escapeHtml(a.status || '') + '</div>'
+                + '<div class="okr-kr-atem-row-meta">' + escapeHtml(atemStatusLabel(a)) + '</div>'
                 + '</div>';
         });
         atemListEl.innerHTML = html;
@@ -716,6 +719,7 @@
         atemTargetKrId = krId;
         atemSearchInput.value = '';
         atemListEl.innerHTML = '<div class="okr-kr-empty">Loading...</div>';
+        resetAtemCreateForm();
         atemModal.show();
         fetchAtemList(function (items) { renderAtemOptions(items); });
     }
@@ -728,17 +732,20 @@
         renderAtemOptions(items);
     });
 
+    function linkAtemToTarget(atemId) {
+        var body = new URLSearchParams();
+        body.set('action', 'linkKeyResultAtem');
+        body.set('id', atemTargetKrId);
+        body.set('atem_id', atemId);
+        return fetch(CFG.apiUrl, { method: 'POST', body: body }).then(function (r) { return r.json(); });
+    }
+
     atemListEl.addEventListener('click', function (e) {
         var row = e.target.closest('.okr-kr-atem-row');
         if (!row || !atemTargetKrId) { return; }
         var atemId = parseInt(row.getAttribute('data-atem-id'), 10);
 
-        var body = new URLSearchParams();
-        body.set('action', 'linkKeyResultAtem');
-        body.set('id', atemTargetKrId);
-        body.set('atem_id', atemId);
-        fetch(CFG.apiUrl, { method: 'POST', body: body })
-            .then(function (r) { return r.json(); })
+        linkAtemToTarget(atemId)
             .then(function (res) {
                 if (res.success) {
                     atemModal.hide();
@@ -751,6 +758,110 @@
                 setError('okr-kr-atem-modal', 'Network error. Please try again.');
             });
     });
+
+    // ---------------------------------------------------------------
+    // Create New ATEM - a reduced quick-create form (Action Details, dates,
+    // Department, PIC) that maps onto a real ATEM card's title/dates and a
+    // single Accountable ARCI member, saved via atem/api.php's save-atem
+    // action directly (same-origin, same session - see fetchAtemList above),
+    // then linked to this Key Result the same way picking an existing card
+    // would be. Saved as an ATEM Draft (mode: 'draft') so ATEM's own
+    // reference-link requirement for a "final" card doesn't block this.
+    // ---------------------------------------------------------------
+    var atemCreateToggle = document.getElementById('okr-kr-atem-create-toggle');
+    var atemCreateWrap = document.getElementById('okr-kr-atem-create-wrap');
+    var atemCreateDesc = document.getElementById('okr-kr-atem-create-desc');
+    var atemCreateStart = document.getElementById('okr-kr-atem-create-start');
+    var atemCreateEnd = document.getElementById('okr-kr-atem-create-end');
+    var atemCreateDept = document.getElementById('okr-kr-atem-create-dept');
+    var atemCreateStaff = document.getElementById('okr-kr-atem-create-staff');
+    var atemCreateSaveBtn = document.getElementById('okr-kr-atem-create-save-btn');
+
+    function resetAtemCreateForm() {
+        if (!atemCreateWrap) { return; }
+        atemCreateWrap.style.display = 'none';
+        atemCreateToggle.style.display = '';
+        atemCreateDesc.value = '';
+        atemCreateStart.value = '';
+        atemCreateEnd.value = '';
+        atemCreateDept.value = '';
+        atemCreateStaff.innerHTML = '<option value="">Select department first</option>';
+        setError('okr-kr-atem-create', '');
+    }
+
+    if (atemCreateToggle) {
+        atemCreateToggle.addEventListener('click', function () {
+            atemCreateWrap.style.display = 'block';
+            atemCreateToggle.style.display = 'none';
+        });
+
+        atemCreateDept.addEventListener('change', function () {
+            var deptId = parseInt(atemCreateDept.value, 10);
+            var staff = (CFG.staff || []).filter(function (s) { return (s.deptIds || []).indexOf(deptId) !== -1; });
+            var html = '<option value="">Select staff</option>';
+            staff.forEach(function (s) {
+                html += '<option value="' + s.id + '">' + escapeHtml(s.name) + '</option>';
+            });
+            atemCreateStaff.innerHTML = html || '<option value="">No staff in this department</option>';
+        });
+
+        atemCreateSaveBtn.addEventListener('click', function () {
+            setError('okr-kr-atem-create', '');
+            var desc = atemCreateDesc.value.trim();
+            var start = atemCreateStart.value;
+            var end = atemCreateEnd.value;
+            var deptId = atemCreateDept.value;
+            var staffId = atemCreateStaff.value;
+
+            if (!desc || !start || !end || !deptId || !staffId) {
+                setError('okr-kr-atem-create', 'All fields are required.');
+                return;
+            }
+            if (end < start) {
+                setError('okr-kr-atem-create', 'End date cannot be before start date.');
+                return;
+            }
+
+            atemCreateSaveBtn.disabled = true;
+            fetch(CFG.atemApiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'save-atem',
+                    data: {
+                        title: desc,
+                        description: desc,
+                        start_date: start,
+                        end_date: end,
+                        arci: [{ staff_id: parseInt(staffId, 10), staff_dept_id: parseInt(deptId, 10), role: 'A' }],
+                        mode: 'draft'
+                    }
+                })
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    if (!res.success || !res.data || !res.data.id) {
+                        setError('okr-kr-atem-create', (res && res.message) || 'Failed to create ATEM.');
+                        atemCreateSaveBtn.disabled = false;
+                        return;
+                    }
+                    atemListCache = null;
+                    return linkAtemToTarget(res.data.id).then(function (linkRes) {
+                        atemCreateSaveBtn.disabled = false;
+                        if (linkRes.success) {
+                            atemModal.hide();
+                            loadKeyResults();
+                        } else {
+                            setError('okr-kr-atem-create', linkRes.message || 'ATEM created but failed to link.');
+                        }
+                    });
+                })
+                .catch(function () {
+                    atemCreateSaveBtn.disabled = false;
+                    setError('okr-kr-atem-create', 'Network error. Please try again.');
+                });
+        });
+    }
 
     loadKeyResults();
 

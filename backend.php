@@ -89,7 +89,7 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
         $filter_sql .= " AND (c.owner_staff_id = $filter_staff_id OR c.owner2_staff_id = $filter_staff_id OR c.issuer_staff_id = $filter_staff_id)";
     }
 
-    $query = "SELECT c.id, c.okr_type, os.value AS result_status,
+    $query = "SELECT c.id, c.okr_type, os.value AS result_status, c.force_terminated,
                      c.start_date, c.end_date, c.issuer_staff_id,
                      iss.nama_staff AS issuer_name, iss.department AS issuer_department
               FROM okr_cards c
@@ -150,18 +150,24 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
                     'suspended' => 0, 'force_terminated' => 0,
                 ];
             }
+            // Force Terminate isn't a separate status - it sets Failed plus
+            // this flag - so a force-terminated card is excluded from the
+            // plain "fail" tally below and counted only in its own bucket,
+            // otherwise it would double up against ordinary Failed cards.
+            $is_force_terminated = !empty($row['force_terminated']);
+
             $by_dept[$dept_id]['cards']++;
             if ($is_complete) { $by_dept[$dept_id]['complete']++; }
             if ($status === 'Completed with Excellence') { $by_dept[$dept_id]['excellence']++; }
-            if ($status === 'Failed') { $by_dept[$dept_id]['fail']++; }
+            if ($status === 'Failed' && !$is_force_terminated) { $by_dept[$dept_id]['fail']++; }
             if ($status === OKR_STATUS_SUSPENDED) { $by_dept[$dept_id]['suspended']++; }
-            if ($status === OKR_STATUS_FORCE_TERMINATED) { $by_dept[$dept_id]['force_terminated']++; }
+            if ($is_force_terminated) { $by_dept[$dept_id]['force_terminated']++; }
 
             // Top offenders for the Suspended & Force Terminated ranking -
-            // keyed by issuer, only tallying the two statuses that matter
+            // keyed by issuer, only tallying the two buckets that matter
             // there so a staff member with no suspensions never shows up.
             $issuer_id = (int)$row['issuer_staff_id'];
-            if ($status === OKR_STATUS_SUSPENDED || $status === OKR_STATUS_FORCE_TERMINATED) {
+            if ($status === OKR_STATUS_SUSPENDED || $is_force_terminated) {
                 if (!isset($by_staff[$issuer_id])) {
                     $by_staff[$issuer_id] = [
                         'staff_id' => $issuer_id,
@@ -170,7 +176,7 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
                     ];
                 }
                 if ($status === OKR_STATUS_SUSPENDED) { $by_staff[$issuer_id]['suspended']++; }
-                if ($status === OKR_STATUS_FORCE_TERMINATED) { $by_staff[$issuer_id]['force_terminated']++; }
+                if ($is_force_terminated) { $by_staff[$issuer_id]['force_terminated']++; }
             }
 
             if (isset($by_type[$row['okr_type']])) {
@@ -661,8 +667,8 @@ if ($action === 'createKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['success' => false, 'message' => 'Only the issuer can add Key Results.']);
         exit;
     }
-    if ($card['status_value'] === 'Suspended') {
-        echo json_encode(['success' => false, 'message' => 'Unsuspend this OKR before editing it.']);
+    if ($card['status_value'] === 'Suspended' || $card['status_value'] === 'Failed') {
+        echo json_encode(['success' => false, 'message' => 'This OKR is locked and can no longer be edited.']);
         exit;
     }
 
@@ -733,8 +739,8 @@ if ($action === 'updateKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['success' => false, 'message' => 'Only the issuer can edit Key Results.']);
         exit;
     }
-    if ($kr['status_value'] === 'Suspended') {
-        echo json_encode(['success' => false, 'message' => 'Unsuspend this OKR before editing it.']);
+    if ($kr['status_value'] === 'Suspended' || $kr['status_value'] === 'Failed') {
+        echo json_encode(['success' => false, 'message' => 'This OKR is locked and can no longer be edited.']);
         exit;
     }
 
@@ -800,8 +806,8 @@ if ($action === 'deleteKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['success' => false, 'message' => 'Only the issuer can remove Key Results.']);
         exit;
     }
-    if ($kr['status_value'] === 'Suspended') {
-        echo json_encode(['success' => false, 'message' => 'Unsuspend this OKR before editing it.']);
+    if ($kr['status_value'] === 'Suspended' || $kr['status_value'] === 'Failed') {
+        echo json_encode(['success' => false, 'message' => 'This OKR is locked and can no longer be edited.']);
         exit;
     }
 
@@ -840,8 +846,8 @@ if ($action === 'linkKeyResultAtem' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['success' => false, 'message' => 'Only the issuer can link an ATEM.']);
         exit;
     }
-    if ($kr['status_value'] === 'Suspended') {
-        echo json_encode(['success' => false, 'message' => 'Unsuspend this OKR before editing it.']);
+    if ($kr['status_value'] === 'Suspended' || $kr['status_value'] === 'Failed') {
+        echo json_encode(['success' => false, 'message' => 'This OKR is locked and can no longer be edited.']);
         exit;
     }
 
@@ -874,8 +880,8 @@ if ($action === 'unlinkKeyResultAtem' && $_SERVER['REQUEST_METHOD'] === 'POST') 
         echo json_encode(['success' => false, 'message' => 'Only the issuer can unlink an ATEM.']);
         exit;
     }
-    if ($kr['status_value'] === 'Suspended') {
-        echo json_encode(['success' => false, 'message' => 'Unsuspend this OKR before editing it.']);
+    if ($kr['status_value'] === 'Suspended' || $kr['status_value'] === 'Failed') {
+        echo json_encode(['success' => false, 'message' => 'This OKR is locked and can no longer be edited.']);
         exit;
     }
 
@@ -993,8 +999,8 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['success' => false, 'message' => 'Only the issuer can edit this OKR.']);
         exit;
     }
-    if ($card['status_value'] === 'Suspended') {
-        echo json_encode(['success' => false, 'message' => 'Unsuspend this OKR before editing it.']);
+    if ($card['status_value'] === 'Suspended' || $card['status_value'] === 'Failed') {
+        echo json_encode(['success' => false, 'message' => 'This OKR is locked and can no longer be edited.']);
         exit;
     }
 
@@ -1244,6 +1250,10 @@ if ($action === 'suspendCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     $card = mysqli_fetch_assoc($check);
+    if ($card['status_value'] === 'Failed') {
+        echo json_encode(['success' => false, 'message' => 'A Failed OKR is already resolved and cannot be suspended.']);
+        exit;
+    }
 
     $reason = trim($_POST['reason'] ?? '');
     if ($reason === '') {
@@ -1390,13 +1400,17 @@ if ($action === 'forceTerminateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $status_id = okrStatusIdByValue($conn, OKR_STATUS_FORCE_TERMINATED);
+    // Force Terminate is not a separate status - a force-terminated OKR is,
+    // semantically, a Failed one. The force_terminated flag is what lets the
+    // dashboard ranking (and anything else) tell it apart from an ordinary
+    // Failed OKR.
+    $status_id = okrStatusIdByValue($conn, 'Failed');
     $remark_e  = mysqli_real_escape_string($conn, $remark);
-    $update = "UPDATE okr_cards SET result_status = $status_id, closed_by = $requester_id, closed_at = NOW(),
+    $update = "UPDATE okr_cards SET result_status = $status_id, force_terminated = 1, closed_by = $requester_id, closed_at = NOW(),
                remarks = '$remark_e', appeal_justification = NULL, appealed_at = NULL WHERE id = $id";
     if (mysqli_query($conn, $update)) {
         okrLogAudit($conn, $id, $requester_id, 'force_terminated',
-            ['result_status' => [OKR_STATUS_SUSPENDED, OKR_STATUS_FORCE_TERMINATED]], 'Force terminated by CEO: ' . $remark);
+            ['result_status' => [OKR_STATUS_SUSPENDED, 'Failed']], 'Force terminated by CEO: ' . $remark);
         echo json_encode(['success' => true]);
     } else {
         echo json_encode(['success' => false, 'message' => 'Database error: ' . mysqli_error($conn)]);
@@ -1405,7 +1419,9 @@ if ($action === 'forceTerminateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // CEO/admin-only quality rating: 0-5 stars in half-star steps. Not gated on
-// incentive_locked or status - a rating can be given/changed any time.
+// incentive_locked - a rating can be given/changed any time up until the OKR
+// is Failed (a terminal, already-resolved outcome - see the Failed check
+// below).
 if ($action === 'rateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($requester_grade !== 5 && !$requester_is_admin) {
         echo json_encode(['success' => false, 'message' => 'Only the CEO or admin can rate an OKR.']);
@@ -1422,12 +1438,18 @@ if ($action === 'rateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT rating FROM okr_cards WHERE id = $id AND deleted_at IS NULL");
+    $check = mysqli_query($conn, "SELECT c.rating, os.value AS status_value
+                                   FROM okr_cards c LEFT JOIN okr_statuses os ON c.result_status = os.id
+                                   WHERE c.id = $id AND c.deleted_at IS NULL");
     if (!$check || mysqli_num_rows($check) === 0) {
         echo json_encode(['success' => false, 'message' => 'Card not found.']);
         exit;
     }
     $card = mysqli_fetch_assoc($check);
+    if ($card['status_value'] === 'Failed') {
+        echo json_encode(['success' => false, 'message' => 'A Failed OKR is already resolved and cannot be rated.']);
+        exit;
+    }
 
     $now = date('Y-m-d H:i:s');
     $rating_sql = $rating !== null ? $rating : 'NULL';

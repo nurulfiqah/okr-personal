@@ -53,8 +53,7 @@ INSERT INTO `okr_statuses` (`id`, `value`, `description`, `pays_incentive`, `sor
 (5, 'Extended', 'Timeline extended / still ongoing.', 0, 4, '2026-07-06 12:32:50', '2026-07-06 12:32:50', 0),
 (6, 'Failed', 'Not delivered.', 0, 6, '2026-07-06 12:32:50', '2026-07-06 12:32:50', 0),
 (8, 'Suspended', 'Halted - CEO only.', 0, 5, '2026-07-06 12:32:50', '2026-07-06 12:32:50', 0),
-(10, 'Completed with Extension', 'Delivered with an extended timeline.', 1, 8, '2026-07-07 11:42:50', '2026-07-07 11:42:50', 0),
-(11, 'Force Terminated', 'OKR forcibly terminated by CEO/admin after a suspension', 0, 9, '2026-07-27 00:00:00', '2026-07-27 00:00:00', 0);
+(10, 'Completed with Extension', 'Delivered with an extended timeline.', 1, 8, '2026-07-07 11:42:50', '2026-07-07 11:42:50', 0);
 
 --
 -- Indexes for dumped tables
@@ -75,7 +74,7 @@ ALTER TABLE `okr_statuses`
 -- AUTO_INCREMENT for table `okr_statuses`
 --
 ALTER TABLE `okr_statuses`
-  MODIFY `id` tinyint NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
+  MODIFY `id` tinyint NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
