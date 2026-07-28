@@ -1,6 +1,12 @@
 (function () {
     var CFG = window.OKR_CONFIG || { staff: [], departments: [], levels: [] };
 
+    // Bootstrap 5 popovers need explicit JS init - data-bs-toggle="popover"
+    // alone (the OKR Type field's info icon) does nothing without this.
+    document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function (el) {
+        new bootstrap.Popover(el);
+    });
+
     var referenceLinks = []; // { token, name, url }
     var stagedFiles = []; // { token, name, size }
 

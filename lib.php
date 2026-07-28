@@ -110,6 +110,22 @@ function okrTypeValues($conn, $include_recycled = true) {
     return array_column(okrFetchTypes($conn, $include_recycled), 'value');
 }
 
+// Short explanatory blurb for the OKR Type info popover (create.php/edit.php).
+// okr_types has no description column of its own (unlike okr_statuses), and
+// these are standard OKR-methodology definitions tied to the type's identity
+// rather than admin-editable copy, so they're a fixed lookup here rather than
+// a DB column - same "irreducible business constant" pattern as the
+// OKR_STATUS_* constants above. Falls back to the type name itself for any
+// value not in the map, so a newly-added/renamed type never breaks the popover.
+function okrTypeDescription($value) {
+    $descriptions = [
+        'Committed'  => 'Must be fully achieved - typically tied to core business operations, with 100% delivery expected.',
+        'Aspiration' => 'An ambitious, higher-risk stretch goal - achieving around 70% is often still considered a success.',
+        'Learning'   => 'Exploratory - aimed at gaining insight or validating an assumption rather than hitting a fixed target.',
+    ];
+    return $descriptions[$value] ?? $value;
+}
+
 // The single DB-driven source of truth for okr_statuses' shape - every status
 // picker/filter/validation should read from this (or okrTimelineAssignableStatuses
 // below), not re-declare its own hardcoded status list.
