@@ -11,12 +11,35 @@ if (file_exists(__DIR__ . '/vendor/autoload.php')) {
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception as PHPMailerException;
 
+/**
+ * SMTP credentials, sourced from .env (production mailbox) when present,
+ * falling back to mail_config.local.php (e.g. a local Mailtrap sandbox).
+ * Both files are gitignored - never commit real credentials.
+ */
 function getOkrMailConfig()
 {
     static $config = null;
     if ($config === null) {
-        $path = __DIR__ . '/mail_config.local.php';
-        $config = file_exists($path) ? include $path : array();
+        $envPath = __DIR__ . '/.env';
+        $env = (is_file($envPath) && is_readable($envPath))
+            ? parse_ini_file($envPath, false, INI_SCANNER_RAW)
+            : false;
+
+        if (!empty($env['outgoing_server'])) {
+            $port = isset($env['smtp_port']) ? (int)$env['smtp_port'] : 465;
+            $config = array(
+                'host'       => $env['outgoing_server'],
+                'port'       => $port,
+                'username'   => isset($env['username']) ? $env['username'] : '',
+                'password'   => isset($env['password']) ? $env['password'] : '',
+                'secure'     => ($port === 465) ? 'ssl' : 'tls',
+                'from_email' => !empty($env['username']) ? $env['username'] : 'noreply@okr.local',
+                'from_name'  => 'OKR System',
+            );
+        } else {
+            $path = __DIR__ . '/mail_config.local.php';
+            $config = file_exists($path) ? include $path : array();
+        }
     }
     return $config;
 }
@@ -71,6 +94,9 @@ function sendOkrSuspensionEmail($toEmail, $toName, $cardId, $objective, $reason,
         $mail->Username = $cfg['username'];
         $mail->Password = $cfg['password'];
         $mail->Port = $cfg['port'];
+        $mail->SMTPSecure = !empty($cfg['secure'])
+            ? $cfg['secure']
+            : (((int)$cfg['port'] === 465) ? PHPMailer::ENCRYPTION_SMTPS : PHPMailer::ENCRYPTION_STARTTLS);
         $mail->CharSet = 'UTF-8';
 
         okrMailerFrom($mail, $cfg);
@@ -139,6 +165,9 @@ function sendOkrAppealEmail($toEmail, $toName, $cardId, $objective, $justificati
         $mail->Username = $cfg['username'];
         $mail->Password = $cfg['password'];
         $mail->Port = $cfg['port'];
+        $mail->SMTPSecure = !empty($cfg['secure'])
+            ? $cfg['secure']
+            : (((int)$cfg['port'] === 465) ? PHPMailer::ENCRYPTION_SMTPS : PHPMailer::ENCRYPTION_STARTTLS);
         $mail->CharSet = 'UTF-8';
 
         okrMailerFrom($mail, $cfg);
