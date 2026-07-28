@@ -257,7 +257,7 @@ if ($action === 'saveDraftState' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 // reference links, and the autosaved field state. Used both by the Leave
 // modal's "Cancel OKR" and after a successful save (draft or final).
 if ($action === 'clearDraftState' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    okrClearDraftSession();
+    okrClearDraftSession($conn);
     echo json_encode(['success' => true]);
     exit;
 }
@@ -334,6 +334,25 @@ if ($action === 'createCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $status_id = $mode === 'draft' ? 1 : 2;
     }
 
+    // create.php eagerly creates a placeholder Draft row the moment it's
+    // opened (okrEnsureDraftCard, see lib.php) so the in-progress OKR has a
+    // stable id before the user saves - e.g. for the Link ATEM modal's
+    // "Create New ATEM" pane to reference back to. If that row still exists,
+    // is still Draft, and still belongs to this requester, reuse it (UPDATE)
+    // instead of inserting a second row, so links already pointing at its id
+    // stay valid. Falls back to a real INSERT if it doesn't (session lost,
+    // row deleted, etc.) - same as this action's original, only path before.
+    $draft_id = !empty($_SESSION['okr_draft_card_id']) ? (int)$_SESSION['okr_draft_card_id'] : 0;
+    if ($draft_id > 0) {
+        $draft_check = mysqli_query($conn, "SELECT c.id FROM okr_cards c
+                                             JOIN okr_statuses s ON c.result_status = s.id
+                                             WHERE c.id = $draft_id AND c.issuer_staff_id = $requester_id
+                                             AND s.value = '" . OKR_STATUS_DRAFT . "' AND c.deleted_at IS NULL");
+        if (!$draft_check || mysqli_num_rows($draft_check) === 0) {
+            $draft_id = 0;
+        }
+    }
+
     // difficulty_level is a NOT NULL column with a foreign key into okr_levels
     // (no default) - the incentive system that column belonged to is retired,
     // but the schema itself is untouched, so every insert must still supply a
@@ -341,20 +360,30 @@ if ($action === 'createCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     // from the old system) and is otherwise unused now. key_results is also
     // NOT NULL with no default - the field was removed from the UI (slated
     // for replacement), so every insert supplies an empty string.
-    $insert = "INSERT INTO okr_cards
-        (objective, key_results, okr_type, difficulty_level,
-         owner_staff_id, owner2_staff_id, owner2_purpose,
-         issuer_staff_id, dept_scope, start_date, end_date, result_status)
-        VALUES ('$objective_e', '', '$okr_type_e', 1,
-                $owner_id, $owner2_sql, $owner2_purpose_sql,
-                $requester_id, '$dept_scope_safe', '$start_date', '$end_date', $status_id)";
+    if ($draft_id > 0) {
+        $write = "UPDATE okr_cards SET
+            objective = '$objective_e', okr_type = '$okr_type_e',
+            owner_staff_id = $owner_id, owner2_staff_id = $owner2_sql, owner2_purpose = $owner2_purpose_sql,
+            dept_scope = '$dept_scope_safe', start_date = '$start_date', end_date = '$end_date',
+            result_status = $status_id
+            WHERE id = $draft_id";
+    } else {
+        $write = "INSERT INTO okr_cards
+            (objective, key_results, okr_type, difficulty_level,
+             owner_staff_id, owner2_staff_id, owner2_purpose,
+             issuer_staff_id, dept_scope, start_date, end_date, result_status)
+            VALUES ('$objective_e', '', '$okr_type_e', 1,
+                    $owner_id, $owner2_sql, $owner2_purpose_sql,
+                    $requester_id, '$dept_scope_safe', '$start_date', '$end_date', $status_id)";
+    }
 
-    if (mysqli_query($conn, $insert)) {
-        $new_id = mysqli_insert_id($conn);
+    if (mysqli_query($conn, $write)) {
+        $new_id = $draft_id > 0 ? $draft_id : mysqli_insert_id($conn);
         okrFinalizeStagedAttachments($conn, $new_id, $requester_id);
         okrFinalizeStagedReferenceLinks($conn, $new_id, $requester_id);
         okrFinalizeStagedKeyResults($conn, $new_id, $requester_id);
         unset($_SESSION['okr_draft_state']);
+        unset($_SESSION['okr_draft_card_id']);
         okrLogAudit($conn, $new_id, $requester_id, 'created', null, $mode === 'draft' ? 'OKR card saved as draft.' : 'OKR card created.');
         echo json_encode(['success' => true, 'id' => $new_id]);
     } else {
@@ -425,8 +454,8 @@ if ($action === 'removeStagedReferenceLink' && $_SERVER['REQUEST_METHOD'] === 'P
 }
 
 // Stages a top-level Key Result (for the create form, before the card exists
-// yet). Subtasks and ATEM links can also be staged against its token below -
-// see stageKeyResultSubtask/stageKeyResultAtemLink.
+// yet). Subtasks can also be staged against its token below - see
+// stageKeyResultSubtask.
 if ($action === 'stageKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($requester_grade < 3 && !$requester_is_admin) {
         echo json_encode(['success' => false, 'message' => 'Unauthorized.']);
@@ -526,9 +555,10 @@ if ($action === 'removeStagedKeyResultSubtask' && $_SERVER['REQUEST_METHOD'] ===
     exit;
 }
 
-// Links/unlinks an existing real ATEM card against a still-staged top-level
-// Key Result. Same "plain int reference, no FK" rule as linkKeyResultAtem -
-// the frontend resolves the title by calling atem/api.php directly.
+// Links an existing or newly-created ATEM card against a still-staged
+// top-level Key Result. atem_id is a bare int reference only - the frontend
+// picks/creates the ATEM by calling atem/api.php directly (same session,
+// same origin), then calls this action with the resulting id.
 if ($action === 'stageKeyResultAtemLink' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $token = $_POST['token'] ?? '';
     $atem_id = (int)($_POST['atem_id'] ?? 0);
@@ -540,13 +570,6 @@ if ($action === 'stageKeyResultAtemLink' && $_SERVER['REQUEST_METHOD'] === 'POST
         echo json_encode(['success' => false, 'message' => 'Key Result not found.']);
         exit;
     }
-    echo json_encode(['success' => true]);
-    exit;
-}
-
-if ($action === 'removeStagedKeyResultAtemLink' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    $token = $_POST['token'] ?? '';
-    okrSetStagedKeyResultAtem($token, null);
     echo json_encode(['success' => true]);
     exit;
 }
@@ -865,80 +888,6 @@ if ($action === 'reorderKeyResultSubtasks' && $_SERVER['REQUEST_METHOD'] === 'PO
         if (!in_array($sub_id, $sibling_ids, true)) { continue; }
         mysqli_query($conn, "UPDATE okr_key_results SET sort_order = $order WHERE id = $sub_id");
     }
-    echo json_encode(['success' => true]);
-    exit;
-}
-
-// Links a Key Result to an existing card in the real ATEM module. ATEM lives
-// in a separate Laravel service (atem-api), not this database, so atem_id is
-// a bare int reference only - never validated/joined against here. The
-// frontend resolves it for display by calling atem/api.php directly (same
-// session, same origin).
-if ($action === 'linkKeyResultAtem' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    $id = (int)($_POST['id'] ?? 0);
-    $atem_id = (int)($_POST['atem_id'] ?? 0);
-    if ($id <= 0 || $atem_id <= 0) {
-        echo json_encode(['success' => false, 'message' => 'Invalid Key Result or ATEM.']);
-        exit;
-    }
-
-    $check = mysqli_query($conn, "SELECT kr.card_id, kr.parent_id, kr.description, c.issuer_staff_id, os.value AS status_value
-                                   FROM okr_key_results kr
-                                   JOIN okr_cards c ON kr.card_id = c.id
-                                   LEFT JOIN okr_statuses os ON c.result_status = os.id
-                                   WHERE kr.id = $id AND c.deleted_at IS NULL");
-    if (!$check || mysqli_num_rows($check) === 0) {
-        echo json_encode(['success' => false, 'message' => 'Key Result not found.']);
-        exit;
-    }
-    $kr = mysqli_fetch_assoc($check);
-    if (!$requester_is_admin && (int)$kr['issuer_staff_id'] !== $requester_id) {
-        echo json_encode(['success' => false, 'message' => 'Only the issuer can link an ATEM.']);
-        exit;
-    }
-    if ($kr['status_value'] === 'Suspended' || $kr['status_value'] === 'Failed') {
-        echo json_encode(['success' => false, 'message' => 'This OKR is locked and can no longer be edited.']);
-        exit;
-    }
-
-    mysqli_query($conn, "UPDATE okr_key_results SET atem_id = $atem_id WHERE id = $id");
-    okrLogAudit($conn, $kr['card_id'], $requester_id,
-        $kr['parent_id'] !== null ? 'subtask_atem_linked' : 'key_result_atem_linked', null,
-        'Linked ATEM #' . $atem_id . ' to: ' . $kr['description']);
-    echo json_encode(['success' => true]);
-    exit;
-}
-
-if ($action === 'unlinkKeyResultAtem' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    $id = (int)($_POST['id'] ?? 0);
-    if ($id <= 0) {
-        echo json_encode(['success' => false, 'message' => 'Invalid Key Result.']);
-        exit;
-    }
-
-    $check = mysqli_query($conn, "SELECT kr.card_id, kr.parent_id, kr.description, c.issuer_staff_id, os.value AS status_value
-                                   FROM okr_key_results kr
-                                   JOIN okr_cards c ON kr.card_id = c.id
-                                   LEFT JOIN okr_statuses os ON c.result_status = os.id
-                                   WHERE kr.id = $id AND c.deleted_at IS NULL");
-    if (!$check || mysqli_num_rows($check) === 0) {
-        echo json_encode(['success' => false, 'message' => 'Key Result not found.']);
-        exit;
-    }
-    $kr = mysqli_fetch_assoc($check);
-    if (!$requester_is_admin && (int)$kr['issuer_staff_id'] !== $requester_id) {
-        echo json_encode(['success' => false, 'message' => 'Only the issuer can unlink an ATEM.']);
-        exit;
-    }
-    if ($kr['status_value'] === 'Suspended' || $kr['status_value'] === 'Failed') {
-        echo json_encode(['success' => false, 'message' => 'This OKR is locked and can no longer be edited.']);
-        exit;
-    }
-
-    mysqli_query($conn, "UPDATE okr_key_results SET atem_id = NULL WHERE id = $id");
-    okrLogAudit($conn, $kr['card_id'], $requester_id,
-        $kr['parent_id'] !== null ? 'subtask_atem_unlinked' : 'key_result_atem_unlinked', null,
-        'Unlinked ATEM from: ' . $kr['description']);
     echo json_encode(['success' => true]);
     exit;
 }

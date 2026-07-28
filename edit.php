@@ -190,8 +190,8 @@ $okr_config = [
 
     <div class="okr-bento-item okr-span-12">
         <div class="okr-card">
-            <div class="okr-kr-header">
-                <h6 class="okr-card-title mb-0"><i class="bi bi-list-task"></i> Key Result Progress</h6>
+            <div class="okr-card-title-row">
+                <h6 class="okr-card-title"><i class="bi bi-list-task"></i> Key Result Progress</h6>
                 <button type="button" class="btn btn-primary btn-sm" id="okr-kr-add-btn">Add Key Result</button>
             </div>
             <p class="okr-card-hint">Break this OKR down into Key Results, and optionally split a Key Result into

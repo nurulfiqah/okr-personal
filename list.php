@@ -72,42 +72,47 @@ $okr_list_config = [
 <div class="okr-card okr-filter mb-3">
     <h6 class="okr-card-title"><i class="bi bi-funnel"></i> Filter</h6>
 
-    <!-- Row 1: Year | Month | Start Date | End Date | Status | Type -->
-    <div class="row row-cols-md-6 row-cols-2 g-2 mt-1">
+    <!-- Row 1: Year/Month | Start - End date (range) | Closure Date | Status -->
+    <div class="row row-cols-md-4 row-cols-2 g-2 mt-1">
         <div class="col">
-            <label class="form-label">Year</label>
-            <select class="form-select form-select-sm" id="okr-filter-year">
-                <option value="">All years</option>
-                <?php foreach ($list_year_options as $y): ?>
-                <option value="<?php echo $y; ?>"><?php echo $y; ?></option>
-                <?php endforeach; ?>
-            </select>
+            <label class="form-label">Year / Month</label>
+            <div class="d-flex gap-1">
+                <select class="form-select form-select-sm" id="okr-filter-year">
+                    <option value="">All Year</option>
+                    <?php foreach ($list_year_options as $y): ?>
+                    <option value="<?php echo $y; ?>"><?php echo $y; ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <select class="form-select form-select-sm" id="okr-filter-month">
+                    <option value="">All Month</option>
+                    <option value="1">January</option>
+                    <option value="2">February</option>
+                    <option value="3">March</option>
+                    <option value="4">April</option>
+                    <option value="5">May</option>
+                    <option value="6">June</option>
+                    <option value="7">July</option>
+                    <option value="8">August</option>
+                    <option value="9">September</option>
+                    <option value="10">October</option>
+                    <option value="11">November</option>
+                    <option value="12">December</option>
+                </select>
+            </div>
         </div>
         <div class="col">
-            <label class="form-label">Month</label>
-            <select class="form-select form-select-sm" id="okr-filter-month">
-                <option value="">All months</option>
-                <option value="1">January</option>
-                <option value="2">February</option>
-                <option value="3">March</option>
-                <option value="4">April</option>
-                <option value="5">May</option>
-                <option value="6">June</option>
-                <option value="7">July</option>
-                <option value="8">August</option>
-                <option value="9">September</option>
-                <option value="10">October</option>
-                <option value="11">November</option>
-                <option value="12">December</option>
-            </select>
+            <label class="form-label">Start - End Date</label>
+            <div class="d-flex gap-1">
+                <input type="date" class="form-control form-control-sm" id="okr-filter-start-date" title="Start Date">
+                <input type="date" class="form-control form-control-sm" id="okr-filter-end-date" title="End Date">
+            </div>
         </div>
         <div class="col">
-            <label class="form-label">Start Date</label>
-            <input type="date" class="form-control form-control-sm" id="okr-filter-start-date">
-        </div>
-        <div class="col">
-            <label class="form-label">End Date</label>
-            <input type="date" class="form-control form-control-sm" id="okr-filter-end-date">
+            <label class="form-label">Closure Date</label>
+            <div class="d-flex gap-1">
+                <input type="date" class="form-control form-control-sm" id="okr-filter-closure-start" title="Closure Date From">
+                <input type="date" class="form-control form-control-sm" id="okr-filter-closure-end" title="Closure Date To">
+            </div>
         </div>
         <div class="col">
             <label class="form-label">Status</label>
@@ -132,6 +137,10 @@ $okr_list_config = [
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- Row 2: Type | Department | Owner | Issuer -->
+    <div class="row row-cols-md-4 row-cols-2 g-2 mt-0">
         <div class="col">
             <label class="form-label">Type</label>
             <select class="form-select form-select-sm" id="okr-filter-type">
@@ -140,18 +149,6 @@ $okr_list_config = [
                 <option value="<?php echo htmlspecialchars($t); ?>"><?php echo htmlspecialchars($t); ?></option>
                 <?php endforeach; ?>
             </select>
-        </div>
-    </div>
-
-    <!-- Row 1b: Closure Date range | Department | Owner | Issuer -->
-    <div class="row row-cols-md-5 row-cols-2 g-2 mt-0 align-items-end">
-        <div class="col">
-            <label class="form-label">Closure Date From</label>
-            <input type="date" class="form-control form-control-sm" id="okr-filter-closure-start">
-        </div>
-        <div class="col">
-            <label class="form-label">Closure Date To</label>
-            <input type="date" class="form-control form-control-sm" id="okr-filter-closure-end">
         </div>
         <div class="col">
             <label class="form-label">Department</label>
@@ -200,15 +197,16 @@ $okr_list_config = [
         </div>
     </div>
 
-    <!-- Row 2: Search | (buttons) -->
-    <div class="row g-2 mt-0 align-items-end">
-        <div class="col-md-3 col-6">
+    <!-- Row 3: Search (full width) -->
+    <div class="row g-2 mt-0">
+        <div class="col-12">
             <label class="form-label">Search title or ID</label>
             <input type="text" class="form-control form-control-sm" id="okr-filter-search" placeholder="Type title or OKR ID...">
         </div>
-        <div class="col d-flex justify-content-end">
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="okr-filter-reset">Reset</button>
-        </div>
+    </div>
+
+    <div class="d-flex justify-content-end mt-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="okr-filter-reset">Reset Filters</button>
     </div>
 </div>
 

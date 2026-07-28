@@ -164,6 +164,53 @@ function okrStatusIdByValue($conn, $value) {
     return 0;
 }
 
+// Creates (or reuses) a real Draft-status okr_cards row the moment create.php
+// is opened, rather than waiting for the user's own Save - so the in-progress
+// OKR has a stable id immediately (e.g. so the Link ATEM modal's "Create New
+// ATEM" pane can add a reference link back to it before the OKR itself has
+// been filled in). Every NOT NULL column with no sensible default gets a
+// placeholder (issuer doubles as owner, today for both dates, the first
+// active type) - backend.php's createCard overwrites all of these with the
+// user's real values once they actually save, reusing this same row (UPDATE)
+// rather than inserting a second one.
+function okrEnsureDraftCard($conn, $requester_id, $requester_dept_csv) {
+    if (!empty($_SESSION['okr_draft_card_id'])) {
+        $existing_id = (int)$_SESSION['okr_draft_card_id'];
+        $check = mysqli_query($conn, "SELECT c.id FROM okr_cards c
+                                       JOIN okr_statuses s ON c.result_status = s.id
+                                       WHERE c.id = $existing_id AND c.issuer_staff_id = " . (int)$requester_id . "
+                                       AND s.value = '" . OKR_STATUS_DRAFT . "' AND c.deleted_at IS NULL");
+        if ($check && mysqli_num_rows($check) > 0) {
+            return $existing_id;
+        }
+        unset($_SESSION['okr_draft_card_id']);
+    }
+
+    $status_id = okrStatusIdByValue($conn, OKR_STATUS_DRAFT);
+    if ($status_id <= 0) {
+        return 0;
+    }
+    $types = okrTypeValues($conn, false);
+    if (empty($types)) {
+        return 0;
+    }
+    $type_e = mysqli_real_escape_string($conn, $types[0]);
+    $today = date('Y-m-d');
+    $dept_scope_safe = implode(',', okrDeptIdsFromCsv($requester_dept_csv));
+
+    $insert = "INSERT INTO okr_cards
+        (objective, key_results, okr_type, difficulty_level,
+         owner_staff_id, issuer_staff_id, dept_scope, start_date, end_date, result_status)
+        VALUES ('', '', '$type_e', 1,
+                " . (int)$requester_id . ", " . (int)$requester_id . ", '$dept_scope_safe', '$today', '$today', $status_id)";
+    if (!mysqli_query($conn, $insert)) {
+        return 0;
+    }
+    $new_id = mysqli_insert_id($conn);
+    $_SESSION['okr_draft_card_id'] = $new_id;
+    return $new_id;
+}
+
 function okrFetchReferenceLinks($conn, $card_id) {
     $links = [];
     $result = mysqli_query($conn, "SELECT id, name, url FROM okr_reference_links
@@ -345,11 +392,10 @@ function okrRemoveStagedKeyResultSubtask($parent_token, $sub_token) {
     return true;
 }
 
-// Links/unlinks an existing real ATEM card against a still-staged (top-level
-// only) Key Result - same "plain reference, no FK" rule as the real
-// linkKeyResultAtem/unlinkKeyResultAtem backend actions.
-// Looks in both places a staged token can live - a top-level Key Result, or
-// nested inside one as a Subtask - since Link ATEM is available on both.
+// Links an existing or newly-created ATEM card against a still-staged
+// (top-level only) Key Result - same "plain reference, no FK" rule as the
+// real linkKeyResultAtem backend action. Looks in both places a staged token
+// can live - a top-level Key Result, or nested inside one as a Subtask.
 function okrSetStagedKeyResultAtem($token, $atem_id) {
     if (isset($_SESSION['okr_draft_keyresults'][$token])) {
         $_SESSION['okr_draft_keyresults'][$token]['atem_id'] = $atem_id ?: null;
@@ -672,7 +718,7 @@ function okrRemoveStagedAttachment($token) {
 // attachment tmp files, clears staged reference links, and clears the
 // autosaved form-field state (okr_draft_state). Used by the clearDraftState
 // action and after a successful createCard, mirrors ATEM's draft-clear.
-function okrClearDraftSession() {
+function okrClearDraftSession($conn = null) {
     if (!empty($_SESSION['okr_draft_files'])) {
         foreach (array_keys($_SESSION['okr_draft_files']) as $token) {
             okrRemoveStagedAttachment($token);
@@ -681,6 +727,17 @@ function okrClearDraftSession() {
     $_SESSION['okr_draft_reflinks'] = [];
     $_SESSION['okr_draft_keyresults'] = [];
     unset($_SESSION['okr_draft_state']);
+
+    // Explicit "Cancel OKR" is an unambiguous signal to drop the placeholder
+    // Draft row okrEnsureDraftCard() created on page load too - no child rows
+    // exist for it yet (it was never finalized), so a plain delete is enough.
+    if ($conn !== null && !empty($_SESSION['okr_draft_card_id'])) {
+        $draft_id = (int)$_SESSION['okr_draft_card_id'];
+        mysqli_query($conn, "DELETE FROM okr_cards WHERE id = $draft_id AND result_status = (
+            SELECT id FROM okr_statuses WHERE value = '" . OKR_STATUS_DRAFT . "'
+        ) AND deleted_at IS NULL");
+    }
+    unset($_SESSION['okr_draft_card_id']);
 }
 
 // Uploads every attachment staged in the session to the NAS and links it to

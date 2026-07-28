@@ -252,7 +252,9 @@ ALTER TABLE `okr_reference_links`
 -- Table structure for table `okr_key_results`
 --
 -- `assignee_staff_id` also dropped here - retired from the UI (replaced by
--- "Created By"), never read/written by any page/action.
+-- "Created By"), never read/written by any page/action. `sort_order` backs
+-- the Subtask drag-to-reorder feature (unrelated to the incentive system,
+-- kept here).
 --
 
 CREATE TABLE `okr_key_results` (
@@ -264,6 +266,7 @@ CREATE TABLE `okr_key_results` (
   `status_id` tinyint NOT NULL,
   `start_date` date DEFAULT NULL,
   `end_date` date DEFAULT NULL,
+  `sort_order` int NOT NULL DEFAULT '0',
   `created_by` int NOT NULL,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP

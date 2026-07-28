@@ -1008,17 +1008,11 @@ textarea.form-control {
    Key Result Progress (nested task list, mirrors iidas's
    project_detail.php Progression Task / Subtask widget)
 --------------------------------------------------------------- */
-.okr-kr-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
 .okr-kr-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  margin-top: 12px;
 }
 
 .okr-kr-row {

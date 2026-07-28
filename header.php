@@ -29,6 +29,7 @@ $page_title = $page_title ?? 'OKR';
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
     <link href="okr/css/style.css?v=<?php echo time(); ?>" rel="stylesheet">
+    <?php if (isset($extra_css)) echo $extra_css; ?>
 </head>
 <?php
 require_once(dirname(__FILE__) . '/../lock_adv.php');
