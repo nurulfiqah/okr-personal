@@ -169,35 +169,6 @@ window.OKR_DASH = <?php echo json_encode([
     </div>
 </div>
 
-<!-- OKR Type Breakdown -->
-<div class="row g-3 mb-3">
-    <div class="col-12">
-        <div class="okr-card">
-            <h6 class="okr-card-title mb-0">OKR Type Breakdown</h6>
-            <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Outcomes by OKR type</div>
-            <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0">
-                    <thead>
-                        <tr>
-                            <th style="font-size:12px;text-align:left;">Type</th>
-                            <th style="font-size:12px;text-align:left;">Completed</th>
-                            <th style="font-size:12px;text-align:left;">Excellence</th>
-                            <th style="font-size:12px;text-align:left;">Extended</th>
-                            <th style="font-size:12px;text-align:left;">Suspended</th>
-                            <th style="font-size:12px;text-align:left;">Failed</th>
-                        </tr>
-                    </thead>
-                    <tbody id="dash-type-body">
-                        <tr>
-                            <td colspan="6" class="text-muted" style="font-size:12px;">Loading...</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-</div>
-
 <!-- Bar chart -->
 <div class="row g-3">
     <div class="col-12">

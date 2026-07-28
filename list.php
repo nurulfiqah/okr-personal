@@ -23,8 +23,6 @@ if ($list_dept_res) {
     }
 }
 
-$list_type_options = okrTypeValues($conn, false);
-
 // Year options driven by what's actually in the data, not a fixed range,
 // since this list spans every card the requester can see.
 $list_years = [];
@@ -139,17 +137,8 @@ $okr_list_config = [
         </div>
     </div>
 
-    <!-- Row 2: Type | Department | Owner | Issuer -->
+    <!-- Row 2: Department | Owner | Issuer -->
     <div class="row row-cols-md-4 row-cols-2 g-2 mt-0">
-        <div class="col">
-            <label class="form-label">Type</label>
-            <select class="form-select form-select-sm" id="okr-filter-type">
-                <option value="">All types</option>
-                <?php foreach ($list_type_options as $t): ?>
-                <option value="<?php echo htmlspecialchars($t); ?>"><?php echo htmlspecialchars($t); ?></option>
-                <?php endforeach; ?>
-            </select>
-        </div>
         <div class="col">
             <label class="form-label">Department</label>
             <select class="form-select form-select-sm" id="okr-filter-dept">
@@ -220,7 +209,6 @@ $okr_list_config = [
                     <th class="okr-sortable" data-col="objective">Objective</th>
                     <th class="okr-sortable" data-col="issuer_name">Issuer</th>
                     <th>Owner(s)</th>
-                    <th>Type</th>
                     <th class="okr-sortable" data-col="start_date">Start Date</th>
                     <th class="okr-sortable" data-col="end_date">End Date</th>
                     <th class="okr-sortable" data-col="result_status">Status</th>

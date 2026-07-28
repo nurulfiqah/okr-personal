@@ -3,7 +3,6 @@
     var tbody = document.getElementById('okr-view-tbody');
     var emptyState = document.getElementById('okr-empty-state');
     var searchFilter = document.getElementById('okr-filter-search');
-    var typeFilter = document.getElementById('okr-filter-type');
     var deptFilter = document.getElementById('okr-filter-dept');
     var yearFilter = document.getElementById('okr-filter-year');
     var monthFilter = document.getElementById('okr-filter-month');
@@ -48,7 +47,6 @@
         if (params.get('from'))  { deepLinkDateFrom = params.get('from'); }
         if (params.get('to'))    { deepLinkDateTo = params.get('to'); }
         if (params.get('dept'))  { deptFilter.value = params.get('dept'); }
-        if (params.get('type'))  { typeFilter.value = params.get('type'); }
         if (params.get('overdue') === '1') { deepLinkOverdueOnly = true; }
     }
 
@@ -185,15 +183,6 @@
         updateStatusButtonLabel(baseId);
     }
 
-    // Type badge colors, kept distinct from the Status (gray/blue/green/cyan/
-    // orange/rose/red) palette above.
-    var TYPE_COLOR = { 'Committed': '#6f42c1', 'Aspiration': '#d63384', 'Learning': '#20c997' };
-
-    function typePill(type) {
-        var color = TYPE_COLOR[type] || '#6c757d';
-        return '<span class="okr-pill" style="background-color:' + color + '">' + escapeHtml(type) + '</span>';
-    }
-
     // staff.department is a comma-separated list of department ids (a staff
     // member can belong to more than one) - resolve every id present via the
     // deptNames map built server-side and join for display.
@@ -289,7 +278,6 @@
         var search = searchFilter.value.trim().toLowerCase();
         var statuses = getSelectedStatuses('okr-filter-status');
         var allStatusCount = allStatusCheckboxes('okr-filter-status').length;
-        var type = typeFilter.value;
         var deptId = deptFilter.value;
         var ownerValueEl = document.getElementById('okr-filter-owner-value');
         var issuerValueEl = document.getElementById('okr-filter-issuer-value');
@@ -305,7 +293,6 @@
         var rows = CFG.cards.filter(function (card) {
             if (statuses.length === 0) return false;
             if (statuses.length < allStatusCount && statuses.indexOf(card.result_status) === -1) return false;
-            if (type && card.okr_type !== type) return false;
             if (deptId) {
                 var deptIds = (card.dept_scope || '').split(',').map(function (s) { return s.trim(); });
                 if (deptIds.indexOf(deptId) === -1) return false;
@@ -363,7 +350,6 @@
                 '<td>' + escapeHtml(card.objective).slice(0, 80) + '</td>' +
                 '<td>' + issuerCell(card) + '</td>' +
                 '<td>' + ownerCell(card) + '</td>' +
-                '<td>' + typePill(card.okr_type) + '</td>' +
                 '<td>' + escapeHtml(card.start_date) + '</td>' +
                 '<td>' + escapeHtml(card.end_date) + '</td>' +
                 '<td>' + statusCell + '</td>' +
@@ -374,7 +360,7 @@
     }
 
     searchFilter.addEventListener('input', render);
-    [typeFilter, deptFilter, yearFilter, monthFilter, startDateFilter, endDateFilter, closureStartFilter, closureEndFilter].forEach(function (el) {
+    [deptFilter, yearFilter, monthFilter, startDateFilter, endDateFilter, closureStartFilter, closureEndFilter].forEach(function (el) {
         el.addEventListener('change', render);
     });
     wireS2Dropdown('okr-filter-owner', render);
@@ -392,7 +378,6 @@
     resetFilterBtn.addEventListener('click', function () {
         searchFilter.value = '';
         resetStatusCheckboxDropdown('okr-filter-status');
-        typeFilter.value = '';
         deptFilter.value = '';
         resetS2Dropdown('okr-filter-owner', 'All owners');
         resetS2Dropdown('okr-filter-issuer', 'All issuers');

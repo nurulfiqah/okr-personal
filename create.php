@@ -17,8 +17,8 @@ if ($okr_permission < 3 && !$okr_is_admin) {
 // Eagerly creates (or reuses) a real Draft-status okr_cards row the moment
 // this page opens, so the in-progress OKR has a stable id immediately - see
 // okrEnsureDraftCard() in lib.php for why (the Link ATEM modal's "Create New
-// ATEM" pane needs a real id to link back to). 0 means no okr_types row
-// exists yet to use as a placeholder - the page still works, the ATEM pane
+// ATEM" pane needs a real id to link back to). 0 means the insert failed
+// (e.g. no Draft status row exists) - the page still works, the ATEM pane
 // just won't offer the "add this OKR" reference link in that edge case.
 $draft_card_id = okrEnsureDraftCard($conn, $id_user, $department ?? '');
 
@@ -295,33 +295,12 @@ $okr_config = [
                     <input type="text" class="form-control" id="okr-department"
                         value="<?php echo htmlspecialchars($issuer_department); ?>" readonly>
                 </div>
-                <div class="col-md-4">
-                    <label for="okr-type" class="form-label">OKR Type <span class="okr-req">*</span>
-                        <?php
-                        $okr_type_info_html = '';
-                        foreach (okrFetchTypes($conn, false) as $t) {
-                            $okr_type_info_html .= '<strong>' . htmlspecialchars($t['value']) . ':</strong> ' . htmlspecialchars(okrTypeDescription($t['value'])) . '<br>';
-                        }
-                        ?>
-                        <i class="bi bi-info-circle okr-type-info" tabindex="0" role="button"
-                            data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-html="true"
-                            data-bs-placement="right" title="OKR Type"
-                            data-bs-content="<?php echo htmlspecialchars($okr_type_info_html); ?>"></i>
-                    </label>
-                    <select class="form-select" id="okr-type">
-                        <option value="">Select type</option>
-                        <?php foreach (okrFetchTypes($conn, false) as $t): ?>
-                        <option value="<?php echo htmlspecialchars($t['value']); ?>"><?php echo htmlspecialchars($t['value']); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                    <div class="okr-form-error" id="okr-type-error"></div>
-                </div>
-                <div class="col-md-4">
+                <div class="col-md-6">
                     <label for="okr-start" class="form-label">Start Date <span class="okr-req">*</span></label>
                     <input type="date" class="form-control" id="okr-start">
                     <div class="okr-form-error" id="okr-start-error"></div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-6">
                     <label for="okr-end" class="form-label">End Date <span class="okr-req">*</span></label>
                     <input type="date" class="form-control" id="okr-end">
                     <div class="okr-form-error" id="okr-end-error"></div>

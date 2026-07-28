@@ -185,11 +185,6 @@ $okr_view_config = [
                         value="<?php echo htmlspecialchars(empty($dept_names) ? '-' : implode(', ', $dept_names)); ?>"
                         readonly>
                 </div>
-                <div class="col-md-6">
-                    <label class="form-label">OKR Type</label>
-                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($card['okr_type']); ?>"
-                        readonly>
-                </div>
             </div>
         </div>
     </div>

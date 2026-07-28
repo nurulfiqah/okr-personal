@@ -190,18 +190,6 @@ input, select, textarea, button {
   display: block;
 }
 
-.okr-type-info {
-  color: #6c757d;
-  cursor: pointer;
-  margin-left: 4px;
-}
-
-.okr-type-info:hover,
-.okr-type-info:focus {
-  color: #0d6efd;
-  outline: none;
-}
-
 .form-control,
 .form-select {
   border-radius: 6px;

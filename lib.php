@@ -54,7 +54,6 @@ function okrFormatCard($row) {
     return [
         'id'                => (int)$row['id'],
         'objective'         => $row['objective'],
-        'okr_type'          => $row['okr_type'],
         'owner_staff_id'    => (int)$row['owner_staff_id'],
         'owner_name'        => $row['owner_name'],
         'owner_department'  => $row['owner_department'],
@@ -92,38 +91,6 @@ function okrFormatCard($row) {
         'created_at'        => $row['created_at'],
         'deleted_at'        => $row['deleted_at'] ?? null,
     ];
-}
-
-function okrFetchTypes($conn, $include_recycled = true) {
-    $where = $include_recycled ? '' : 'WHERE recycle = 0';
-    $types = [];
-    $result = mysqli_query($conn, "SELECT id, value, recycle FROM okr_types $where ORDER BY id ASC");
-    if ($result) {
-        while ($row = mysqli_fetch_assoc($result)) {
-            $types[] = ['id' => (int)$row['id'], 'value' => $row['value'], 'recycle' => (int)$row['recycle']];
-        }
-    }
-    return $types;
-}
-
-function okrTypeValues($conn, $include_recycled = true) {
-    return array_column(okrFetchTypes($conn, $include_recycled), 'value');
-}
-
-// Short explanatory blurb for the OKR Type info popover (create.php/edit.php).
-// okr_types has no description column of its own (unlike okr_statuses), and
-// these are standard OKR-methodology definitions tied to the type's identity
-// rather than admin-editable copy, so they're a fixed lookup here rather than
-// a DB column - same "irreducible business constant" pattern as the
-// OKR_STATUS_* constants above. Falls back to the type name itself for any
-// value not in the map, so a newly-added/renamed type never breaks the popover.
-function okrTypeDescription($value) {
-    $descriptions = [
-        'Committed'  => 'Must be fully achieved - typically tied to core business operations, with 100% delivery expected.',
-        'Aspiration' => 'An ambitious, higher-risk stretch goal - achieving around 70% is often still considered a success.',
-        'Learning'   => 'Exploratory - aimed at gaining insight or validating an assumption rather than hitting a fixed target.',
-    ];
-    return $descriptions[$value] ?? $value;
 }
 
 // The single DB-driven source of truth for okr_statuses' shape - every status
@@ -206,18 +173,16 @@ function okrEnsureDraftCard($conn, $requester_id, $requester_dept_csv) {
     if ($status_id <= 0) {
         return 0;
     }
-    $types = okrTypeValues($conn, false);
-    if (empty($types)) {
-        return 0;
-    }
-    $type_e = mysqli_real_escape_string($conn, $types[0]);
     $today = date('Y-m-d');
     $dept_scope_safe = implode(',', okrDeptIdsFromCsv($requester_dept_csv));
 
+    // okr_type is retired from the UI but the column is still NOT NULL with an
+    // FK into okr_types - hardcode 'Committed' (id 1) same as difficulty_level
+    // is hardcoded to 1, see "Retired incentive columns" in CLAUDE.md for the pattern.
     $insert = "INSERT INTO okr_cards
         (objective, key_results, okr_type, difficulty_level,
          owner_staff_id, issuer_staff_id, dept_scope, start_date, end_date, result_status)
-        VALUES ('', '', '$type_e', 1,
+        VALUES ('', '', 'Committed', 1,
                 " . (int)$requester_id . ", " . (int)$requester_id . ", '$dept_scope_safe', '$today', '$today', $status_id)";
     if (!mysqli_query($conn, $insert)) {
         return 0;

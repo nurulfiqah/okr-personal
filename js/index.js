@@ -139,38 +139,6 @@
         setText('bar-extended-n',   extended);
         setText('bar-failed-n',     failed);
 
-        var typeTbody = document.getElementById('dash-type-body');
-        if (typeTbody) {
-            if (data.by_type && data.by_type.length > 0) {
-                var tHtml = '';
-                for (var t = 0; t < data.by_type.length; t++) {
-                    var type = data.by_type[t];
-                    tHtml += '<tr>' +
-                        '<td style="font-size:12px;font-weight:600;text-align:left;">' + type.okr_type + '</td>' +
-                        '<td style="font-size:12px;color:#0d6efd;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-type="' + escapeHtml(type.okr_type) + '" data-nav-status="Completed,Completed with Extension">' + (type.complete || 0) + '</td>' +
-                        '<td style="font-size:12px;color:#198754;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-type="' + escapeHtml(type.okr_type) + '" data-nav-status="Completed with Excellence">' + (type.excellence || 0) + '</td>' +
-                        '<td style="font-size:12px;color:#fd7e14;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-type="' + escapeHtml(type.okr_type) + '" data-nav-status="Extended">' + (type.extend || 0) + '</td>' +
-                        '<td style="font-size:12px;color:#dc3545;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-type="' + escapeHtml(type.okr_type) + '" data-nav-status="Suspended">' + (type.suspended || 0) + '</td>' +
-                        '<td style="font-size:12px;color:#dc3545;text-align:left;cursor:pointer;text-decoration:underline;" data-nav-type="' + escapeHtml(type.okr_type) + '" data-nav-status="Failed">' + (type.fail || 0) + '</td>' +
-                        '</tr>';
-                }
-                typeTbody.innerHTML = tHtml;
-                typeTbody.onclick = function (e) {
-                    var td = e.target;
-                    while (td && td !== typeTbody) {
-                        if (td.tagName === 'TD' && td.hasAttribute('data-nav-type')) {
-                            var navStatus = td.getAttribute('data-nav-status') || '';
-                            window.location.href = buildListUrl('', navStatus ? navStatus.split(',') : [], false, '', td.getAttribute('data-nav-type'));
-                            return;
-                        }
-                        td = td.parentNode;
-                    }
-                };
-            } else {
-                typeTbody.innerHTML = '<tr><td colspan="6" class="text-muted" style="font-size:12px;">No data for the selected period.</td></tr>';
-            }
-        }
-
         var deptTbody = document.getElementById('dash-dept-body');
         if (deptTbody) {
             if (data.by_department && data.by_department.length > 0) {
@@ -265,11 +233,11 @@
         '4': ['10-01', '12-31']
     };
 
-    // deptOverride/typeOverride let the breakdown-table row clicks
-    // (Type/Department) target a specific value regardless of the
-    // dashboard's own filters; deptOverride falls back to the currently
-    // selected dash-filter-dept when not given, same as the plain stat cards.
-    function buildListUrl(statusOverride, statusesOverride, overdueOnly, deptOverride, typeOverride) {
+    // deptOverride lets the breakdown-table row clicks (Department) target a
+    // specific value regardless of the dashboard's own filters; it falls back
+    // to the currently selected dash-filter-dept when not given, same as the
+    // plain stat cards.
+    function buildListUrl(statusOverride, statusesOverride, overdueOnly, deptOverride) {
         var yearEl    = document.getElementById('dash-filter-year');
         var monthEl   = document.getElementById('dash-filter-month');
         var quarterEl = document.getElementById('dash-filter-quarter');
@@ -284,7 +252,6 @@
         if (statusOverride) { params.push('status=' + encodeURIComponent(statusOverride)); }
         if (statusesOverride && statusesOverride.length) { params.push('statuses=' + encodeURIComponent(statusesOverride.join(','))); }
         if (overdueOnly) { params.push('overdue=1'); }
-        if (typeOverride)  { params.push('type=' + encodeURIComponent(typeOverride)); }
         if (year)  { params.push('year='  + encodeURIComponent(year)); }
         if (month) { params.push('month=' + encodeURIComponent(month)); }
         if (!month && quarter && year && QUARTER_RANGES[quarter]) {

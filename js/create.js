@@ -2240,9 +2240,6 @@
             ok = false;
         }
 
-        var type = document.getElementById('okr-type').value;
-        if (!type) { setError('okr-type', 'Select an OKR type.'); ok = false; }
-
         var start = document.getElementById('okr-start').value;
         if (!start) { setError('okr-start', 'Start date is required.'); ok = false; }
 
@@ -2269,7 +2266,6 @@
     function buildDraftState() {
         return {
             objective: document.getElementById('okr-objective').value,
-            okr_type: document.getElementById('okr-type').value,
             start_date: document.getElementById('okr-start').value,
             end_date: document.getElementById('okr-end').value,
             owner_state: ownerState
@@ -2281,7 +2277,6 @@
         if (typeof draft.objective === 'string' && draft.objective) {
             document.getElementById('okr-objective').value = draft.objective;
         }
-        if (draft.okr_type) { document.getElementById('okr-type').value = draft.okr_type; }
         if (draft.start_date) { startDateInput.value = draft.start_date; }
         if (draft.end_date) { endDateInput.value = draft.end_date; }
         if (Array.isArray(draft.owner_state) && draft.owner_state.length) { ownerState = draft.owner_state; }
@@ -2352,7 +2347,6 @@
         payload.set('action', 'createCard');
         payload.set('mode', mode);
         payload.set('objective', document.getElementById('okr-objective').value.trim());
-        payload.set('okr_type', document.getElementById('okr-type').value);
         payload.set('owner_staff_id', owner1.staff_id || '');
         payload.set('owner2_staff_id', owner2.staff_id || '');
         payload.set('owner2_purpose', '');

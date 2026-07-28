@@ -2305,9 +2305,6 @@
             ok = false;
         }
 
-        var type = document.getElementById('okr-type').value;
-        if (!type) { setError('okr-type', 'Select an OKR type.'); ok = false; }
-
         var start = document.getElementById('okr-start').value;
         if (!start) { setError('okr-start', 'Start date is required.'); ok = false; }
 
@@ -2349,7 +2346,6 @@
         payload.set('action', 'updateCard');
         payload.set('id', card.id);
         payload.set('objective', document.getElementById('okr-objective').value.trim());
-        payload.set('okr_type', document.getElementById('okr-type').value);
         payload.set('owner_staff_id', owner1.staff_id || '');
         payload.set('owner2_staff_id', owner2.staff_id || '');
         payload.set('owner2_purpose', '');

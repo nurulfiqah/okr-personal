@@ -89,7 +89,7 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
         $filter_sql .= " AND (c.owner_staff_id = $filter_staff_id OR c.owner2_staff_id = $filter_staff_id OR c.issuer_staff_id = $filter_staff_id)";
     }
 
-    $query = "SELECT c.id, c.okr_type, os.value AS result_status, c.force_terminated,
+    $query = "SELECT c.id, os.value AS result_status, c.force_terminated,
                      c.start_date, c.end_date, c.issuer_staff_id,
                      iss.nama_staff AS issuer_name, iss.department AS issuer_department
               FROM okr_cards c
@@ -104,14 +104,6 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
         while ($drow = mysqli_fetch_assoc($dept_res)) {
             $dept_names[(int)$drow['id']] = $drow['depart_name'];
         }
-    }
-
-    $by_type = [];
-    foreach (okrTypeValues($conn) as $_type) {
-        $by_type[$_type] = [
-            'okr_type' => $_type, 'complete' => 0, 'excellence' => 0,
-            'extend' => 0, 'suspended' => 0, 'fail' => 0,
-        ];
     }
 
     $by_dept = [];
@@ -178,14 +170,6 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
                 if ($status === OKR_STATUS_SUSPENDED) { $by_staff[$issuer_id]['suspended']++; }
                 if ($is_force_terminated) { $by_staff[$issuer_id]['force_terminated']++; }
             }
-
-            if (isset($by_type[$row['okr_type']])) {
-                if ($is_complete) { $by_type[$row['okr_type']]['complete']++; }
-                if ($status === 'Completed with Excellence') { $by_type[$row['okr_type']]['excellence']++; }
-                if ($status === 'Extended') { $by_type[$row['okr_type']]['extend']++; }
-                if ($status === 'Suspended') { $by_type[$row['okr_type']]['suspended']++; }
-                if ($status === 'Failed') { $by_type[$row['okr_type']]['fail']++; }
-            }
         }
     }
 
@@ -207,7 +191,6 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
             ],
             'overdue_count' => $overdue,
             'by_department' => array_values($by_dept),
-            'by_type' => array_values($by_type),
             'by_staff_suspend' => $by_staff_suspend,
         ],
     ]);
@@ -270,7 +253,6 @@ if ($action === 'createCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $mode        = trim($_POST['mode'] ?? 'final');
     $objective   = trim($_POST['objective'] ?? '');
-    $okr_type    = trim($_POST['okr_type'] ?? '');
     $owner_id    = (int)($_POST['owner_staff_id'] ?? 0);
     $owner2_id   = (int)($_POST['owner2_staff_id'] ?? 0);
     $owner2_purpose = trim($_POST['owner2_purpose'] ?? '');
@@ -287,10 +269,6 @@ if ($action === 'createCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     // because okr_cards has them as NOT NULL columns regardless of status.
     if ($mode !== 'draft' && empty($_SESSION['okr_draft_reflinks'])) {
         echo json_encode(['success' => false, 'message' => 'At least one reference link (name + URL) is required.']);
-        exit;
-    }
-    if (!in_array($okr_type, okrTypeValues($conn, false), true)) {
-        echo json_encode(['success' => false, 'message' => 'Invalid OKR type.']);
         exit;
     }
     if ($owner_id <= 0) {
@@ -320,7 +298,6 @@ if ($action === 'createCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $dept_scope_safe = implode(',', $dept_ids);
 
     $objective_e   = mysqli_real_escape_string($conn, $objective);
-    $okr_type_e    = mysqli_real_escape_string($conn, $okr_type);
     $owner2_purpose_e = mysqli_real_escape_string($conn, $owner2_purpose);
     $owner2_sql       = $owner2_id > 0 ? $owner2_id : 'NULL';
     $owner2_purpose_sql = $owner2_id > 0 ? "'$owner2_purpose_e'" : 'NULL';
@@ -359,10 +336,14 @@ if ($action === 'createCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     // valid level. Level 1 always exists (it's the RM0 "no incentive" level
     // from the old system) and is otherwise unused now. key_results is also
     // NOT NULL with no default - the field was removed from the UI (slated
-    // for replacement), so every insert supplies an empty string.
+    // for replacement), so every insert supplies an empty string. okr_type is
+    // likewise retired from the UI but still NOT NULL with an FK into
+    // okr_types - the draft row already has it hardcoded to 'Committed' by
+    // okrEnsureDraftCard(), so the reuse-draft UPDATE branch doesn't touch it;
+    // the INSERT fallback hardcodes the same literal for consistency.
     if ($draft_id > 0) {
         $write = "UPDATE okr_cards SET
-            objective = '$objective_e', okr_type = '$okr_type_e',
+            objective = '$objective_e',
             owner_staff_id = $owner_id, owner2_staff_id = $owner2_sql, owner2_purpose = $owner2_purpose_sql,
             dept_scope = '$dept_scope_safe', start_date = '$start_date', end_date = '$end_date',
             result_status = $status_id
@@ -372,7 +353,7 @@ if ($action === 'createCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             (objective, key_results, okr_type, difficulty_level,
              owner_staff_id, owner2_staff_id, owner2_purpose,
              issuer_staff_id, dept_scope, start_date, end_date, result_status)
-            VALUES ('$objective_e', '', '$okr_type_e', 1,
+            VALUES ('$objective_e', '', 'Committed', 1,
                     $owner_id, $owner2_sql, $owner2_purpose_sql,
                     $requester_id, '$dept_scope_safe', '$start_date', '$end_date', $status_id)";
     }
@@ -1024,7 +1005,7 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT c.issuer_staff_id, c.objective, c.okr_type,
+    $check = mysqli_query($conn, "SELECT c.issuer_staff_id, c.objective,
                                           c.owner_staff_id, c.owner2_staff_id, c.owner2_purpose, c.dept_scope,
                                           c.start_date, c.end_date, c.extended, c.extended_date, c.remarks, os.value AS status_value
                                    FROM okr_cards c LEFT JOIN okr_statuses os ON c.result_status = os.id
@@ -1044,7 +1025,6 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $objective   = trim($_POST['objective'] ?? '');
-    $okr_type    = trim($_POST['okr_type'] ?? '');
     $owner_id    = (int)($_POST['owner_staff_id'] ?? 0);
     $owner2_id   = (int)($_POST['owner2_staff_id'] ?? 0);
     $owner2_purpose = trim($_POST['owner2_purpose'] ?? '');
@@ -1063,10 +1043,6 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($objective === '') {
         echo json_encode(['success' => false, 'message' => 'Objective is required.']);
-        exit;
-    }
-    if ($okr_type !== $card['okr_type'] && !in_array($okr_type, okrTypeValues($conn, false), true)) {
-        echo json_encode(['success' => false, 'message' => 'Invalid OKR type.']);
         exit;
     }
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $start_date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end_date)) {
@@ -1123,7 +1099,6 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $dept_scope_safe = implode(',', $dept_ids);
 
     $objective_e   = mysqli_real_escape_string($conn, $objective);
-    $okr_type_e    = mysqli_real_escape_string($conn, $okr_type);
     $owner2_purpose_e = mysqli_real_escape_string($conn, $owner2_purpose);
     $remarks_e     = mysqli_real_escape_string($conn, $remarks);
     $owner2_sql       = $owner2_id > 0 ? $owner2_id : 'NULL';
@@ -1164,7 +1139,6 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     // Complete status alone does not lock the card from further edits.
     $update = "UPDATE okr_cards SET
         objective = '$objective_e',
-        okr_type = '$okr_type_e',
         owner_staff_id = $owner_id, owner2_staff_id = $owner2_sql, owner2_purpose = $owner2_purpose_sql,
         dept_scope = '$dept_scope_safe', start_date = '$start_date', end_date = '$end_date',
         extended = $extended_sql, extended_date = $extended_date_sql, remarks = '$remarks_e',
@@ -1174,7 +1148,6 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (mysqli_query($conn, $update)) {
         $changes = [];
         if ($card['objective'] !== $objective) { $changes['objective'] = [$card['objective'], $objective]; }
-        if ($card['okr_type'] !== $okr_type) { $changes['okr_type'] = [$card['okr_type'], $okr_type]; }
         if ((int)$card['owner_staff_id'] !== $owner_id) { $changes['owner_staff_id'] = [(int)$card['owner_staff_id'], $owner_id]; }
         if ((int)$card['owner2_staff_id'] !== $owner2_id) { $changes['owner2_staff_id'] = [(int)$card['owner2_staff_id'], $owner2_id]; }
         if ((string)$card['owner2_purpose'] !== $owner2_purpose) { $changes['owner2_purpose'] = [$card['owner2_purpose'], $owner2_purpose]; }

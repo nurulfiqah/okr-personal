@@ -290,33 +290,6 @@ $okr_config = [
                     <input type="text" class="form-control" value="<?php echo htmlspecialchars($issuer_department); ?>"
                         readonly>
                 </div>
-                <div class="col-md-6">
-                    <label for="okr-type" class="form-label">OKR Type <span class="okr-req">*</span>
-                        <?php
-                        $okr_type_info_html = '';
-                        foreach (okrFetchTypes($conn, false) as $ti) {
-                            $okr_type_info_html .= '<strong>' . htmlspecialchars($ti['value']) . ':</strong> ' . htmlspecialchars(okrTypeDescription($ti['value'])) . '<br>';
-                        }
-                        ?>
-                        <i class="bi bi-info-circle okr-type-info" tabindex="0" role="button"
-                            data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-html="true"
-                            data-bs-placement="right" title="OKR Type"
-                            data-bs-content="<?php echo htmlspecialchars($okr_type_info_html); ?>"></i>
-                    </label>
-                    <select class="form-select" id="okr-type">
-                        <?php
-                        $okr_type_options = okrTypeValues($conn, false);
-                        if (!in_array($card['okr_type'], $okr_type_options, true)) {
-                            $okr_type_options[] = $card['okr_type'];
-                        }
-                        foreach ($okr_type_options as $t): ?>
-                        <option value="<?php echo htmlspecialchars($t); ?>"
-                            <?php echo ($card['okr_type'] === $t) ? 'selected' : ''; ?>>
-                            <?php echo htmlspecialchars($t); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                    <div class="okr-form-error" id="okr-type-error"></div>
-                </div>
             </div>
         </div>
     </div>
