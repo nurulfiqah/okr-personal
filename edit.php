@@ -129,7 +129,18 @@ $okr_config = [
                         readonly>
                 </div>
                 <div class="col-md-6">
-                    <label for="okr-type" class="form-label">OKR Type <span class="okr-req">*</span></label>
+                    <label for="okr-type" class="form-label">OKR Type <span class="okr-req">*</span>
+                        <?php
+                        $okr_type_info_html = '';
+                        foreach (okrFetchTypes($conn, false) as $ti) {
+                            $okr_type_info_html .= '<strong>' . htmlspecialchars($ti['value']) . ':</strong> ' . htmlspecialchars(okrTypeDescription($ti['value'])) . '<br>';
+                        }
+                        ?>
+                        <i class="bi bi-info-circle okr-type-info" tabindex="0" role="button"
+                            data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-html="true"
+                            data-bs-placement="right" title="OKR Type"
+                            data-bs-content="<?php echo htmlspecialchars($okr_type_info_html); ?>"></i>
+                    </label>
                     <select class="form-select" id="okr-type">
                         <?php
                         $okr_type_options = okrTypeValues($conn, false);

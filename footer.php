@@ -8,6 +8,11 @@
     </div><!-- /.okr-container -->
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function (el) {
+            new bootstrap.Popover(el);
+        });
+    </script>
     <?php if (isset($page_js) && $page_js !== ''): ?>
     <script src="<?php echo $page_js; ?>?v=<?php echo time(); ?>"></script>
     <?php endif; ?>
