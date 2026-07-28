@@ -334,13 +334,12 @@ if ($action === 'createCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     // (no default) - the incentive system that column belonged to is retired,
     // but the schema itself is untouched, so every insert must still supply a
     // valid level. Level 1 always exists (it's the RM0 "no incentive" level
-    // from the old system) and is otherwise unused now. key_results is also
-    // NOT NULL with no default - the field was removed from the UI (slated
-    // for replacement), so every insert supplies an empty string. okr_type is
-    // likewise retired from the UI but still NOT NULL with an FK into
-    // okr_types - the draft row already has it hardcoded to 'Committed' by
-    // okrEnsureDraftCard(), so the reuse-draft UPDATE branch doesn't touch it;
-    // the INSERT fallback hardcodes the same literal for consistency.
+    // from the old system) and is otherwise unused now. okr_type is likewise
+    // NOT NULL with no default - the OKR Type feature was removed from the
+    // UI, so every insert hardcodes 'Committed' (same pattern as
+    // difficulty_level = 1). key_results is also NOT NULL with no default -
+    // that field was removed from the UI (slated for replacement), so every
+    // insert supplies an empty string.
     if ($draft_id > 0) {
         $write = "UPDATE okr_cards SET
             objective = '$objective_e',

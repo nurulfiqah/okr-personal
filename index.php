@@ -169,9 +169,9 @@ window.OKR_DASH = <?php echo json_encode([
     </div>
 </div>
 
-<!-- Bar chart -->
+<!-- Bar chart + Department Breakdown -->
 <div class="row g-3">
-    <div class="col-12">
+    <div class="col-lg-5">
         <div class="okr-card h-100">
             <h6 class="okr-card-title mb-0">Closure &amp; Failure Analysis</h6>
             <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Issuer-only closure: Completed, Excellence, Extended, Failed</div>
@@ -208,12 +208,8 @@ window.OKR_DASH = <?php echo json_encode([
             <div class="text-muted mt-3" style="font-size:11px;">Critical CEO use: identify failure rate by department, issuer and month.</div>
         </div>
     </div>
-</div>
-
-<!-- Department Breakdown -->
-<div class="row g-3 mt-0">
-    <div class="col-12">
-        <div class="okr-card">
+    <div class="col-lg-7">
+        <div class="okr-card h-100">
             <h6 class="okr-card-title mb-0">Department Breakdown</h6>
             <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Cards and outcomes by issuer department</div>
             <div class="table-responsive">

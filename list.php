@@ -138,7 +138,7 @@ $okr_list_config = [
     </div>
 
     <!-- Row 2: Department | Owner | Issuer -->
-    <div class="row row-cols-md-4 row-cols-2 g-2 mt-0">
+    <div class="row row-cols-md-3 row-cols-2 g-2 mt-0">
         <div class="col">
             <label class="form-label">Department</label>
             <select class="form-select form-select-sm" id="okr-filter-dept">

@@ -17,9 +17,9 @@ if ($okr_permission < 3 && !$okr_is_admin) {
 // Eagerly creates (or reuses) a real Draft-status okr_cards row the moment
 // this page opens, so the in-progress OKR has a stable id immediately - see
 // okrEnsureDraftCard() in lib.php for why (the Link ATEM modal's "Create New
-// ATEM" pane needs a real id to link back to). 0 means the insert failed
-// (e.g. no Draft status row exists) - the page still works, the ATEM pane
-// just won't offer the "add this OKR" reference link in that edge case.
+// ATEM" pane needs a real id to link back to). 0 means the draft insert
+// failed - the page still works, the ATEM pane just won't offer the "add
+// this OKR" reference link in that edge case.
 $draft_card_id = okrEnsureDraftCard($conn, $id_user, $department ?? '');
 
 $staff_list = [];

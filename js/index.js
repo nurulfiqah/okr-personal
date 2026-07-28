@@ -233,10 +233,10 @@
         '4': ['10-01', '12-31']
     };
 
-    // deptOverride lets the breakdown-table row clicks (Department) target a
-    // specific value regardless of the dashboard's own filters; it falls back
-    // to the currently selected dash-filter-dept when not given, same as the
-    // plain stat cards.
+    // deptOverride lets the Department breakdown-table row clicks target a
+    // specific value regardless of the dashboard's own filters; falls back
+    // to the currently selected dash-filter-dept when not given, same as
+    // the plain stat cards.
     function buildListUrl(statusOverride, statusesOverride, overdueOnly, deptOverride) {
         var yearEl    = document.getElementById('dash-filter-year');
         var monthEl   = document.getElementById('dash-filter-month');

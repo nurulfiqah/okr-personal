@@ -54,6 +54,7 @@ function okrFormatCard($row) {
     return [
         'id'                => (int)$row['id'],
         'objective'         => $row['objective'],
+        'okr_type'          => $row['okr_type'],
         'owner_staff_id'    => (int)$row['owner_staff_id'],
         'owner_name'        => $row['owner_name'],
         'owner_department'  => $row['owner_department'],
@@ -152,10 +153,11 @@ function okrStatusIdByValue($conn, $value) {
 // OKR has a stable id immediately (e.g. so the Link ATEM modal's "Create New
 // ATEM" pane can add a reference link back to it before the OKR itself has
 // been filled in). Every NOT NULL column with no sensible default gets a
-// placeholder (issuer doubles as owner, today for both dates, the first
-// active type) - backend.php's createCard overwrites all of these with the
-// user's real values once they actually save, reusing this same row (UPDATE)
-// rather than inserting a second one.
+// placeholder (issuer doubles as owner, today for both dates, a hardcoded
+// okr_type - see "Retired incentive columns"-style handling in CLAUDE.md,
+// same pattern as difficulty_level = 1) - backend.php's createCard overwrites
+// all of these with the user's real values once they actually save, reusing
+// this same row (UPDATE) rather than inserting a second one.
 function okrEnsureDraftCard($conn, $requester_id, $requester_dept_csv) {
     if (!empty($_SESSION['okr_draft_card_id'])) {
         $existing_id = (int)$_SESSION['okr_draft_card_id'];
@@ -173,16 +175,14 @@ function okrEnsureDraftCard($conn, $requester_id, $requester_dept_csv) {
     if ($status_id <= 0) {
         return 0;
     }
+    $type_e = 'Committed';
     $today = date('Y-m-d');
     $dept_scope_safe = implode(',', okrDeptIdsFromCsv($requester_dept_csv));
 
-    // okr_type is retired from the UI but the column is still NOT NULL with an
-    // FK into okr_types - hardcode 'Committed' (id 1) same as difficulty_level
-    // is hardcoded to 1, see "Retired incentive columns" in CLAUDE.md for the pattern.
     $insert = "INSERT INTO okr_cards
         (objective, key_results, okr_type, difficulty_level,
          owner_staff_id, issuer_staff_id, dept_scope, start_date, end_date, result_status)
-        VALUES ('', '', 'Committed', 1,
+        VALUES ('', '', '$type_e', 1,
                 " . (int)$requester_id . ", " . (int)$requester_id . ", '$dept_scope_safe', '$today', '$today', $status_id)";
     if (!mysqli_query($conn, $insert)) {
         return 0;
