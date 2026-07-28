@@ -29,7 +29,12 @@ $card = okrFormatCard($row);
 // CEO to suspend (it's already resolved) and nothing left to rate.
 $is_terminal_failed = ($card['result_status'] === 'Failed');
 $can_suspend = ($okr_is_admin || $okr_permission === 5) && !$is_terminal_failed;
-$can_rate    = ($okr_is_admin || $okr_permission === 5) && !$is_terminal_failed;
+// Suspend/Rate are post-completion review actions - only available once the
+// OKR has actually resolved as Completed in some form (see backend.php's
+// suspendCard/rateCard, which enforce the same rule server-side).
+$is_completed_status = in_array($card['result_status'], okrCompletedStatusValues(), true);
+$can_initiate_suspend = $can_suspend && $is_completed_status;
+$can_rate    = ($okr_is_admin || $okr_permission === 5) && !$is_terminal_failed && $is_completed_status;
 // Force Terminate uses the same gate as Suspend/Unsuspend (grade 5/admin).
 $can_force_terminate = $can_suspend;
 // Only the issuer can appeal, only while Suspended, only once per
@@ -38,6 +43,12 @@ $can_force_terminate = $can_suspend;
 // see it alongside the CEO Action card's direct Unsuspend/Force Terminate).
 $can_appeal = ($card['issuer_staff_id'] === (int)$id_user
     && $card['result_status'] === OKR_STATUS_SUSPENDED && empty($card['appealed_at']));
+
+// Same edit gate as edit.php itself (issuer or admin, and not Suspended/
+// Failed) - shown here so the user doesn't have to go back to list.php just
+// to reach the Edit icon there.
+$can_edit_card = ($okr_is_admin || $card['issuer_staff_id'] === (int)$id_user)
+    && $card['result_status'] !== OKR_STATUS_SUSPENDED && $card['result_status'] !== 'Failed';
 
 // Days left before an unattended suspended OKR is auto-terminated (30 days
 // from the suspension timestamp) - shown as a countdown on the suspend
@@ -148,8 +159,14 @@ $okr_view_config = [
             <div class="okr-card-title-row">
                 <h6 class="okr-card-title"><i class="bi bi-file-earmark-text"></i> OKR<?php echo (int)$card['id']; ?>
                     Details</h6>
-                <span
-                    class="okr-pill <?php echo okrPillClass($card['result_status']); ?>"><?php echo htmlspecialchars(okrStatusDisplayLabel($card['result_status'], $card['extended'])); ?></span>
+                <div class="d-flex align-items-center gap-2">
+                    <span
+                        class="okr-pill <?php echo okrPillClass($card['result_status']); ?>"><?php echo htmlspecialchars(okrStatusDisplayLabel($card['result_status'], $card['extended'])); ?></span>
+                    <?php if ($can_edit_card): ?>
+                    <a href="okr/edit.php?id=<?php echo (int)$card['id']; ?>" class="btn btn-outline-secondary btn-sm">
+                        <i class="bi bi-pencil"></i> Edit</a>
+                    <?php endif; ?>
+                </div>
             </div>
             <div class="row g-3 mt-1">
                 <div class="col-12">
@@ -213,6 +230,13 @@ $okr_view_config = [
         </div>
 
 
+    </div>
+
+    <div class="okr-bento-item okr-span-12">
+        <div class="okr-card">
+            <h6 class="okr-card-title"><i class="bi bi-list-task"></i> Key Result Progress</h6>
+            <div id="okr-kr-list" class="okr-kr-list"></div>
+        </div>
     </div>
 
     <div class="okr-bento-item okr-span-12">
@@ -309,11 +333,6 @@ $okr_view_config = [
     </div>
 </div>
 
-<div class="okr-card mt-3">
-    <h6 class="okr-card-title"><i class="bi bi-list-task"></i> Key Result Progress</h6>
-    <div id="okr-kr-list" class="okr-kr-list"></div>
-</div>
-
 <?php if ($latest_suspend_log || $can_suspend || $can_appeal): ?>
 <div class="row g-3 mt-3">
     <div class="col-md-6">
@@ -351,7 +370,7 @@ $okr_view_config = [
                 <button type="button" class="btn btn-danger btn-sm mt-2"
                     id="okr-force-terminate-confirm-btn">Force Terminate OKR</button>
             </div>
-            <?php elseif ($already_suspended_once): ?>
+            <?php elseif ($already_suspended_once && $is_completed_status): ?>
             <p class="okr-card-hint">This OKR has already been suspended once and cannot be suspended again. Force
                 Terminate is the only action left.</p>
             <button type="button" class="btn btn-outline-danger" id="okr-force-terminate-btn">Force
@@ -364,6 +383,11 @@ $okr_view_config = [
                 <button type="button" class="btn btn-danger btn-sm mt-2"
                     id="okr-force-terminate-confirm-btn">Force Terminate OKR</button>
             </div>
+            <?php elseif ($already_suspended_once): ?>
+            <p class="okr-card-hint">This OKR has already been suspended once and cannot be suspended again. Force
+                Terminate will be available once it's marked Completed.</p>
+            <?php elseif (!$can_initiate_suspend): ?>
+            <p class="okr-card-hint">Suspend is only available once this OKR has been marked Completed.</p>
             <?php else: ?>
             <p class="okr-card-hint">Only the CEO can suspend an OKR.</p>
             <button type="button" class="btn btn-outline-secondary btn-lg" id="okr-suspend-btn">Suspend
@@ -433,7 +457,7 @@ $okr_view_config = [
 </div>
 
 <div class="okr-card mt-3">
-    <h6 class="okr-card-title"><i class="bi bi-clock-history"></i> Activity Log</h6>
+    <h6 class="okr-card-title"><i class="bi bi-clock-history"></i> Audit Log</h6>
     <?php if (empty($audit_logs)): ?>
     <div class="okr-empty-state">No activity recorded yet.</div>
     <?php else: ?>

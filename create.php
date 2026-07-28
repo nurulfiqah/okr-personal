@@ -183,6 +183,25 @@ $okr_config = [
 
     <div class="okr-bento-item okr-span-12">
         <div class="okr-card">
+            <div class="okr-kr-header">
+                <h6 class="okr-card-title mb-0"><i class="bi bi-list-task"></i> Key Result Progress</h6>
+                <button type="button" class="btn btn-primary btn-sm" id="okr-kr-add-btn">Add Key Result</button>
+            </div>
+            <p class="okr-card-hint">Break this OKR down into Key Results now if you'd like. Subtasks can be added
+                once the OKR is saved.</p>
+            <div class="okr-alert-notice mb-2" id="okr-kr-date-warning" style="display:none;">
+                <i class="bi bi-exclamation-triangle"></i> Some Key Result dates fall outside this OKR's Start/End
+                Date. Please update them to stay within range.
+            </div>
+            <div id="okr-kr-list" class="okr-kr-list">
+                <div class="okr-kr-empty">No Key Results added yet.</div>
+            </div>
+            <div class="okr-form-error" id="okr-kr-error"></div>
+        </div>
+    </div>
+
+    <div class="okr-bento-item okr-span-12">
+        <div class="okr-card">
             <h6 class="okr-card-title"><i class="bi bi-people"></i> Owner(s)</h6>
             <p class="okr-card-hint">Tag the owner(s). A (Accountable) supports up to 2 members. A 2nd owner is only for jointly-run OKRs.</p>
 
@@ -216,25 +235,6 @@ $okr_config = [
                 </div>
                 <div class="okr-form-error" id="okr-owner-error"></div>
             </div>
-        </div>
-    </div>
-
-    <div class="okr-bento-item okr-span-12">
-        <div class="okr-card">
-            <div class="okr-kr-header">
-                <h6 class="okr-card-title mb-0"><i class="bi bi-list-task"></i> Key Result Progress</h6>
-                <button type="button" class="btn btn-primary btn-sm" id="okr-kr-add-btn">Add Key Result</button>
-            </div>
-            <p class="okr-card-hint">Break this OKR down into Key Results now if you'd like. Subtasks can be added
-                once the OKR is saved.</p>
-            <div class="okr-alert-notice mb-2" id="okr-kr-date-warning" style="display:none;">
-                <i class="bi bi-exclamation-triangle"></i> Some Key Result dates fall outside this OKR's Start/End
-                Date. Please update them to stay within range.
-            </div>
-            <div id="okr-kr-list" class="okr-kr-list">
-                <div class="okr-kr-empty">No Key Results added yet.</div>
-            </div>
-            <div class="okr-form-error" id="okr-kr-error"></div>
         </div>
     </div>
 

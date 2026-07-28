@@ -812,6 +812,63 @@ if ($action === 'deleteKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
+// Persists a drag-to-reorder of Subtasks under one Key Result (modeled after
+// iidas's project_detail.js drag-and-drop, which POSTs a full {id: order}
+// map after every drop rather than a single moved-item delta). Every id in
+// the payload must actually be a subtask of $parent_id on this card - a
+// mismatched id is silently skipped rather than trusted, since the client
+// only sends what's currently rendered but the request is still
+// user-suppliable.
+if ($action === 'reorderKeyResultSubtasks' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $parent_id = (int)($_POST['parent_id'] ?? 0);
+    $orders_json = $_POST['orders'] ?? '';
+    $orders = json_decode($orders_json, true);
+    if ($parent_id <= 0 || !is_array($orders) || empty($orders)) {
+        echo json_encode(['success' => false, 'message' => 'Invalid reorder request.']);
+        exit;
+    }
+
+    $check = mysqli_query($conn, "SELECT kr.card_id, c.issuer_staff_id, os.value AS status_value
+                                   FROM okr_key_results kr
+                                   JOIN okr_cards c ON kr.card_id = c.id
+                                   LEFT JOIN okr_statuses os ON c.result_status = os.id
+                                   WHERE kr.id = $parent_id AND c.deleted_at IS NULL");
+    if (!$check || mysqli_num_rows($check) === 0) {
+        echo json_encode(['success' => false, 'message' => 'Key Result not found.']);
+        exit;
+    }
+    $kr = mysqli_fetch_assoc($check);
+    if (!$requester_is_admin && (int)$kr['issuer_staff_id'] !== $requester_id) {
+        echo json_encode(['success' => false, 'message' => 'Only the issuer can reorder subtasks.']);
+        exit;
+    }
+    if ($kr['status_value'] === 'Suspended' || $kr['status_value'] === 'Failed') {
+        echo json_encode(['success' => false, 'message' => 'This OKR is locked and can no longer be edited.']);
+        exit;
+    }
+
+    $col_check = mysqli_query($conn, "SHOW COLUMNS FROM okr_key_results LIKE 'sort_order'");
+    if (!$col_check || mysqli_num_rows($col_check) === 0) {
+        echo json_encode(['success' => false, 'message' => 'Reordering is not available yet - run sql/add_okr_key_results_sort_order.sql first.']);
+        exit;
+    }
+
+    $siblings = mysqli_query($conn, "SELECT id FROM okr_key_results WHERE parent_id = $parent_id");
+    $sibling_ids = [];
+    if ($siblings) {
+        while ($row = mysqli_fetch_assoc($siblings)) { $sibling_ids[] = (int)$row['id']; }
+    }
+
+    foreach ($orders as $sub_id => $order) {
+        $sub_id = (int)$sub_id;
+        $order  = (int)$order;
+        if (!in_array($sub_id, $sibling_ids, true)) { continue; }
+        mysqli_query($conn, "UPDATE okr_key_results SET sort_order = $order WHERE id = $sub_id");
+    }
+    echo json_encode(['success' => true]);
+    exit;
+}
+
 // Links a Key Result to an existing card in the real ATEM module. ATEM lives
 // in a separate Laravel service (atem-api), not this database, so atem_id is
 // a bare int reference only - never validated/joined against here. The
@@ -1243,8 +1300,12 @@ if ($action === 'suspendCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     $card = mysqli_fetch_assoc($check);
-    if ($card['status_value'] === 'Failed') {
-        echo json_encode(['success' => false, 'message' => 'A Failed OKR is already resolved and cannot be suspended.']);
+    // Suspend is a post-completion review action (the CEO reconsidering an
+    // OKR that's already been marked Completed/Completed with Excellence/
+    // Completed with Extension), not a mid-flight pause - not selectable
+    // while the OKR is still Draft/Active/Extended or already Failed.
+    if (!in_array($card['status_value'], okrCompletedStatusValues(), true)) {
+        echo json_encode(['success' => false, 'message' => 'Only a Completed OKR can be suspended.']);
         exit;
     }
 
@@ -1408,11 +1469,15 @@ if ($action === 'forceTerminateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($card['status_value'] === OKR_STATUS_SUSPENDED) {
         // ok - normal suspended-card force terminate
     } else {
+        // Once returned to Active/Completed after its one lifetime Suspend,
+        // Force Terminate follows the same "only against a Completed OKR"
+        // rule as Suspend/Rate - not available while still Draft/Active/
+        // Extended.
         $already_suspended_check = mysqli_query($conn, "SELECT 1 FROM okr_audit_logs
                                                           WHERE card_id = $id AND event = 'suspended' LIMIT 1");
-        if ($card['status_value'] === 'Failed'
-            || !$already_suspended_check || mysqli_num_rows($already_suspended_check) === 0) {
-            echo json_encode(['success' => false, 'message' => 'Only a suspended OKR (or an OKR that has already used its one Suspend) can be force terminated.']);
+        $already_suspended = $already_suspended_check && mysqli_num_rows($already_suspended_check) > 0;
+        if (!$already_suspended || !in_array($card['status_value'], okrCompletedStatusValues(), true)) {
+            echo json_encode(['success' => false, 'message' => 'Only a suspended OKR (or a Completed OKR that has already used its one Suspend) can be force terminated.']);
             exit;
         }
     }
@@ -1463,8 +1528,8 @@ if ($action === 'rateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     $card = mysqli_fetch_assoc($check);
-    if ($card['status_value'] === 'Failed') {
-        echo json_encode(['success' => false, 'message' => 'A Failed OKR is already resolved and cannot be rated.']);
+    if (!in_array($card['status_value'], okrCompletedStatusValues(), true)) {
+        echo json_encode(['success' => false, 'message' => 'Only a Completed OKR can be rated.']);
         exit;
     }
 

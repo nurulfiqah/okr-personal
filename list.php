@@ -263,7 +263,7 @@ $okr_list_config = [
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <p class="mb-0">This will permanently remove this OKR card from the database, including all its attachments, reference links, and activity log. This cannot be undone. Are you sure?</p>
+                <p class="mb-0">This will permanently remove this OKR card from the database, including all its attachments, reference links, and Audit Log. This cannot be undone. Are you sure?</p>
                 <div class="okr-form-error" id="okr-permadelete-error"></div>
             </div>
             <div class="modal-footer">

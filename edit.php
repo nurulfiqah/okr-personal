@@ -179,6 +179,23 @@ $okr_config = [
 
     <div class="okr-bento-item okr-span-12">
         <div class="okr-card">
+            <div class="okr-kr-header">
+                <h6 class="okr-card-title mb-0"><i class="bi bi-list-task"></i> Key Result Progress</h6>
+                <button type="button" class="btn btn-primary btn-sm" id="okr-kr-add-btn">Add Key Result</button>
+            </div>
+            <p class="okr-card-hint">Break this OKR down into Key Results, and optionally split a Key Result into
+                subtasks. A Key Result with subtasks shows its progress as the average of those subtasks.</p>
+            <div class="okr-alert-notice mb-2" id="okr-kr-date-warning" style="display:none;">
+                <i class="bi bi-exclamation-triangle"></i> Some Key Result dates fall outside this OKR's Start/End
+                Date. Please update them to stay within range.
+            </div>
+            <div id="okr-kr-list" class="okr-kr-list"></div>
+            <div class="okr-form-error" id="okr-kr-error"></div>
+        </div>
+    </div>
+
+    <div class="okr-bento-item okr-span-12">
+        <div class="okr-card">
             <h6 class="okr-card-title"><i class="bi bi-people"></i> Owner(s)</h6>
             <p class="okr-card-hint">Tag the owner(s). A (Accountable) supports up to 2 members. A 2nd owner is only for
                 jointly-run OKRs.</p>
@@ -320,21 +337,6 @@ $okr_config = [
     <button type="button" class="btn btn-primary" id="okr-save-btn">Save Changes</button>
 </div>
 
-<div class="okr-card mt-3">
-    <div class="okr-kr-header">
-        <h6 class="okr-card-title mb-0"><i class="bi bi-list-task"></i> Key Result Progress</h6>
-        <button type="button" class="btn btn-primary btn-sm" id="okr-kr-add-btn">Add Key Result</button>
-    </div>
-    <p class="okr-card-hint">Break this OKR down into Key Results, and optionally split a Key Result into
-        subtasks. A Key Result with subtasks shows its progress as the average of those subtasks.</p>
-    <div class="okr-alert-notice mb-2" id="okr-kr-date-warning" style="display:none;">
-        <i class="bi bi-exclamation-triangle"></i> Some Key Result dates fall outside this OKR's Start/End Date.
-        Please update them to stay within range.
-    </div>
-    <div id="okr-kr-list" class="okr-kr-list"></div>
-    <div class="okr-form-error" id="okr-kr-error"></div>
-</div>
-
 <div class="okr-card mt-3" id="okr-chat-card">
     <h6 class="okr-card-title"><i class="bi bi-chat-dots"></i> Chat</h6>
     <p class="okr-card-hint">Shared discussion thread for this OKR's issuer, owner(s), and admins.</p>
@@ -352,7 +354,7 @@ $okr_config = [
 </div>
 
 <div class="okr-card mt-3">
-    <h6 class="okr-card-title"><i class="bi bi-clock-history"></i> Activity Log</h6>
+    <h6 class="okr-card-title"><i class="bi bi-clock-history"></i> Audit Log</h6>
     <?php if (empty($audit_logs)): ?>
     <div class="okr-empty-state">No activity recorded yet.</div>
     <?php else: ?>

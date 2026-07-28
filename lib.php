@@ -147,6 +147,14 @@ function okrPostExtensionResolvableStatuses() {
     return [OKR_STATUS_COMPLETED, 'Extended', 'Failed'];
 }
 
+// Every "done" status value that counts as Completed for gating purposes
+// (e.g. Suspend/Rate are only available once an OKR has actually resolved
+// as Completed in some form) - a business grouping, not derivable from the
+// table's own columns, so shared here rather than re-declared per call site.
+function okrCompletedStatusValues() {
+    return [OKR_STATUS_COMPLETED, 'Completed with Excellence', OKR_STATUS_COMPLETED_EXTENSION];
+}
+
 function okrStatusIdByValue($conn, $value) {
     $value_e = mysqli_real_escape_string($conn, $value);
     $result = mysqli_query($conn, "SELECT id FROM okr_statuses WHERE value = '$value_e'");
@@ -204,14 +212,37 @@ function okrKeyResultAssignableStatuses($conn) {
 // user directly sets once a Key Result has any.
 function okrFetchKeyResults($conn, $card_id) {
     $rows = [];
-    $result = mysqli_query($conn, "SELECT kr.id, kr.card_id, kr.parent_id, kr.description,
-                                           kr.atem_id, kr.status_id, kr.start_date, kr.end_date, kr.created_by, kr.created_at,
-                                           s.nama_staff AS creator_name, os.value AS status_value
-                                    FROM okr_key_results kr
-                                    LEFT JOIN staff s ON kr.created_by = s.id
-                                    LEFT JOIN okr_statuses os ON kr.status_id = os.id
-                                    WHERE kr.card_id = " . (int)$card_id . "
-                                    ORDER BY kr.id ASC");
+    // `sort_order` (added by sql/add_okr_key_results_sort_order.sql, backing
+    // the Subtask drag-to-reorder feature) may not exist yet on a database
+    // that hasn't had that migration applied - fall back to the pre-drag
+    // query (ordered by id only, sort_order defaulted to 0 in the returned
+    // shape) instead of fataling the whole page.
+    $has_sort_order = false;
+    $col_check = mysqli_query($conn, "SHOW COLUMNS FROM okr_key_results LIKE 'sort_order'");
+    if ($col_check && mysqli_num_rows($col_check) > 0) {
+        $has_sort_order = true;
+    }
+
+    if ($has_sort_order) {
+        $result = mysqli_query($conn, "SELECT kr.id, kr.card_id, kr.parent_id, kr.description,
+                                               kr.atem_id, kr.status_id, kr.start_date, kr.end_date, kr.created_by, kr.created_at,
+                                               kr.sort_order,
+                                               s.nama_staff AS creator_name, os.value AS status_value
+                                        FROM okr_key_results kr
+                                        LEFT JOIN staff s ON kr.created_by = s.id
+                                        LEFT JOIN okr_statuses os ON kr.status_id = os.id
+                                        WHERE kr.card_id = " . (int)$card_id . "
+                                        ORDER BY kr.sort_order ASC, kr.id ASC");
+    } else {
+        $result = mysqli_query($conn, "SELECT kr.id, kr.card_id, kr.parent_id, kr.description,
+                                               kr.atem_id, kr.status_id, kr.start_date, kr.end_date, kr.created_by, kr.created_at,
+                                               s.nama_staff AS creator_name, os.value AS status_value
+                                        FROM okr_key_results kr
+                                        LEFT JOIN staff s ON kr.created_by = s.id
+                                        LEFT JOIN okr_statuses os ON kr.status_id = os.id
+                                        WHERE kr.card_id = " . (int)$card_id . "
+                                        ORDER BY kr.id ASC");
+    }
     if ($result) {
         while ($row = mysqli_fetch_assoc($result)) {
             $rows[] = [
@@ -228,6 +259,7 @@ function okrFetchKeyResults($conn, $card_id) {
                 'start_date'        => $row['start_date'],
                 'end_date'          => $row['end_date'],
                 'created_at'        => $row['created_at'],
+                'sort_order'        => $has_sort_order ? (int)$row['sort_order'] : 0,
             ];
         }
     }

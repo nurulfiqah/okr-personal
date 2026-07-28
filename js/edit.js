@@ -548,8 +548,11 @@
                 + '</div>';
         }
 
-        return '<div class="okr-kr-row' + (isSubtask ? ' okr-kr-row--subtask' : '') + '" data-id="' + row.id + '">'
-            + '<div class="okr-kr-num">' + index + '</div>'
+        var dragHandle = isSubtask ? '<span class="okr-kr-drag-handle" title="Drag to reorder">&#9776;</span>' : '';
+
+        return '<div class="okr-kr-row' + (isSubtask ? ' okr-kr-row--subtask' : '') + '" data-id="' + row.id + '"'
+            + (isSubtask ? ' draggable="true" data-parent-id="' + row.parent_id + '"' : '') + '>'
+            + '<div class="okr-kr-num">' + dragHandle + index + '</div>'
             + '<div class="okr-kr-body">'
             + '<div class="okr-kr-desc"><span class="okr-kr-desc-label">Action Details</span>'
             + '<textarea class="okr-kr-desc-input" rows="1">' + escapeHtml(row.description) + '</textarea>'
@@ -587,6 +590,99 @@
         });
         refreshKrDateBounds();
     }
+
+    // ---------------------------------------------------------------
+    // Subtask drag-to-reorder - modeled after iidas's project_detail.js
+    // Task/Subtask drag-and-drop (native HTML5 DnD, no library). Only
+    // Subtasks can be dragged (not top-level Key Results), and only among
+    // siblings under the same parent (data-parent-id must match). Event
+    // listeners are delegated on krListEl so they survive re-renders.
+    // ---------------------------------------------------------------
+    var draggedSubtaskEl = null;
+
+    function persistSubtaskOrder(parentIdStr) {
+        var domSubtasks = krListEl.querySelectorAll('.okr-kr-row--subtask[data-parent-id="' + parentIdStr + '"]');
+        var orders = {};
+        domSubtasks.forEach(function (el, i) {
+            var subId = parseInt(el.getAttribute('data-id'), 10);
+            orders[subId] = i;
+            var data = krList.filter(function (r) { return r.id === subId; })[0];
+            if (data) { data.sort_order = i; }
+        });
+        // Stable sort - only reorders items that share the same parent_id,
+        // everything else (top-level order, other parents' children) is
+        // left exactly where it was.
+        krList.sort(function (a, b) {
+            if (a.parent_id === null || b.parent_id === null || a.parent_id !== b.parent_id) { return 0; }
+            return (a.sort_order || 0) - (b.sort_order || 0);
+        });
+        renderKeyResults();
+
+        var body = new URLSearchParams();
+        body.set('action', 'reorderKeyResultSubtasks');
+        body.set('parent_id', parentIdStr);
+        body.set('orders', JSON.stringify(orders));
+        fetch(CFG.apiUrl, { method: 'POST', body: body })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (!res.success) {
+                    setError('okr-kr', res.message || 'Failed to save new order.');
+                    loadKeyResults();
+                }
+            })
+            .catch(function () {
+                setError('okr-kr', 'Network error. Please try again.');
+                loadKeyResults();
+            });
+    }
+
+    krListEl.addEventListener('dragstart', function (e) {
+        var row = e.target.closest ? e.target.closest('.okr-kr-row--subtask[draggable="true"]') : null;
+        if (!row) { e.preventDefault(); return; }
+        draggedSubtaskEl = row;
+        row.style.opacity = '0.5';
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', row.getAttribute('data-id'));
+    });
+
+    krListEl.addEventListener('dragend', function () {
+        if (draggedSubtaskEl) { draggedSubtaskEl.style.opacity = ''; }
+        draggedSubtaskEl = null;
+        krListEl.querySelectorAll('.okr-kr-drag-over').forEach(function (el) {
+            el.classList.remove('okr-kr-drag-over');
+        });
+    });
+
+    krListEl.addEventListener('dragover', function (e) {
+        if (!draggedSubtaskEl) { return; }
+        var row = e.target.closest ? e.target.closest('.okr-kr-row--subtask') : null;
+        if (!row || row === draggedSubtaskEl
+            || row.getAttribute('data-parent-id') !== draggedSubtaskEl.getAttribute('data-parent-id')) { return; }
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        row.classList.add('okr-kr-drag-over');
+    });
+
+    krListEl.addEventListener('dragleave', function (e) {
+        var row = e.target.closest ? e.target.closest('.okr-kr-row--subtask') : null;
+        if (row) { row.classList.remove('okr-kr-drag-over'); }
+    });
+
+    krListEl.addEventListener('drop', function (e) {
+        if (!draggedSubtaskEl) { return; }
+        var row = e.target.closest ? e.target.closest('.okr-kr-row--subtask') : null;
+        if (!row || row === draggedSubtaskEl) { return; }
+        var parentId = draggedSubtaskEl.getAttribute('data-parent-id');
+        if (row.getAttribute('data-parent-id') !== parentId) { return; }
+        e.preventDefault();
+        row.classList.remove('okr-kr-drag-over');
+
+        var rect = row.getBoundingClientRect();
+        var after = (e.clientY - rect.top) > (rect.height / 2);
+        row.parentNode.insertBefore(draggedSubtaskEl, after ? row.nextSibling : row);
+
+        persistSubtaskOrder(parentId);
+    });
 
     function loadKeyResults() {
         var body = new URLSearchParams();
