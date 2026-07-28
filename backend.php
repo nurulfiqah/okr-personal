@@ -835,6 +835,46 @@ if ($action === 'deleteKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
+// Links a real (already-saved) Key Result or Subtask to an ATEM card. Same
+// "plain reference, no FK" rule as the staged okrSetStagedKeyResultAtem used
+// by create.php - atem_id is a bare int, resolved client-side against
+// atem/api.php, not joined here. Same edit gate as updateKeyResult: issuer or
+// admin, and not Suspended/Failed.
+if ($action === 'linkKeyResultAtem' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $id = (int)($_POST['id'] ?? 0);
+    $atem_id = (int)($_POST['atem_id'] ?? 0);
+    if ($id <= 0 || $atem_id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Invalid Key Result or ATEM.']);
+        exit;
+    }
+
+    $check = mysqli_query($conn, "SELECT kr.card_id, c.issuer_staff_id, os.value AS status_value
+                                   FROM okr_key_results kr
+                                   JOIN okr_cards c ON kr.card_id = c.id
+                                   LEFT JOIN okr_statuses os ON c.result_status = os.id
+                                   WHERE kr.id = $id AND c.deleted_at IS NULL");
+    if (!$check || mysqli_num_rows($check) === 0) {
+        echo json_encode(['success' => false, 'message' => 'Key Result not found.']);
+        exit;
+    }
+    $kr = mysqli_fetch_assoc($check);
+    if (!$requester_is_admin && (int)$kr['issuer_staff_id'] !== $requester_id) {
+        echo json_encode(['success' => false, 'message' => 'Only the issuer can link ATEM.']);
+        exit;
+    }
+    if ($kr['status_value'] === 'Suspended' || $kr['status_value'] === 'Failed') {
+        echo json_encode(['success' => false, 'message' => 'This OKR is locked and can no longer be edited.']);
+        exit;
+    }
+
+    if (mysqli_query($conn, "UPDATE okr_key_results SET atem_id = $atem_id WHERE id = $id")) {
+        echo json_encode(['success' => true, 'atem_id' => $atem_id]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Database error: ' . mysqli_error($conn)]);
+    }
+    exit;
+}
+
 // Persists a drag-to-reorder of Subtasks under one Key Result (modeled after
 // iidas's project_detail.js drag-and-drop, which POSTs a full {id: order}
 // map after every drop rather than a single moved-item delta). Every id in
