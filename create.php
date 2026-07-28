@@ -4,16 +4,7 @@ $page_title = 'New OKR';
 // The Link ATEM modal's "Create New ATEM" pane mirrors atem/create.php's own
 // fields exactly, so it needs atem/css/style.css (the .atem-* classes) and
 // the Quill rich-text editor atem/create.php uses for its Description field.
-// navbar.php (included by header.php below) is what normally computes the
-// atem/atem-staging folder split, but $extra_css must be set before
-// header.php runs (it echoes <head> before returning) - so this duplicates
-// navbar.php's own tiny isLocal check rather than reordering the include.
-$_create_atem_isLocal = in_array($_SERVER['SERVER_NAME'] ?? '', ['localhost', '127.0.0.1'])
-    || strpos($_SERVER['SERVER_NAME'] ?? '', 'localhost') !== false
-    || strpos($_SERVER['HTTP_HOST'] ?? '', 'localhost') !== false
-    || strpos($_SERVER['HTTP_HOST'] ?? '', '127.0.0.1') !== false;
-$_create_atem_folder = $_create_atem_isLocal ? 'atem' : 'atem-staging';
-$extra_css = '<link href="' . $_create_atem_folder . '/css/style.css?v=' . time() . '" rel="stylesheet">'
+$extra_css = '<link href="atem/css/style.css?v=' . time() . '" rel="stylesheet">'
     . '<link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">';
 include('header.php');
 require_once(__DIR__ . '/lib.php');

@@ -65,12 +65,8 @@ if (isset($department) && $department !== '') {
 }
 $show_performance = ($okr_permission >= 2 || $okr_is_admin || in_array(17, $_navbar_dept_ids, true));
 
-// ATEM has separate production ("atem") and staging ("atem-staging") copies
-// on the live server; only "atem" exists locally. Cross-links from OKR must
-// follow whichever copy is being tested, so pick the sibling folder the same
-// way ATEM's own environment detection does (localhost vs everything else) -
-// not by OKR's own folder name, since OKR itself has no staging copy.
-$_navbar_atem_folder = $_navbar_isLocal ? 'atem' : 'atem-staging';
+// ATEM's sibling module folder, used for all cross-links from OKR.
+$_navbar_atem_folder = 'atem';
 ?>
 <nav class="okr-nav navbar navbar-expand-lg navbar-light mb-3">
     <div class="container-fluid">
