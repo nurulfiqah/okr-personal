@@ -88,7 +88,10 @@
         var krRowHtml = function (row, index, isSubtask) {
             var statusText = row.status_value;
             var statusClass = 'okr-pill ' + row.pill_class;
-            var dates = '<span class="okr-kr-dates-value">' + (row.start_date || '-') + ' &rarr; ' + (row.end_date || '-') + '</span>';
+            var dates = '<div class="okr-kr-dates">'
+                + '<input type="date" value="' + (row.start_date || '') + '" disabled>'
+                + '<input type="date" value="' + (row.end_date || '') + '" disabled>'
+                + '</div>';
 
             var atemBadge = '';
             if (row.atem_id) {
@@ -103,7 +106,9 @@
             return '<div class="okr-kr-row' + (isSubtask ? ' okr-kr-row--subtask' : '') + '">'
                 + '<div class="okr-kr-num">' + index + '</div>'
                 + '<div class="okr-kr-body">'
-                + '<div class="okr-kr-desc"><span class="okr-kr-desc-label">Action Details</span>' + escapeHtml(row.description) + atemBadge + '</div>'
+                + '<div class="okr-kr-desc"><span class="okr-kr-desc-label">Action Details</span>'
+                + '<textarea class="okr-kr-desc-input" rows="1" readonly>' + escapeHtml(row.description) + '</textarea>'
+                + atemBadge + '</div>'
                 + '<div><span class="okr-kr-dates-label">Dates</span>' + dates + '</div>'
                 + '<div><span class="okr-kr-assignee-label">Created By</span><span class="okr-kr-assignee-name">' + escapeHtml(row.creator_name || '') + '</span></div>'
                 + '<div><span class="okr-kr-progress-label">Status</span><span class="' + statusClass + '">' + escapeHtml(statusText) + '</span></div>'

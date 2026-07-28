@@ -327,6 +327,10 @@ $okr_config = [
     </div>
     <p class="okr-card-hint">Break this OKR down into Key Results, and optionally split a Key Result into
         subtasks. A Key Result with subtasks shows its progress as the average of those subtasks.</p>
+    <div class="okr-alert-notice mb-2" id="okr-kr-date-warning" style="display:none;">
+        <i class="bi bi-exclamation-triangle"></i> Some Key Result dates fall outside this OKR's Start/End Date.
+        Please update them to stay within range.
+    </div>
     <div id="okr-kr-list" class="okr-kr-list"></div>
     <div class="okr-form-error" id="okr-kr-error"></div>
 </div>

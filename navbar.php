@@ -78,8 +78,8 @@ $_navbar_atem_folder = $_navbar_isLocal ? 'atem' : 'atem-staging';
             aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
             <i class="bi bi-list"></i>
         </button>
-        <div class="collapse navbar-collapse" id="navbarNav">
-            <ul class="navbar-nav align-items-lg-center">
+        <div class="collapse navbar-collapse w-100" id="navbarNav">
+            <ul class="navbar-nav align-items-lg-center w-100">
                 <li class="nav-item">
                     <a class="nav-link <?php echo $dashboard_active; ?>" href="okr/index.php">Dashboard</a>
                 </li>

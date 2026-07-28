@@ -272,7 +272,8 @@
     }
 
     function canEdit(card) {
-        return !card.deleted_at && (CFG.requesterIsAdmin || card.issuer_staff_id === CFG.requesterId);
+        return !card.deleted_at && card.result_status !== 'Suspended' && card.result_status !== 'Failed'
+            && (CFG.requesterIsAdmin || card.issuer_staff_id === CFG.requesterId);
     }
 
     // Admin can delete any card; the issuer can only delete their own card

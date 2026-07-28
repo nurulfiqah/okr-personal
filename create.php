@@ -227,6 +227,10 @@ $okr_config = [
             </div>
             <p class="okr-card-hint">Break this OKR down into Key Results now if you'd like. Subtasks can be added
                 once the OKR is saved.</p>
+            <div class="okr-alert-notice mb-2" id="okr-kr-date-warning" style="display:none;">
+                <i class="bi bi-exclamation-triangle"></i> Some Key Result dates fall outside this OKR's Start/End
+                Date. Please update them to stay within range.
+            </div>
             <div id="okr-kr-list" class="okr-kr-list">
                 <div class="okr-kr-empty">No Key Results added yet.</div>
             </div>

@@ -84,7 +84,34 @@
         if (endDateInput.value && startDateInput.value && endDateInput.value < startDateInput.value) {
             endDateInput.value = startDateInput.value;
         }
+        refreshKrDateBounds();
     });
+    endDateInput.addEventListener('change', function () {
+        refreshKrDateBounds();
+    });
+
+    // Key Results can be staged before the OKR's own Start/End Date are
+    // filled in (no min/max to constrain them yet) - once those dates are
+    // set/changed, re-check every staged Key Result/Subtask against the new
+    // range and surface a reminder banner if any of them now fall outside it.
+    var krDateWarningEl = document.getElementById('okr-kr-date-warning');
+    function refreshKrDateBounds() {
+        var min = startDateInput.value || '';
+        var max = endDateInput.value || '';
+
+        document.querySelectorAll('#okr-kr-list .okr-kr-start-input, #okr-kr-list .okr-kr-end-input').forEach(function (input) {
+            input.min = min;
+            input.max = max;
+        });
+
+        var outOfRange = keyResults.some(function (row) {
+            return (min && row.start_date && row.start_date < min)
+                || (max && row.start_date && row.start_date > max)
+                || (min && row.end_date && row.end_date < min)
+                || (max && row.end_date && row.end_date > max);
+        });
+        if (krDateWarningEl) { krDateWarningEl.style.display = outOfRange ? '' : 'none'; }
+    }
 
     function escapeHtml(s) {
         return String(s).replace(/[&<>"']/g, function (c) {
@@ -423,9 +450,16 @@
         return keyResults.filter(function (r) { return r.parent_token === parentToken; });
     }
 
+    var krStatusOptionsHtml = krStatusSelect.innerHTML;
+
     function krRowHtml(row, index, isSubtask) {
-        var statusClass = 'okr-pill ' + row.pill_class;
-        var dates = '<span class="okr-kr-dates-value">' + (row.start_date || '-') + ' &rarr; ' + (row.end_date || '-') + '</span>';
+        var statusSelect = '<select class="okr-kr-status-input" data-status-id="' + row.status_id + '">' + krStatusOptionsHtml + '</select>';
+        var dateMin = startDateInput.value || '';
+        var dateMax = endDateInput.value || '';
+        var dates = '<div class="okr-kr-dates">'
+            + '<input type="date" class="okr-kr-start-input" value="' + (row.start_date || '') + '" min="' + dateMin + '" max="' + dateMax + '">'
+            + '<input type="date" class="okr-kr-end-input" value="' + (row.end_date || '') + '" min="' + dateMin + '" max="' + dateMax + '">'
+            + '</div>';
 
         var atemBadge = '';
         if (row.atem_id) {
@@ -441,10 +475,12 @@
         return '<div class="okr-kr-row' + (isSubtask ? ' okr-kr-row--subtask' : '') + '" data-token="' + row.token + '">'
             + '<div class="okr-kr-num">' + index + '</div>'
             + '<div class="okr-kr-body">'
-            + '<div class="okr-kr-desc"><span class="okr-kr-desc-label">Action Details</span>' + escapeHtml(row.description) + atemBadge + '</div>'
+            + '<div class="okr-kr-desc"><span class="okr-kr-desc-label">Action Details</span>'
+            + '<textarea class="okr-kr-desc-input" rows="1">' + escapeHtml(row.description) + '</textarea>'
+            + atemBadge + '</div>'
             + '<div><span class="okr-kr-dates-label">Dates</span>' + dates + '</div>'
             + '<div><span class="okr-kr-assignee-label">Created By</span><span class="okr-kr-assignee-name">' + escapeHtml(row.creator_name || '') + '</span></div>'
-            + '<div><span class="okr-kr-progress-label">Status</span><span class="' + statusClass + '">' + escapeHtml(row.status_value) + '</span></div>'
+            + '<div><span class="okr-kr-progress-label">Status</span>' + statusSelect + '</div>'
             + '</div>'
             + '<div class="okr-kr-actions">'
             + '<button type="button" class="okr-kr-icon-btn okr-kr-icon-btn--edit okr-kr-edit" title="Edit"><i class="bi bi-pencil"></i></button>'
@@ -459,6 +495,7 @@
         var topLevel = keyResults.filter(function (r) { return !r.parent_token; });
         if (topLevel.length === 0) {
             krListEl.innerHTML = '<div class="okr-kr-empty">No Key Results added yet.</div>';
+            refreshKrDateBounds();
             return;
         }
         var html = '';
@@ -469,6 +506,10 @@
             });
         });
         krListEl.innerHTML = html;
+        krListEl.querySelectorAll('.okr-kr-status-input').forEach(function (sel) {
+            sel.value = sel.getAttribute('data-status-id');
+        });
+        refreshKrDateBounds();
     }
 
     function openKrModal(opts) {
@@ -496,6 +537,229 @@
 
     document.getElementById('okr-kr-add-btn').addEventListener('click', function () {
         openKrModal({});
+    });
+
+    // Inline Action Details / Dates editing - autosaves on blur/change
+    // instead of requiring the pencil-icon modal. Status still only
+    // editable via the modal. Staged rows have no id yet, so "saving" means
+    // re-staging under a new token, same as the modal's edit-and-save flow
+    // below.
+    krListEl.addEventListener('focusin', function (e) {
+        var textarea = e.target.closest ? e.target.closest('.okr-kr-desc-input') : null;
+        if (textarea) { textarea.dataset.prevValue = textarea.value; }
+    });
+
+    krListEl.addEventListener('focusout', function (e) {
+        var textarea = e.target.closest ? e.target.closest('.okr-kr-desc-input') : null;
+        if (!textarea) { return; }
+
+        var row = textarea.closest('.okr-kr-row');
+        var token = row.getAttribute('data-token');
+        var data = keyResults.filter(function (r) { return r.token === token; })[0];
+        if (!data) { return; }
+
+        var description = textarea.value.trim();
+        if (!description) {
+            textarea.value = textarea.dataset.prevValue || data.description;
+            return;
+        }
+        if (description === (textarea.dataset.prevValue || '').trim()) { return; }
+
+        var parentToken = data.parent_token;
+
+        function stageIt() {
+            var body = new URLSearchParams();
+            body.set('action', parentToken ? 'stageKeyResultSubtask' : 'stageKeyResult');
+            if (parentToken) { body.set('parent_token', parentToken); }
+            body.set('description', description);
+            body.set('start_date', data.start_date || '');
+            body.set('end_date', data.end_date || '');
+            body.set('status_id', data.status_id);
+
+            fetch(CFG.apiUrl, { method: 'POST', body: body })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    if (res.success) {
+                        var idx = keyResults.findIndex(function (r) { return r.token === token; });
+                        if (idx !== -1) {
+                            keyResults[idx] = {
+                                token: res.token,
+                                parent_token: parentToken || null,
+                                description: res.description,
+                                creator_name: res.creator_name,
+                                atem_id: data.atem_id,
+                                start_date: res.start_date,
+                                end_date: res.end_date,
+                                status_id: res.status_id,
+                                status_value: res.status_value,
+                                pill_class: res.pill_class
+                            };
+                        }
+                        markChanged();
+                        renderKeyResults();
+                    } else {
+                        textarea.value = textarea.dataset.prevValue || data.description;
+                        setError('okr-kr', res.message || 'Failed to save Action Details.');
+                    }
+                })
+                .catch(function () {
+                    textarea.value = textarea.dataset.prevValue || data.description;
+                    setError('okr-kr', 'Network error. Please try again.');
+                });
+        }
+
+        var removeBody = new URLSearchParams();
+        if (parentToken) {
+            removeBody.set('action', 'removeStagedKeyResultSubtask');
+            removeBody.set('parent_token', parentToken);
+            removeBody.set('token', token);
+        } else {
+            removeBody.set('action', 'removeStagedKeyResult');
+            removeBody.set('token', token);
+        }
+        fetch(CFG.apiUrl, { method: 'POST', body: removeBody }).then(stageIt).catch(stageIt);
+    });
+
+    krListEl.addEventListener('change', function (e) {
+        var dateInput = e.target.closest ? e.target.closest('.okr-kr-start-input, .okr-kr-end-input') : null;
+        if (!dateInput) { return; }
+
+        var row = dateInput.closest('.okr-kr-row');
+        var token = row.getAttribute('data-token');
+        var data = keyResults.filter(function (r) { return r.token === token; })[0];
+        if (!data) { return; }
+
+        var isStart = dateInput.classList.contains('okr-kr-start-input');
+        var startInputEl = row.querySelector('.okr-kr-start-input');
+        var endInputEl = row.querySelector('.okr-kr-end-input');
+
+        // Keep start <= end, same guard the modal's own Start/End inputs use.
+        if (startInputEl.value && endInputEl.value && startInputEl.value > endInputEl.value) {
+            if (isStart) { endInputEl.value = startInputEl.value; } else { startInputEl.value = endInputEl.value; }
+        }
+
+        var parentToken = data.parent_token;
+        var newStart = startInputEl.value;
+        var newEnd = endInputEl.value;
+
+        function stageIt() {
+            var body = new URLSearchParams();
+            body.set('action', parentToken ? 'stageKeyResultSubtask' : 'stageKeyResult');
+            if (parentToken) { body.set('parent_token', parentToken); }
+            body.set('description', data.description);
+            body.set('start_date', newStart);
+            body.set('end_date', newEnd);
+            body.set('status_id', data.status_id);
+
+            fetch(CFG.apiUrl, { method: 'POST', body: body })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    if (res.success) {
+                        var idx = keyResults.findIndex(function (r) { return r.token === token; });
+                        if (idx !== -1) {
+                            keyResults[idx] = {
+                                token: res.token,
+                                parent_token: parentToken || null,
+                                description: res.description,
+                                creator_name: res.creator_name,
+                                atem_id: data.atem_id,
+                                start_date: res.start_date,
+                                end_date: res.end_date,
+                                status_id: res.status_id,
+                                status_value: res.status_value,
+                                pill_class: res.pill_class
+                            };
+                        }
+                        markChanged();
+                        renderKeyResults();
+                    } else {
+                        startInputEl.value = data.start_date || '';
+                        endInputEl.value = data.end_date || '';
+                        setError('okr-kr', res.message || 'Failed to save dates.');
+                    }
+                })
+                .catch(function () {
+                    startInputEl.value = data.start_date || '';
+                    endInputEl.value = data.end_date || '';
+                    setError('okr-kr', 'Network error. Please try again.');
+                });
+        }
+
+        var removeBody = new URLSearchParams();
+        if (parentToken) {
+            removeBody.set('action', 'removeStagedKeyResultSubtask');
+            removeBody.set('parent_token', parentToken);
+            removeBody.set('token', token);
+        } else {
+            removeBody.set('action', 'removeStagedKeyResult');
+            removeBody.set('token', token);
+        }
+        fetch(CFG.apiUrl, { method: 'POST', body: removeBody }).then(stageIt).catch(stageIt);
+    });
+
+    krListEl.addEventListener('change', function (e) {
+        var statusSelectEl = e.target.closest ? e.target.closest('.okr-kr-status-input') : null;
+        if (!statusSelectEl) { return; }
+
+        var row = statusSelectEl.closest('.okr-kr-row');
+        var token = row.getAttribute('data-token');
+        var data = keyResults.filter(function (r) { return r.token === token; })[0];
+        if (!data) { return; }
+
+        var parentToken = data.parent_token;
+        var newStatusId = statusSelectEl.value;
+
+        function stageIt() {
+            var body = new URLSearchParams();
+            body.set('action', parentToken ? 'stageKeyResultSubtask' : 'stageKeyResult');
+            if (parentToken) { body.set('parent_token', parentToken); }
+            body.set('description', data.description);
+            body.set('start_date', data.start_date || '');
+            body.set('end_date', data.end_date || '');
+            body.set('status_id', newStatusId);
+
+            fetch(CFG.apiUrl, { method: 'POST', body: body })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    if (res.success) {
+                        var idx = keyResults.findIndex(function (r) { return r.token === token; });
+                        if (idx !== -1) {
+                            keyResults[idx] = {
+                                token: res.token,
+                                parent_token: parentToken || null,
+                                description: res.description,
+                                creator_name: res.creator_name,
+                                atem_id: data.atem_id,
+                                start_date: res.start_date,
+                                end_date: res.end_date,
+                                status_id: res.status_id,
+                                status_value: res.status_value,
+                                pill_class: res.pill_class
+                            };
+                        }
+                        markChanged();
+                        renderKeyResults();
+                    } else {
+                        statusSelectEl.value = statusSelectEl.getAttribute('data-status-id');
+                        setError('okr-kr', res.message || 'Failed to save status.');
+                    }
+                })
+                .catch(function () {
+                    statusSelectEl.value = statusSelectEl.getAttribute('data-status-id');
+                    setError('okr-kr', 'Network error. Please try again.');
+                });
+        }
+
+        var removeBody = new URLSearchParams();
+        if (parentToken) {
+            removeBody.set('action', 'removeStagedKeyResultSubtask');
+            removeBody.set('parent_token', parentToken);
+            removeBody.set('token', token);
+        } else {
+            removeBody.set('action', 'removeStagedKeyResult');
+            removeBody.set('token', token);
+        }
+        fetch(CFG.apiUrl, { method: 'POST', body: removeBody }).then(stageIt).catch(stageIt);
     });
 
     document.getElementById('okr-kr-save-btn').addEventListener('click', function () {
@@ -860,11 +1124,10 @@
         else if (start && end < start) { setError('okr-end', 'End date cannot be before start date.'); ok = false; }
 
         if (ownerState.length === 0) { setError('okr-owner', 'An owner is required.'); ok = false; }
-        // Issuer must register as one of the Owner(s) - server re-validates
-        // this too (backend.php's createCard), this is just a friendlier
-        // inline error before the round trip.
-        else if (CFG.currentStaffId && !ownerState.some(function (m) { return m.staff_id === CFG.currentStaffId; })) {
-            setError('okr-owner', 'You (the issuer) must be tagged as one of the owner(s).');
+
+        refreshKrDateBounds();
+        if (krDateWarningEl && krDateWarningEl.style.display !== 'none') {
+            setError('okr-kr', 'Fix the Key Result dates that fall outside the OKR\'s Start/End Date before saving.');
             ok = false;
         }
 

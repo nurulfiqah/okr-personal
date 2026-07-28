@@ -257,7 +257,34 @@
         if (extendedDateInput.value && extendedDateInput.value < endInput.value) {
             extendedDateInput.value = endInput.value;
         }
+        refreshKrDateBounds();
     });
+    startInput.addEventListener('change', function () {
+        refreshKrDateBounds();
+    });
+
+    // Key Results can have dates set before the OKR's own Start/End Date
+    // change - re-check every Key Result/Subtask against the new range
+    // whenever it changes and surface a reminder banner if any of them now
+    // fall outside it.
+    var krDateWarningEl = document.getElementById('okr-kr-date-warning');
+    function refreshKrDateBounds() {
+        var min = startInput.value || '';
+        var max = endInput.value || '';
+
+        document.querySelectorAll('#okr-kr-list .okr-kr-start-input, #okr-kr-list .okr-kr-end-input').forEach(function (input) {
+            input.min = min;
+            input.max = max;
+        });
+
+        var outOfRange = krList.some(function (row) {
+            return (min && row.start_date && row.start_date < min)
+                || (max && row.start_date && row.start_date > max)
+                || (min && row.end_date && row.end_date < min)
+                || (max && row.end_date && row.end_date > max);
+        });
+        if (krDateWarningEl) { krDateWarningEl.style.display = outOfRange ? '' : 'none'; }
+    }
 
     function applyExtendedToggle(on) {
         extendedCheckbox.checked = on;
@@ -499,10 +526,16 @@
         return krList.filter(function (r) { return r.parent_id === parentId; });
     }
 
+    var krStatusOptionsHtml = krStatusSelect.innerHTML;
+
     function krRowHtml(row, index, isSubtask) {
-        var statusText = row.status_value;
-        var statusClass = 'okr-pill ' + row.pill_class;
-        var dates = '<span class="okr-kr-dates-value">' + (row.start_date || '-') + ' &rarr; ' + (row.end_date || '-') + '</span>';
+        var statusSelect = '<select class="okr-kr-status-input" data-status-id="' + row.status_id + '">' + krStatusOptionsHtml + '</select>';
+        var dateMin = startInput.value || '';
+        var dateMax = endInput.value || '';
+        var dates = '<div class="okr-kr-dates">'
+            + '<input type="date" class="okr-kr-start-input" value="' + (row.start_date || '') + '" min="' + dateMin + '" max="' + dateMax + '">'
+            + '<input type="date" class="okr-kr-end-input" value="' + (row.end_date || '') + '" min="' + dateMin + '" max="' + dateMax + '">'
+            + '</div>';
 
         var atemBadge = '';
         if (row.atem_id) {
@@ -518,10 +551,12 @@
         return '<div class="okr-kr-row' + (isSubtask ? ' okr-kr-row--subtask' : '') + '" data-id="' + row.id + '">'
             + '<div class="okr-kr-num">' + index + '</div>'
             + '<div class="okr-kr-body">'
-            + '<div class="okr-kr-desc"><span class="okr-kr-desc-label">Action Details</span>' + escapeHtml(row.description) + atemBadge + '</div>'
+            + '<div class="okr-kr-desc"><span class="okr-kr-desc-label">Action Details</span>'
+            + '<textarea class="okr-kr-desc-input" rows="1">' + escapeHtml(row.description) + '</textarea>'
+            + atemBadge + '</div>'
             + '<div><span class="okr-kr-dates-label">Dates</span>' + dates + '</div>'
             + '<div><span class="okr-kr-assignee-label">Created By</span><span class="okr-kr-assignee-name">' + escapeHtml(row.creator_name || '') + '</span></div>'
-            + '<div><span class="okr-kr-progress-label">Status</span><span class="' + statusClass + '">' + escapeHtml(statusText) + '</span></div>'
+            + '<div><span class="okr-kr-progress-label">Status</span>' + statusSelect + '</div>'
             + '</div>'
             + '<div class="okr-kr-actions">'
             + '<button type="button" class="okr-kr-icon-btn okr-kr-icon-btn--edit okr-kr-edit" title="Edit"><i class="bi bi-pencil"></i></button>'
@@ -536,6 +571,7 @@
         var topLevel = krList.filter(function (r) { return !r.parent_id; });
         if (topLevel.length === 0) {
             krListEl.innerHTML = '<div class="okr-kr-empty">No Key Results added yet.</div>';
+            refreshKrDateBounds();
             return;
         }
         var html = '';
@@ -546,6 +582,10 @@
             });
         });
         krListEl.innerHTML = html;
+        krListEl.querySelectorAll('.okr-kr-status-input').forEach(function (sel) {
+            sel.value = sel.getAttribute('data-status-id');
+        });
+        refreshKrDateBounds();
     }
 
     function loadKeyResults() {
@@ -641,6 +681,138 @@
                 })
                 .catch(function () { setError('okr-kr', 'Network error. Please try again.'); });
         }
+    });
+
+    // Inline Action Details / Dates editing - autosaves on blur/change
+    // instead of requiring the pencil-icon modal. Status still only
+    // editable via the modal.
+    krListEl.addEventListener('focusin', function (e) {
+        var textarea = e.target.closest ? e.target.closest('.okr-kr-desc-input') : null;
+        if (textarea) { textarea.dataset.prevValue = textarea.value; }
+    });
+
+    krListEl.addEventListener('focusout', function (e) {
+        var textarea = e.target.closest ? e.target.closest('.okr-kr-desc-input') : null;
+        if (!textarea) { return; }
+
+        var row = textarea.closest('.okr-kr-row');
+        var id = parseInt(row.getAttribute('data-id'), 10);
+        var data = krList.filter(function (r) { return r.id === id; })[0];
+        if (!data) { return; }
+
+        var description = textarea.value.trim();
+        if (!description) {
+            textarea.value = textarea.dataset.prevValue || data.description;
+            return;
+        }
+        if (description === (textarea.dataset.prevValue || '').trim()) { return; }
+
+        var body = new URLSearchParams();
+        body.set('action', 'updateKeyResult');
+        body.set('id', id);
+        body.set('description', description);
+        body.set('start_date', data.start_date || '');
+        body.set('end_date', data.end_date || '');
+        body.set('status_id', data.status_id);
+
+        fetch(CFG.apiUrl, { method: 'POST', body: body })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (res.success) {
+                    data.description = description;
+                } else {
+                    textarea.value = textarea.dataset.prevValue || data.description;
+                    setError('okr-kr', res.message || 'Failed to save Action Details.');
+                }
+            })
+            .catch(function () {
+                textarea.value = textarea.dataset.prevValue || data.description;
+                setError('okr-kr', 'Network error. Please try again.');
+            });
+    });
+
+    krListEl.addEventListener('change', function (e) {
+        var dateInput = e.target.closest ? e.target.closest('.okr-kr-start-input, .okr-kr-end-input') : null;
+        if (!dateInput) { return; }
+
+        var row = dateInput.closest('.okr-kr-row');
+        var id = parseInt(row.getAttribute('data-id'), 10);
+        var data = krList.filter(function (r) { return r.id === id; })[0];
+        if (!data) { return; }
+
+        var isStart = dateInput.classList.contains('okr-kr-start-input');
+        var startInputEl = row.querySelector('.okr-kr-start-input');
+        var endInputEl = row.querySelector('.okr-kr-end-input');
+
+        // Keep start <= end, same guard the modal's own Start/End inputs use.
+        if (startInputEl.value && endInputEl.value && startInputEl.value > endInputEl.value) {
+            if (isStart) { endInputEl.value = startInputEl.value; } else { startInputEl.value = endInputEl.value; }
+        }
+
+        var body = new URLSearchParams();
+        body.set('action', 'updateKeyResult');
+        body.set('id', id);
+        body.set('description', data.description);
+        body.set('start_date', startInputEl.value);
+        body.set('end_date', endInputEl.value);
+        body.set('status_id', data.status_id);
+
+        fetch(CFG.apiUrl, { method: 'POST', body: body })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (res.success) {
+                    data.start_date = startInputEl.value || null;
+                    data.end_date = endInputEl.value || null;
+                    refreshKrDateBounds();
+                } else {
+                    startInputEl.value = data.start_date || '';
+                    endInputEl.value = data.end_date || '';
+                    setError('okr-kr', res.message || 'Failed to save dates.');
+                }
+            })
+            .catch(function () {
+                startInputEl.value = data.start_date || '';
+                endInputEl.value = data.end_date || '';
+                setError('okr-kr', 'Network error. Please try again.');
+            });
+    });
+
+    krListEl.addEventListener('change', function (e) {
+        var statusSelectEl = e.target.closest ? e.target.closest('.okr-kr-status-input') : null;
+        if (!statusSelectEl) { return; }
+
+        var row = statusSelectEl.closest('.okr-kr-row');
+        var id = parseInt(row.getAttribute('data-id'), 10);
+        var data = krList.filter(function (r) { return r.id === id; })[0];
+        if (!data) { return; }
+
+        var newStatusId = statusSelectEl.value;
+
+        var body = new URLSearchParams();
+        body.set('action', 'updateKeyResult');
+        body.set('id', id);
+        body.set('description', data.description);
+        body.set('start_date', data.start_date || '');
+        body.set('end_date', data.end_date || '');
+        body.set('status_id', newStatusId);
+
+        fetch(CFG.apiUrl, { method: 'POST', body: body })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (res.success) {
+                    data.status_id = res.status_id;
+                    data.status_value = res.status_value;
+                    data.pill_class = res.pill_class;
+                    statusSelectEl.setAttribute('data-status-id', res.status_id);
+                } else {
+                    statusSelectEl.value = statusSelectEl.getAttribute('data-status-id');
+                    setError('okr-kr', res.message || 'Failed to save status.');
+                }
+            })
+            .catch(function () {
+                statusSelectEl.value = statusSelectEl.getAttribute('data-status-id');
+                setError('okr-kr', 'Network error. Please try again.');
+            });
     });
 
     document.getElementById('okr-kr-save-btn').addEventListener('click', function () {
@@ -903,6 +1075,12 @@
         }
 
         if (ownerState.length === 0) { setError('okr-owner', 'An owner is required.'); ok = false; }
+
+        refreshKrDateBounds();
+        if (krDateWarningEl && krDateWarningEl.style.display !== 'none') {
+            setError('okr-kr', 'Fix the Key Result dates that fall outside the OKR\'s Start/End Date before saving.');
+            ok = false;
+        }
 
         return ok;
     }

@@ -143,8 +143,8 @@ $okr_list_config = [
         </div>
     </div>
 
-    <!-- Row 1b: Closure Date range -->
-    <div class="row row-cols-md-6 row-cols-2 g-2 mt-0">
+    <!-- Row 1b: Closure Date range | Department | Owner | Issuer -->
+    <div class="row row-cols-md-5 row-cols-2 g-2 mt-0 align-items-end">
         <div class="col">
             <label class="form-label">Closure Date From</label>
             <input type="date" class="form-control form-control-sm" id="okr-filter-closure-start">
@@ -153,10 +153,6 @@ $okr_list_config = [
             <label class="form-label">Closure Date To</label>
             <input type="date" class="form-control form-control-sm" id="okr-filter-closure-end">
         </div>
-    </div>
-
-    <!-- Row 2: Department | Owner | Issuer | Search | (buttons) -->
-    <div class="row row-cols-md-5 row-cols-2 g-2 mt-0 align-items-end">
         <div class="col">
             <label class="form-label">Department</label>
             <select class="form-select form-select-sm" id="okr-filter-dept">
@@ -202,11 +198,15 @@ $okr_list_config = [
                 <input type="hidden" id="okr-filter-issuer-value" value="">
             </div>
         </div>
-        <div class="col">
+    </div>
+
+    <!-- Row 2: Search | (buttons) -->
+    <div class="row g-2 mt-0 align-items-end">
+        <div class="col-md-3 col-6">
             <label class="form-label">Search title or ID</label>
             <input type="text" class="form-control form-control-sm" id="okr-filter-search" placeholder="Type title or OKR ID...">
         </div>
-        <div class="col d-flex gap-2">
+        <div class="col d-flex justify-content-end">
             <button type="button" class="btn btn-outline-secondary btn-sm" id="okr-filter-reset">Reset</button>
         </div>
     </div>

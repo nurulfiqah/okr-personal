@@ -301,13 +301,6 @@ if ($action === 'createCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['success' => false, 'message' => 'Owner and 2nd Owner must be different people.']);
         exit;
     }
-    // Issuer must register as one of the Owner(s) (OKR's ARCI-equivalent) -
-    // enforced going forward only, existing cards with issuer != owner are
-    // untouched.
-    if ($requester_id !== $owner_id && $requester_id !== $owner2_id) {
-        echo json_encode(['success' => false, 'message' => 'The issuer must be tagged as one of this OKR\'s owner(s).']);
-        exit;
-    }
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $start_date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end_date)) {
         echo json_encode(['success' => false, 'message' => 'Start and end dates are required.']);
         exit;
@@ -1255,6 +1248,18 @@ if ($action === 'suspendCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
+    // An OKR can only ever be suspended once in its lifetime - once it has
+    // been unsuspended back to Active it cannot be suspended again. Checked
+    // against the audit log (never cleared) rather than okr_cards.closed_at
+    // (which unsuspendCard nulls out), so a previous suspend cycle is still
+    // detected after the card returns to Active.
+    $already_suspended_check = mysqli_query($conn, "SELECT 1 FROM okr_audit_logs
+                                                      WHERE card_id = $id AND event = 'suspended' LIMIT 1");
+    if ($already_suspended_check && mysqli_num_rows($already_suspended_check) > 0) {
+        echo json_encode(['success' => false, 'message' => 'This OKR has already been suspended once and cannot be suspended again.']);
+        exit;
+    }
+
     $reason = trim($_POST['reason'] ?? '');
     if ($reason === '') {
         echo json_encode(['success' => false, 'message' => 'A reason is required to suspend an OKR.']);
@@ -1395,9 +1400,21 @@ if ($action === 'forceTerminateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     $card = mysqli_fetch_assoc($check);
-    if ($card['status_value'] !== OKR_STATUS_SUSPENDED) {
-        echo json_encode(['success' => false, 'message' => 'Only a suspended OKR can be force terminated.']);
-        exit;
+    // Reachable while Suspended (the normal Suspend > Appeal > Force
+    // Terminate flow), or once the OKR has already used up its one lifetime
+    // Suspend and returned to Active - since it can never be suspended again
+    // (see suspendCard above), Force Terminate becomes the CEO's only
+    // remaining action against it.
+    if ($card['status_value'] === OKR_STATUS_SUSPENDED) {
+        // ok - normal suspended-card force terminate
+    } else {
+        $already_suspended_check = mysqli_query($conn, "SELECT 1 FROM okr_audit_logs
+                                                          WHERE card_id = $id AND event = 'suspended' LIMIT 1");
+        if ($card['status_value'] === 'Failed'
+            || !$already_suspended_check || mysqli_num_rows($already_suspended_check) === 0) {
+            echo json_encode(['success' => false, 'message' => 'Only a suspended OKR (or an OKR that has already used its one Suspend) can be force terminated.']);
+            exit;
+        }
     }
 
     // Force Terminate is not a separate status - a force-terminated OKR is,
@@ -1410,7 +1427,7 @@ if ($action === 'forceTerminateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                remarks = '$remark_e', appeal_justification = NULL, appealed_at = NULL WHERE id = $id";
     if (mysqli_query($conn, $update)) {
         okrLogAudit($conn, $id, $requester_id, 'force_terminated',
-            ['result_status' => [OKR_STATUS_SUSPENDED, 'Failed']], 'Force terminated by CEO: ' . $remark);
+            ['result_status' => [$card['status_value'], 'Failed']], 'Force terminated by CEO: ' . $remark);
         echo json_encode(['success' => true]);
     } else {
         echo json_encode(['success' => false, 'message' => 'Database error: ' . mysqli_error($conn)]);
