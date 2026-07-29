@@ -721,7 +721,7 @@ if ($action === 'updateKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT kr.card_id, kr.parent_id, c.issuer_staff_id, os.value AS status_value
+    $check = mysqli_query($conn, "SELECT kr.card_id, kr.parent_id, kr.atem_id, c.issuer_staff_id, os.value AS status_value
                                    FROM okr_key_results kr
                                    JOIN okr_cards c ON kr.card_id = c.id
                                    LEFT JOIN okr_statuses os ON c.result_status = os.id
@@ -756,6 +756,18 @@ if ($action === 'updateKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $status_value = array_column($allowed_statuses, 'value', 'id')[$status_id];
 
+    // A top-level Key Result can't be marked Completed while one of its own
+    // Subtasks is still Active - the subtask should be resolved first.
+    if ($kr['parent_id'] === null && in_array($status_value, ['Completed', 'Completed with Excellence'], true)) {
+        $active_sub = mysqli_query($conn, "SELECT kr2.id FROM okr_key_results kr2
+                                            JOIN okr_statuses os2 ON kr2.status_id = os2.id
+                                            WHERE kr2.parent_id = $id AND os2.value = 'Active' LIMIT 1");
+        if ($active_sub && mysqli_num_rows($active_sub) > 0) {
+            echo json_encode(['success' => false, 'message' => 'This Key Result cannot be marked ' . $status_value . ' while a Subtask is still Active.']);
+            exit;
+        }
+    }
+
     $description_e = mysqli_real_escape_string($conn, $description);
     $start_sql = $start_date !== null ? "'" . mysqli_real_escape_string($conn, $start_date) . "'" : 'NULL';
     $end_sql = $end_date !== null ? "'" . mysqli_real_escape_string($conn, $end_date) . "'" : 'NULL';
@@ -773,10 +785,71 @@ if ($action === 'updateKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             'status_id'    => $status_id,
             'status_value' => $status_value,
             'pill_class'   => okrPillClass($status_value),
+            'atem_id'      => $kr['atem_id'] !== null ? (int)$kr['atem_id'] : null,
         ]);
     } else {
         echo json_encode(['success' => false, 'message' => 'Database error: ' . mysqli_error($conn)]);
     }
+    exit;
+}
+
+// Called from atem's own edit page (browser-side, same PHP session) after it
+// saves a status change on an ATEM linked back to a Key Result/Subtask via
+// atem_id. Mirrors the reverse direction of the js/edit.js sync in this
+// module - kept a strict mirror of updateKeyResult's own gates (issuer-only,
+// locked-card guard, allowed-status whitelist, subtask-active-blocks-parent-
+// completion) since this ultimately performs the same status write.
+if ($action === 'syncKeyResultStatusFromAtem' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $atem_id = (int)($_POST['atem_id'] ?? 0);
+    $status_value = trim($_POST['status_value'] ?? '');
+    // Trusted only as far as it lets us verify the caller IS that issuer -
+    // the actual privilege check is still "is $requester_id the OKR card's
+    // issuer", independently re-verified below from this module's own DB.
+    $atem_issuer_staff_id = (int)($_POST['atem_issuer_staff_id'] ?? 0);
+
+    if ($atem_id <= 0 || $status_value === '' || $atem_issuer_staff_id !== $requester_id) {
+        echo json_encode(['success' => false, 'message' => 'Invalid request.']);
+        exit;
+    }
+
+    $allowed_statuses = okrKeyResultAssignableStatuses($conn);
+    $allowed_by_value = array_column($allowed_statuses, 'id', 'value');
+    if (!isset($allowed_by_value[$status_value])) {
+        // Not one of the 4 Key Result statuses (e.g. ATEM-only statuses like
+        // Extended/Suspended/Draft/Completed with Extension) - nothing to sync.
+        echo json_encode(['success' => true, 'updated' => 0]);
+        exit;
+    }
+    $status_id = $allowed_by_value[$status_value];
+
+    $rows_res = mysqli_query($conn, "SELECT kr.id, kr.card_id, kr.parent_id, c.issuer_staff_id, os.value AS card_status_value
+                                      FROM okr_key_results kr
+                                      JOIN okr_cards c ON kr.card_id = c.id
+                                      LEFT JOIN okr_statuses os ON c.result_status = os.id
+                                      WHERE kr.atem_id = $atem_id AND c.deleted_at IS NULL");
+    $updated = 0;
+    if ($rows_res) {
+        while ($row = mysqli_fetch_assoc($rows_res)) {
+            // Literal issuer only - no admin bypass, per this feature's own rule.
+            if ((int)$row['issuer_staff_id'] !== $requester_id) { continue; }
+            if ($row['card_status_value'] === 'Suspended' || $row['card_status_value'] === 'Failed') { continue; }
+
+            if ($row['parent_id'] === null && in_array($status_value, ['Completed', 'Completed with Excellence'], true)) {
+                $active_sub = mysqli_query($conn, "SELECT kr2.id FROM okr_key_results kr2
+                                                    JOIN okr_statuses os2 ON kr2.status_id = os2.id
+                                                    WHERE kr2.parent_id = " . (int)$row['id'] . " AND os2.value = 'Active' LIMIT 1");
+                if ($active_sub && mysqli_num_rows($active_sub) > 0) { continue; }
+            }
+
+            if (mysqli_query($conn, "UPDATE okr_key_results SET status_id = $status_id WHERE id = " . (int)$row['id'])) {
+                $updated++;
+                okrLogAudit($conn, $row['card_id'], $requester_id,
+                    $row['parent_id'] !== null ? 'subtask_updated' : 'key_result_updated', null,
+                    'Status synced from linked ATEM: ' . $status_value);
+            }
+        }
+    }
+    echo json_encode(['success' => true, 'updated' => $updated]);
     exit;
 }
 

@@ -80,38 +80,50 @@
         });
     }
 
+    var KR_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    function formatKrDate(d) {
+        if (!d) { return ''; }
+        var parts = d.split('-');
+        if (parts.length !== 3) { return d; }
+        var m = KR_MONTHS[parseInt(parts[1], 10) - 1] || parts[1];
+        return parts[2] + ' ' + m + ' ' + parts[0];
+    }
+
     var krListEl = document.getElementById('okr-kr-list');
     if (krListEl) {
         var krList = CFG.keyResults ? CFG.keyResults.slice() : [];
         var atemMap = {};
 
         var krRowHtml = function (row, index, isSubtask) {
-            var statusText = row.status_value;
-            var statusClass = 'okr-pill ' + row.pill_class;
-            var dates = '<div class="okr-kr-dates">'
-                + '<input type="date" value="' + (row.start_date || '') + '" disabled>'
-                + '<input type="date" value="' + (row.end_date || '') + '" disabled>'
-                + '</div>';
-
-            var atemBadge = '';
+            var atemCell = '<span class="okr-kr-col-value okr-kr-col-value--muted">&mdash;</span>';
             if (row.atem_id) {
                 var atem = atemMap[row.atem_id];
                 var atemLabel = atem ? escapeHtml(atem.title) : ('ATEM #' + row.atem_id);
-                atemBadge = '<div class="okr-kr-atem-badge">'
+                atemCell = '<div class="okr-kr-atem-badge">'
                     + '<i class="bi bi-link-45deg"></i> '
                     + '<a href="' + CFG.atemViewUrl + '?id=' + row.atem_id + '" target="_blank" rel="noopener">' + atemLabel + '</a>'
                     + '</div>';
             }
 
+            var fromValue = row.start_date
+                ? '<span class="okr-kr-col-value">' + formatKrDate(row.start_date) + '</span>'
+                : '<span class="okr-kr-col-value okr-kr-col-value--muted">&mdash;</span>';
+            var toValue = row.end_date
+                ? '<span class="okr-kr-col-value">' + formatKrDate(row.end_date) + '</span>'
+                : '<span class="okr-kr-col-value okr-kr-col-value--muted">&mdash;</span>';
+
             return '<div class="okr-kr-row' + (isSubtask ? ' okr-kr-row--subtask' : '') + '">'
                 + '<div class="okr-kr-num">' + index + '</div>'
                 + '<div class="okr-kr-body">'
-                + '<div class="okr-kr-desc"><span class="okr-kr-desc-label">Action Details</span>'
-                + '<textarea class="okr-kr-desc-input" rows="1" readonly>' + escapeHtml(row.description) + '</textarea>'
-                + atemBadge + '</div>'
-                + '<div><span class="okr-kr-dates-label">Dates</span>' + dates + '</div>'
-                + '<div><span class="okr-kr-assignee-label">Created By</span><span class="okr-kr-assignee-name">' + escapeHtml(row.creator_name || '') + '</span></div>'
-                + '<div><span class="okr-kr-progress-label">Status</span><span class="' + statusClass + '">' + escapeHtml(statusText) + '</span></div>'
+                + '<div class="okr-kr-action-cell">'
+                + '<span class="okr-kr-col-label">Action</span>'
+                + '<div class="okr-kr-action-title">' + escapeHtml(row.description) + '</div>'
+                + '<div class="okr-kr-action-creator">' + escapeHtml(row.creator_name || '') + '</div>'
+                + '</div>'
+                + '<div class="okr-kr-col"><span class="okr-kr-col-label">From</span>' + fromValue + '</div>'
+                + '<div class="okr-kr-col"><span class="okr-kr-col-label">To</span>' + toValue + '</div>'
+                + '<div class="okr-kr-col"><span class="okr-kr-col-label">ATEM</span>' + atemCell + '</div>'
+                + '<div class="okr-kr-col"><span class="okr-kr-col-label">Status</span><span class="okr-pill ' + row.pill_class + '">' + escapeHtml(row.status_value) + '</span></div>'
                 + '</div>'
                 + '</div>';
         };

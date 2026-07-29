@@ -999,7 +999,7 @@ textarea.form-control {
 .okr-kr-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   margin-top: 12px;
 }
 
@@ -1007,7 +1007,7 @@ textarea.form-control {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 10px;
+  padding: 10px 12px;
   border: 1px solid #e9ecef;
   border-left: 4px solid #7c5cff;
   border-radius: 8px;
@@ -1025,7 +1025,7 @@ textarea.form-control {
 .okr-kr-num {
   flex-shrink: 0;
   width: 28px;
-  padding-top: 8px;
+  padding-top: 2px;
   font-size: 13px;
   font-weight: 700;
   color: #7c5cff;
@@ -1061,114 +1061,68 @@ textarea.form-control {
   flex: 1;
   min-width: 0;
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr;
+  grid-template-columns: 2.2fr 0.8fr 0.8fr 1.2fr 0.9fr;
+  align-items: start;
   gap: 8px;
 }
 
-.okr-kr-desc-label,
-.okr-kr-dates-label,
-.okr-kr-assignee-label,
-.okr-kr-progress-label {
+.okr-kr-action-cell {
+  min-width: 0;
+}
+
+.okr-kr-col-label {
   font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
   color: #6c757d;
   margin-bottom: 2px;
   display: block;
 }
 
-.okr-kr-desc textarea {
-  width: 100%;
-  min-height: 60px;
-  resize: vertical;
+.okr-kr-action-title {
   font-size: 13px;
-  border: 1px solid #ced4da;
-  border-radius: 6px;
-  padding: 6px 8px;
-}
-
-.okr-kr-desc-input {
-  display: block;
-  width: 100%;
-  height: 44px;
-  max-height: 600px;
-  overflow-y: auto;
-  resize: vertical;
-  font-size: 13px;
-  font-family: inherit;
-  color: #212529;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  padding: 2px 4px;
-  margin: -2px -4px;
-}
-
-.okr-kr-desc-input:hover,
-.okr-kr-desc-input:focus {
-  border-color: #ced4da;
-  background: #fff;
-  outline: none;
-}
-
-.okr-kr-dates {
-  display: flex;
-  flex-direction: row;
-  gap: 6px;
-}
-
-.okr-kr-dates input[type="date"] {
-  min-width: 0;
-  flex: 1;
-  font-size: 12px;
-  padding: 4px 6px;
-  border: 1px solid #ced4da;
-  border-radius: 6px;
-  background: #fff;
-  color: #212529;
-}
-
-.okr-kr-dates input[type="date"]:focus {
-  outline: none;
-  border-color: #86b7fe;
-}
-
-.okr-kr-dates input[type="date"]:disabled {
-  background: #f8f9fa;
-  color: #495057;
-}
-
-.okr-kr-status-input {
-  width: 100%;
-  font-size: 12px;
-  padding: 4px 6px;
-  border: 1px solid #ced4da;
-  border-radius: 6px;
-  background: #fff;
-  color: #212529;
-}
-
-.okr-kr-status-input:focus {
-  outline: none;
-  border-color: #86b7fe;
-}
-
-.okr-kr-assignee-name {
-  font-size: 13px;
-  color: #000;
   font-weight: 600;
+  color: #212529;
+  overflow-wrap: break-word;
 }
 
-.okr-kr-progress-hint {
-  font-size: 10px;
+.okr-kr-action-creator {
+  font-size: 11px;
+  color: #6c757d;
+  margin-top: 2px;
+}
+
+.okr-kr-col {
+  min-width: 0;
+}
+
+.okr-kr-col-value {
+  font-size: 12px;
+  color: #212529;
+  overflow-wrap: break-word;
+}
+
+.okr-kr-col-value--muted {
   color: #adb5bd;
 }
 
 .okr-kr-actions {
   flex-shrink: 0;
+  width: 108px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
   align-items: center;
-  padding-top: 4px;
+  gap: 4px;
+}
+
+.okr-kr-actions-buttons {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
 }
 
 .okr-kr-icon-btn {
@@ -1180,9 +1134,7 @@ textarea.form-control {
   padding: 0;
   border: none;
   background: transparent;
-  font-size: 20px;
-  font-weight: bold;
-  -webkit-text-stroke: 0.4px currentColor;
+  font-size: 15px;
   line-height: 1;
   color: #6c757d;
   cursor: pointer;
@@ -1204,7 +1156,6 @@ textarea.form-control {
 
 .okr-kr-icon-btn--delete {
   color: #dc3545;
-  font-weight: bold;
 }
 
 .okr-kr-icon-btn--add {
@@ -1226,8 +1177,8 @@ textarea.form-control {
 .okr-kr-atem-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 4px;
+  gap: 4px;
+  max-width: 100%;
   padding: 2px 8px;
   border-radius: 10px;
   background-color: #fff3e0;
@@ -1240,6 +1191,9 @@ textarea.form-control {
   color: #b8720a;
   font-weight: 600;
   text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .okr-kr-atem-badge a:hover {
@@ -1279,6 +1233,11 @@ textarea.form-control {
   color: #212529;
 }
 
+.okr-kr-atem-row-id {
+  font-weight: 400;
+  color: #6c757d;
+}
+
 .okr-kr-atem-row-meta {
   font-size: 11px;
   color: #6c757d;
@@ -1311,6 +1270,10 @@ textarea.form-control {
 @media (max-width: 768px) {
   .okr-kr-body {
     grid-template-columns: 1fr;
+  }
+
+  .okr-kr-actions {
+    width: auto;
   }
 
   .okr-kr-row--subtask {

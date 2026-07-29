@@ -41,6 +41,65 @@
         if (el) el.textContent = msg || '';
     }
 
+    // Disables a button and swaps its label while an async action runs, so a
+    // slow request never looks like nothing happened - or worse, like it
+    // silently finished - before it actually has. restoreButton undoes it;
+    // callers only need to call it on failure paths, since success usually
+    // hides the modal/re-renders the row the button lived in anyway.
+    function setButtonLoading(btn, loadingText) {
+        if (!btn) { return; }
+        if (btn.dataset.originalText === undefined) { btn.dataset.originalText = btn.textContent; }
+        btn.disabled = true;
+        btn.textContent = loadingText;
+    }
+    function restoreButton(btn) {
+        if (!btn) { return; }
+        btn.disabled = false;
+        if (btn.dataset.originalText !== undefined) { btn.textContent = btn.dataset.originalText; }
+    }
+
+    // Shared styled confirmation modal (never the browser's native confirm())
+    // for any destructive/consequential action - Attachment/Reference Link
+    // removal, Link ATEM picks, plain Key Result/Subtask deletion. onConfirm
+    // may return a Promise; when it does, the OK button shows a loading
+    // state and the modal stays open until it settles, instead of hiding
+    // immediately and leaving the action to finish invisibly in the background.
+    var _confirmModal = null, _confirmCb = null;
+    function getConfirmModal() {
+        if (!_confirmModal && typeof bootstrap !== 'undefined') {
+            _confirmModal = new bootstrap.Modal(document.getElementById('atem-confirm-modal'));
+            document.getElementById('atem-confirm-ok').addEventListener('click', function () {
+                var cb = _confirmCb; _confirmCb = null;
+                var okBtn = document.getElementById('atem-confirm-ok');
+                var originalText = okBtn ? okBtn.textContent : '';
+                if (okBtn) { okBtn.disabled = true; okBtn.textContent = 'Please wait...'; }
+                var result = cb ? cb() : null;
+                function settle() {
+                    if (okBtn) { okBtn.disabled = false; okBtn.textContent = originalText; }
+                    if (_confirmModal) { _confirmModal.hide(); }
+                }
+                if (result && typeof result.then === 'function') {
+                    result.then(settle, settle);
+                } else {
+                    settle();
+                }
+            });
+        }
+        return _confirmModal;
+    }
+    function confirmAction(message, onConfirm, okLabel, okClass) {
+        document.getElementById('atem-confirm-message').textContent = message;
+        _confirmCb = onConfirm;
+        var okBtn = document.getElementById('atem-confirm-ok');
+        if (okBtn) {
+            okBtn.disabled = false;
+            okBtn.textContent = okLabel || 'Remove';
+            okBtn.className = 'btn ' + (okClass || 'btn-danger');
+        }
+        var m = getConfirmModal();
+        if (m) { m.show(); } else { onConfirm(); }
+    }
+
     function clearErrors() {
         document.querySelectorAll('.okr-form-error').forEach(function (el) {
             el.textContent = '';
@@ -105,11 +164,6 @@
         var min = startDateInput.value || '';
         var max = endDateInput.value || '';
 
-        document.querySelectorAll('#okr-kr-list .okr-kr-start-input, #okr-kr-list .okr-kr-end-input').forEach(function (input) {
-            input.min = min;
-            input.max = max;
-        });
-
         var outOfRange = keyResults.some(function (row) {
             return (min && row.start_date && row.start_date < min)
                 || (max && row.start_date && row.start_date > max)
@@ -123,6 +177,15 @@
         return String(s).replace(/[&<>"']/g, function (c) {
             return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
         });
+    }
+
+    var KR_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    function formatKrDate(d) {
+        if (!d) { return ''; }
+        var parts = d.split('-');
+        if (parts.length !== 3) { return d; }
+        var m = KR_MONTHS[parseInt(parts[1], 10) - 1] || parts[1];
+        return parts[2] + ' ' + m + ' ' + parts[0];
     }
 
     // ---------------------------------------------------------------
@@ -279,7 +342,8 @@
         reflinkModal.show();
     });
 
-    document.getElementById('reflink-save-btn').addEventListener('click', function () {
+    var reflinkSaveBtn = document.getElementById('reflink-save-btn');
+    reflinkSaveBtn.addEventListener('click', function () {
         var name = document.getElementById('reflink-name').value.trim();
         var url = document.getElementById('reflink-url').value.trim();
         if (!name || !url) {
@@ -292,9 +356,11 @@
         body.set('name', name);
         body.set('url', url);
 
+        setButtonLoading(reflinkSaveBtn, 'Saving...');
         fetch(CFG.apiUrl, { method: 'POST', body: body })
             .then(function (r) { return r.json(); })
             .then(function (res) {
+                restoreButton(reflinkSaveBtn);
                 if (res.success) {
                     referenceLinks.push({ token: res.token, name: res.name, url: res.url });
                     markChanged();
@@ -306,20 +372,31 @@
                 }
             })
             .catch(function () {
+                restoreButton(reflinkSaveBtn);
                 setError('reflink', 'Network error. Please try again.');
             });
     });
 
     reflinkListEl.addEventListener('click', function (e) {
         if (!e.target.classList.contains('okr-reflink-remove')) { return; }
-        var token = e.target.getAttribute('data-token');
+        var el = e.target;
+        var token = el.getAttribute('data-token');
+        el.style.pointerEvents = 'none';
+        el.style.opacity = '0.4';
         var body = new URLSearchParams();
         body.set('action', 'removeStagedReferenceLink');
         body.set('token', token);
-        fetch(CFG.apiUrl, { method: 'POST', body: body }).catch(function () {});
-        referenceLinks = referenceLinks.filter(function (l) { return l.token !== token; });
-        markChanged();
-        renderReferenceLinks();
+        fetch(CFG.apiUrl, { method: 'POST', body: body })
+            .then(function () {
+                referenceLinks = referenceLinks.filter(function (l) { return l.token !== token; });
+                markChanged();
+                renderReferenceLinks();
+            })
+            .catch(function () {
+                referenceLinks = referenceLinks.filter(function (l) { return l.token !== token; });
+                markChanged();
+                renderReferenceLinks();
+            });
     });
 
     renderReferenceLinks();
@@ -353,18 +430,28 @@
         body.set('action', 'stageAttachment');
         body.set('file', file);
 
+        var pendingRow = document.createElement('div');
+        pendingRow.className = 'okr-file-row';
+        pendingRow.innerHTML = '<span class="okr-file-name">Uploading ' + escapeHtml(file.name) + '...</span>';
+        if (fileListEl.querySelector('.okr-empty-state')) { fileListEl.innerHTML = ''; }
+        fileListEl.appendChild(pendingRow);
+
         fetch(CFG.apiUrl, { method: 'POST', body: body })
             .then(function (r) { return r.json(); })
             .then(function (res) {
+                pendingRow.remove();
                 if (res.success) {
                     stagedFiles.push({ token: res.token, name: res.name, size: res.size });
                     markChanged();
                     renderFiles();
                 } else {
+                    renderFiles();
                     setError('okr-file', res.message || 'Failed to upload file.');
                 }
             })
             .catch(function () {
+                pendingRow.remove();
+                renderFiles();
                 setError('okr-file', 'Network error while uploading. Please try again.');
             });
     }
@@ -398,14 +485,24 @@
 
     fileListEl.addEventListener('click', function (e) {
         if (e.target.classList.contains('okr-file-remove')) {
-            var token = e.target.getAttribute('data-token');
+            var el = e.target;
+            var token = el.getAttribute('data-token');
+            el.style.pointerEvents = 'none';
+            el.style.opacity = '0.4';
             var body = new URLSearchParams();
             body.set('action', 'removeStagedAttachment');
             body.set('token', token);
-            fetch(CFG.apiUrl, { method: 'POST', body: body }).catch(function () {});
-            stagedFiles = stagedFiles.filter(function (f) { return f.token !== token; });
-            markChanged();
-            renderFiles();
+            fetch(CFG.apiUrl, { method: 'POST', body: body })
+                .then(function () {
+                    stagedFiles = stagedFiles.filter(function (f) { return f.token !== token; });
+                    markChanged();
+                    renderFiles();
+                })
+                .catch(function () {
+                    stagedFiles = stagedFiles.filter(function (f) { return f.token !== token; });
+                    markChanged();
+                    renderFiles();
+                });
         }
     });
 
@@ -428,46 +525,52 @@
     var krEndInput = document.getElementById('okr-kr-end');
     var krTokenInput = document.getElementById('okr-kr-token');
     var krParentTokenInput = document.getElementById('okr-kr-parent-token');
+    var krDeleteModalEl = document.getElementById('okr-kr-delete-modal');
+    var krDeleteModal = new bootstrap.Modal(krDeleteModalEl);
+    var krDeleteTarget = null; // { token, parent_token, atem_id }
 
     function krChildren(parentToken) {
         return keyResults.filter(function (r) { return r.parent_token === parentToken; });
     }
 
-    var krStatusOptionsHtml = krStatusSelect.innerHTML;
-
     function krRowHtml(row, index, isSubtask) {
-        var statusSelect = '<select class="okr-kr-status-input" data-status-id="' + row.status_id + '">' + krStatusOptionsHtml + '</select>';
-        var dateMin = startDateInput.value || '';
-        var dateMax = endDateInput.value || '';
-        var dates = '<div class="okr-kr-dates">'
-            + '<input type="date" class="okr-kr-start-input" value="' + (row.start_date || '') + '" min="' + dateMin + '" max="' + dateMax + '">'
-            + '<input type="date" class="okr-kr-end-input" value="' + (row.end_date || '') + '" min="' + dateMin + '" max="' + dateMax + '">'
-            + '</div>';
-
-        var atemBadge = '';
+        var atemCell = '<span class="okr-kr-col-value okr-kr-col-value--muted">&mdash;</span>';
         if (row.atem_id) {
             var atemLabel = row.atem_title || ('ATEM #' + row.atem_id);
-            atemBadge = '<div class="okr-kr-atem-badge">'
+            atemCell = '<div class="okr-kr-atem-badge">'
                 + '<i class="bi bi-link-45deg"></i> '
                 + '<a href="' + CFG.atemViewUrl + '?id=' + row.atem_id + '" target="_blank" rel="noopener">' + escapeHtml(atemLabel) + '</a>'
                 + '</div>';
         }
 
+        var fromValue = row.start_date
+            ? '<span class="okr-kr-col-value">' + formatKrDate(row.start_date) + '</span>'
+            : '<span class="okr-kr-col-value okr-kr-col-value--muted">&mdash;</span>';
+        var toValue = row.end_date
+            ? '<span class="okr-kr-col-value">' + formatKrDate(row.end_date) + '</span>'
+            : '<span class="okr-kr-col-value okr-kr-col-value--muted">&mdash;</span>';
+
         return '<div class="okr-kr-row' + (isSubtask ? ' okr-kr-row--subtask' : '') + '" data-token="' + row.token + '">'
             + '<div class="okr-kr-num">' + index + '</div>'
             + '<div class="okr-kr-body">'
-            + '<div class="okr-kr-desc"><span class="okr-kr-desc-label">Action Details</span>'
-            + '<textarea class="okr-kr-desc-input" rows="1">' + escapeHtml(row.description) + '</textarea>'
-            + atemBadge + '</div>'
-            + '<div><span class="okr-kr-dates-label">Dates</span>' + dates + '</div>'
-            + '<div><span class="okr-kr-assignee-label">Created By</span><span class="okr-kr-assignee-name">' + escapeHtml(row.creator_name || '') + '</span></div>'
-            + '<div><span class="okr-kr-progress-label">Status</span>' + statusSelect + '</div>'
+            + '<div class="okr-kr-action-cell">'
+            + '<span class="okr-kr-col-label">Action</span>'
+            + '<div class="okr-kr-action-title">' + escapeHtml(row.description) + '</div>'
+            + '<div class="okr-kr-action-creator">' + escapeHtml(row.creator_name || '') + '</div>'
+            + '</div>'
+            + '<div class="okr-kr-col"><span class="okr-kr-col-label">From</span>' + fromValue + '</div>'
+            + '<div class="okr-kr-col"><span class="okr-kr-col-label">To</span>' + toValue + '</div>'
+            + '<div class="okr-kr-col"><span class="okr-kr-col-label">ATEM</span>' + atemCell + '</div>'
+            + '<div class="okr-kr-col"><span class="okr-kr-col-label">Status</span><span class="okr-pill ' + row.pill_class + '">' + escapeHtml(row.status_value) + '</span></div>'
             + '</div>'
             + '<div class="okr-kr-actions">'
+            + '<span class="okr-kr-col-label">Actions</span>'
+            + '<div class="okr-kr-actions-buttons">'
             + '<button type="button" class="okr-kr-icon-btn okr-kr-icon-btn--edit okr-kr-edit" title="Edit"><i class="bi bi-pencil"></i></button>'
             + '<button type="button" class="okr-kr-icon-btn okr-kr-icon-btn--delete okr-kr-delete" title="Delete"><i class="bi bi-x-lg"></i></button>'
             + (isSubtask ? '' : '<button type="button" class="okr-kr-icon-btn okr-kr-icon-btn--add okr-kr-add-sub" title="Add Subtask"><i class="bi bi-plus-lg"></i></button>')
             + '<button type="button" class="okr-kr-icon-btn okr-kr-icon-btn--atem okr-kr-add-atem" title="ATEM"><i class="bi bi-file-earmark-plus"></i></button>'
+            + '</div>'
             + '</div>'
             + '</div>';
     }
@@ -487,9 +590,6 @@
             });
         });
         krListEl.innerHTML = html;
-        krListEl.querySelectorAll('.okr-kr-status-input').forEach(function (sel) {
-            sel.value = sel.getAttribute('data-status-id');
-        });
         refreshKrDateBounds();
     }
 
@@ -520,230 +620,8 @@
         openKrModal({});
     });
 
-    // Inline Action Details / Dates editing - autosaves on blur/change
-    // instead of requiring the pencil-icon modal. Status still only
-    // editable via the modal. Staged rows have no id yet, so "saving" means
-    // re-staging under a new token, same as the modal's edit-and-save flow
-    // below.
-    krListEl.addEventListener('focusin', function (e) {
-        var textarea = e.target.closest ? e.target.closest('.okr-kr-desc-input') : null;
-        if (textarea) { textarea.dataset.prevValue = textarea.value; }
-    });
-
-    krListEl.addEventListener('focusout', function (e) {
-        var textarea = e.target.closest ? e.target.closest('.okr-kr-desc-input') : null;
-        if (!textarea) { return; }
-
-        var row = textarea.closest('.okr-kr-row');
-        var token = row.getAttribute('data-token');
-        var data = keyResults.filter(function (r) { return r.token === token; })[0];
-        if (!data) { return; }
-
-        var description = textarea.value.trim();
-        if (!description) {
-            textarea.value = textarea.dataset.prevValue || data.description;
-            return;
-        }
-        if (description === (textarea.dataset.prevValue || '').trim()) { return; }
-
-        var parentToken = data.parent_token;
-
-        function stageIt() {
-            var body = new URLSearchParams();
-            body.set('action', parentToken ? 'stageKeyResultSubtask' : 'stageKeyResult');
-            if (parentToken) { body.set('parent_token', parentToken); }
-            body.set('description', description);
-            body.set('start_date', data.start_date || '');
-            body.set('end_date', data.end_date || '');
-            body.set('status_id', data.status_id);
-
-            fetch(CFG.apiUrl, { method: 'POST', body: body })
-                .then(function (r) { return r.json(); })
-                .then(function (res) {
-                    if (res.success) {
-                        var idx = keyResults.findIndex(function (r) { return r.token === token; });
-                        if (idx !== -1) {
-                            keyResults[idx] = {
-                                token: res.token,
-                                parent_token: parentToken || null,
-                                description: res.description,
-                                creator_name: res.creator_name,
-                                atem_id: data.atem_id,
-                                start_date: res.start_date,
-                                end_date: res.end_date,
-                                status_id: res.status_id,
-                                status_value: res.status_value,
-                                pill_class: res.pill_class
-                            };
-                        }
-                        markChanged();
-                        renderKeyResults();
-                    } else {
-                        textarea.value = textarea.dataset.prevValue || data.description;
-                        setError('okr-kr', res.message || 'Failed to save Action Details.');
-                    }
-                })
-                .catch(function () {
-                    textarea.value = textarea.dataset.prevValue || data.description;
-                    setError('okr-kr', 'Network error. Please try again.');
-                });
-        }
-
-        var removeBody = new URLSearchParams();
-        if (parentToken) {
-            removeBody.set('action', 'removeStagedKeyResultSubtask');
-            removeBody.set('parent_token', parentToken);
-            removeBody.set('token', token);
-        } else {
-            removeBody.set('action', 'removeStagedKeyResult');
-            removeBody.set('token', token);
-        }
-        fetch(CFG.apiUrl, { method: 'POST', body: removeBody }).then(stageIt).catch(stageIt);
-    });
-
-    krListEl.addEventListener('change', function (e) {
-        var dateInput = e.target.closest ? e.target.closest('.okr-kr-start-input, .okr-kr-end-input') : null;
-        if (!dateInput) { return; }
-
-        var row = dateInput.closest('.okr-kr-row');
-        var token = row.getAttribute('data-token');
-        var data = keyResults.filter(function (r) { return r.token === token; })[0];
-        if (!data) { return; }
-
-        var isStart = dateInput.classList.contains('okr-kr-start-input');
-        var startInputEl = row.querySelector('.okr-kr-start-input');
-        var endInputEl = row.querySelector('.okr-kr-end-input');
-
-        // Keep start <= end, same guard the modal's own Start/End inputs use.
-        if (startInputEl.value && endInputEl.value && startInputEl.value > endInputEl.value) {
-            if (isStart) { endInputEl.value = startInputEl.value; } else { startInputEl.value = endInputEl.value; }
-        }
-
-        var parentToken = data.parent_token;
-        var newStart = startInputEl.value;
-        var newEnd = endInputEl.value;
-
-        function stageIt() {
-            var body = new URLSearchParams();
-            body.set('action', parentToken ? 'stageKeyResultSubtask' : 'stageKeyResult');
-            if (parentToken) { body.set('parent_token', parentToken); }
-            body.set('description', data.description);
-            body.set('start_date', newStart);
-            body.set('end_date', newEnd);
-            body.set('status_id', data.status_id);
-
-            fetch(CFG.apiUrl, { method: 'POST', body: body })
-                .then(function (r) { return r.json(); })
-                .then(function (res) {
-                    if (res.success) {
-                        var idx = keyResults.findIndex(function (r) { return r.token === token; });
-                        if (idx !== -1) {
-                            keyResults[idx] = {
-                                token: res.token,
-                                parent_token: parentToken || null,
-                                description: res.description,
-                                creator_name: res.creator_name,
-                                atem_id: data.atem_id,
-                                start_date: res.start_date,
-                                end_date: res.end_date,
-                                status_id: res.status_id,
-                                status_value: res.status_value,
-                                pill_class: res.pill_class
-                            };
-                        }
-                        markChanged();
-                        renderKeyResults();
-                    } else {
-                        startInputEl.value = data.start_date || '';
-                        endInputEl.value = data.end_date || '';
-                        setError('okr-kr', res.message || 'Failed to save dates.');
-                    }
-                })
-                .catch(function () {
-                    startInputEl.value = data.start_date || '';
-                    endInputEl.value = data.end_date || '';
-                    setError('okr-kr', 'Network error. Please try again.');
-                });
-        }
-
-        var removeBody = new URLSearchParams();
-        if (parentToken) {
-            removeBody.set('action', 'removeStagedKeyResultSubtask');
-            removeBody.set('parent_token', parentToken);
-            removeBody.set('token', token);
-        } else {
-            removeBody.set('action', 'removeStagedKeyResult');
-            removeBody.set('token', token);
-        }
-        fetch(CFG.apiUrl, { method: 'POST', body: removeBody }).then(stageIt).catch(stageIt);
-    });
-
-    krListEl.addEventListener('change', function (e) {
-        var statusSelectEl = e.target.closest ? e.target.closest('.okr-kr-status-input') : null;
-        if (!statusSelectEl) { return; }
-
-        var row = statusSelectEl.closest('.okr-kr-row');
-        var token = row.getAttribute('data-token');
-        var data = keyResults.filter(function (r) { return r.token === token; })[0];
-        if (!data) { return; }
-
-        var parentToken = data.parent_token;
-        var newStatusId = statusSelectEl.value;
-
-        function stageIt() {
-            var body = new URLSearchParams();
-            body.set('action', parentToken ? 'stageKeyResultSubtask' : 'stageKeyResult');
-            if (parentToken) { body.set('parent_token', parentToken); }
-            body.set('description', data.description);
-            body.set('start_date', data.start_date || '');
-            body.set('end_date', data.end_date || '');
-            body.set('status_id', newStatusId);
-
-            fetch(CFG.apiUrl, { method: 'POST', body: body })
-                .then(function (r) { return r.json(); })
-                .then(function (res) {
-                    if (res.success) {
-                        var idx = keyResults.findIndex(function (r) { return r.token === token; });
-                        if (idx !== -1) {
-                            keyResults[idx] = {
-                                token: res.token,
-                                parent_token: parentToken || null,
-                                description: res.description,
-                                creator_name: res.creator_name,
-                                atem_id: data.atem_id,
-                                start_date: res.start_date,
-                                end_date: res.end_date,
-                                status_id: res.status_id,
-                                status_value: res.status_value,
-                                pill_class: res.pill_class
-                            };
-                        }
-                        markChanged();
-                        renderKeyResults();
-                    } else {
-                        statusSelectEl.value = statusSelectEl.getAttribute('data-status-id');
-                        setError('okr-kr', res.message || 'Failed to save status.');
-                    }
-                })
-                .catch(function () {
-                    statusSelectEl.value = statusSelectEl.getAttribute('data-status-id');
-                    setError('okr-kr', 'Network error. Please try again.');
-                });
-        }
-
-        var removeBody = new URLSearchParams();
-        if (parentToken) {
-            removeBody.set('action', 'removeStagedKeyResultSubtask');
-            removeBody.set('parent_token', parentToken);
-            removeBody.set('token', token);
-        } else {
-            removeBody.set('action', 'removeStagedKeyResult');
-            removeBody.set('token', token);
-        }
-        fetch(CFG.apiUrl, { method: 'POST', body: removeBody }).then(stageIt).catch(stageIt);
-    });
-
-    document.getElementById('okr-kr-save-btn').addEventListener('click', function () {
+    var krSaveBtn = document.getElementById('okr-kr-save-btn');
+    krSaveBtn.addEventListener('click', function () {
         setError('okr-kr-modal', '');
         var description = document.getElementById('okr-kr-desc').value.trim();
         if (!description) {
@@ -766,6 +644,7 @@
             fetch(CFG.apiUrl, { method: 'POST', body: body })
                 .then(function (r) { return r.json(); })
                 .then(function (res) {
+                    restoreButton(krSaveBtn);
                     if (res.success) {
                         var newRow = {
                             token: res.token,
@@ -798,10 +677,12 @@
                     }
                 })
                 .catch(function () {
+                    restoreButton(krSaveBtn);
                     setError('okr-kr-modal', 'Network error. Please try again.');
                 });
         }
 
+        setButtonLoading(krSaveBtn, 'Saving...');
         if (editingToken) {
             // Editing re-stages under a new token (staged rows have no id to
             // update in place yet) - remove the old one first, then replace it.
@@ -828,7 +709,7 @@
         if (!data) { return; }
 
         if (e.target.closest('.okr-kr-add-atem')) {
-            openAtemModal(token);
+            openAtemModal(token, data.description);
             return;
         }
 
@@ -851,22 +732,127 @@
         }
 
         if (e.target.closest('.okr-kr-delete')) {
-            var body = new URLSearchParams();
-            if (data.parent_token) {
-                body.set('action', 'removeStagedKeyResultSubtask');
-                body.set('parent_token', data.parent_token);
-                body.set('token', token);
-            } else {
-                body.set('action', 'removeStagedKeyResult');
-                body.set('token', token);
+            if (data.atem_id) {
+                openKrDeleteModal(data);
+                return;
             }
-            fetch(CFG.apiUrl, { method: 'POST', body: body }).catch(function () {});
-            // Deleting a top-level Key Result also drops its staged subtasks client-side
-            // (the session entry disappears server-side along with them).
-            keyResults = keyResults.filter(function (r) { return r.token !== token && r.parent_token !== token; });
-            markChanged();
-            renderKeyResults();
+            confirmAction(
+                'Delete this ' + (data.parent_token ? 'Subtask' : 'Key Result') + '? This cannot be undone.',
+                function () { return performDeleteStagedKeyResult(token, data.parent_token); },
+                'Delete', 'btn-danger'
+            );
         }
+    });
+
+    function performDeleteStagedKeyResult(token, parentToken) {
+        var body = new URLSearchParams();
+        if (parentToken) {
+            body.set('action', 'removeStagedKeyResultSubtask');
+            body.set('parent_token', parentToken);
+            body.set('token', token);
+        } else {
+            body.set('action', 'removeStagedKeyResult');
+            body.set('token', token);
+        }
+        var p = fetch(CFG.apiUrl, { method: 'POST', body: body }).catch(function () {});
+        // Deleting a top-level Key Result also drops its staged subtasks client-side
+        // (the session entry disappears server-side along with them).
+        keyResults = keyResults.filter(function (r) { return r.token !== token && r.parent_token !== token; });
+        markChanged();
+        renderKeyResults();
+        return p;
+    }
+
+    function deleteAtemBridge(atemId, remark) {
+        return fetch(CFG.atemApiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'delete-atem', id: atemId, remarks: remark })
+        }).then(function (r) { return r.json(); });
+    }
+
+    // ---------------------------------------------------------------
+    // Delete a staged Key Result / Subtask when an ATEM is linked. Unlike
+    // edit.js there's no reverse-link to unlink here - create.php's Link
+    // ATEM never sets the ATEM's okr_id (no real card id exists yet), so
+    // "Delete Key Result Only" just drops the staged row same as any other
+    // delete. "Delete Key Result & ATEM" is still gated the same way -
+    // requester must be the ATEM's Issuer and it must still be Draft/Active.
+    // ---------------------------------------------------------------
+    var krDeleteMsgEl = document.getElementById('okr-kr-delete-modal-message');
+    var krDeleteAtemWrapEl = document.getElementById('okr-kr-delete-atem-wrap');
+    var krDeleteRemarkInput = document.getElementById('okr-kr-delete-remark');
+    var krDeleteAtemBtn = document.getElementById('okr-kr-delete-atem-btn');
+
+    function openKrDeleteModal(data) {
+        setError('okr-kr-delete-modal', '');
+        krDeleteRemarkInput.value = '';
+        krDeleteTarget = { token: data.token, parent_token: data.parent_token, atem_id: data.atem_id };
+
+        var atemTitle = data.atem_title || ('ATEM #' + data.atem_id);
+        var canDeleteAtem = !!(CFG.currentStaffId && data.atem_issuer_staff_id
+            && CFG.currentStaffId === data.atem_issuer_staff_id
+            && (data.atem_status_value === 'Active' || data.atem_status_value === 'Draft'));
+
+        document.getElementById('okr-kr-delete-modal-title').textContent =
+            'Delete this ' + (data.parent_token ? 'Subtask' : 'Key Result') + '?';
+
+        if (canDeleteAtem) {
+            krDeleteMsgEl.textContent = 'This is linked to ATEM "' + atemTitle + '". Choose whether to delete '
+                + 'the ATEM as well, or keep it and just unlink it from this OKR.';
+            krDeleteAtemWrapEl.style.display = '';
+            krDeleteAtemBtn.style.display = '';
+        } else {
+            var why = data.atem_issuer_staff_id !== CFG.currentStaffId
+                ? 'only the ATEM Issuer can delete it'
+                : 'it is no longer Draft or Active';
+            krDeleteMsgEl.textContent = 'This is linked to ATEM "' + atemTitle + '". The ATEM cannot be deleted '
+                + 'from this page because ' + why + ' - deleting this Key Result will unlink it instead; the '
+                + 'ATEM itself will remain.';
+            krDeleteAtemWrapEl.style.display = 'none';
+            krDeleteAtemBtn.style.display = 'none';
+        }
+
+        krDeleteModal.show();
+    }
+
+    var krDeleteOnlyBtn = document.getElementById('okr-kr-delete-only-btn');
+    krDeleteOnlyBtn.addEventListener('click', function () {
+        if (!krDeleteTarget) { return; }
+        var target = krDeleteTarget;
+        setButtonLoading(krDeleteOnlyBtn, 'Deleting...');
+        performDeleteStagedKeyResult(target.token, target.parent_token)
+            .then(function () {
+                restoreButton(krDeleteOnlyBtn);
+                krDeleteModal.hide();
+            });
+    });
+
+    krDeleteAtemBtn.addEventListener('click', function () {
+        if (!krDeleteTarget) { return; }
+        var target = krDeleteTarget;
+        var remark = krDeleteRemarkInput.value.trim();
+        if (!remark) {
+            setError('okr-kr-delete-modal', 'A reason is required to delete the ATEM.');
+            return;
+        }
+        setError('okr-kr-delete-modal', '');
+        setButtonLoading(krDeleteAtemBtn, 'Deleting...');
+        deleteAtemBridge(target.atem_id, remark)
+            .then(function (res) {
+                if (!res.success) {
+                    restoreButton(krDeleteAtemBtn);
+                    setError('okr-kr-delete-modal', res.message || 'Failed to delete ATEM.');
+                    return;
+                }
+                restoreButton(krDeleteAtemBtn);
+                krDeleteModal.hide();
+                performDeleteStagedKeyResult(target.token, target.parent_token);
+            })
+            .catch(function () {
+                restoreButton(krDeleteAtemBtn);
+                setError('okr-kr-delete-modal', 'Network error. Please try again.');
+            });
     });
 
     // ---------------------------------------------------------------
@@ -883,6 +869,7 @@
         var atemModalEl = document.getElementById('okr-kr-atem-modal');
         var atemModal = new bootstrap.Modal(atemModalEl);
         var atemTargetTokenInput = document.getElementById('okr-kr-atem-target-token');
+        var pendingAtemTitle = ''; // Action text of the Key Result the modal was opened against - prefills the Create New ATEM title
 
         function $(id) { return document.getElementById(id); }
 
@@ -897,11 +884,13 @@
             return fetch(CFG.apiUrl, { method: 'POST', body: body }).then(function (r) { return r.json(); });
         }
 
-        function applyLinkedAtem(atemId, title) {
+        function applyLinkedAtem(atemId, title, issuerStaffId, statusValue) {
             var data = keyResults.filter(function (r) { return r.token === atemTargetTokenInput.value; })[0];
             if (data) {
                 data.atem_id = atemId;
                 data.atem_title = title || ('ATEM #' + atemId);
+                data.atem_issuer_staff_id = (issuerStaffId != null) ? issuerStaffId : null;
+                data.atem_status_value = statusValue || null;
             }
             markChanged();
             renderKeyResults();
@@ -950,7 +939,7 @@
             items.forEach(function (a) {
                 var title = a.title || ('ATEM #' + a.id);
                 html += '<div class="okr-kr-atem-row" data-atem-id="' + a.id + '" data-atem-title="' + escapeHtml(title) + '">'
-                    + '<div class="okr-kr-atem-row-title">' + escapeHtml(title) + '</div>'
+                    + '<div class="okr-kr-atem-row-title">' + escapeHtml(title) + ' <span class="okr-kr-atem-row-id">#' + a.id + '</span></div>'
                     + '<div class="okr-kr-atem-row-meta">' + escapeHtml(atemStatusLabel(a)) + '</div>'
                     + '</div>';
             });
@@ -958,9 +947,10 @@
         }
 
         searchInput.addEventListener('input', function () {
-            var term = searchInput.value.toLowerCase();
+            var term = searchInput.value.toLowerCase().trim();
             var items = (atemListCache || []).filter(function (a) {
-                return String(a.title || '').toLowerCase().indexOf(term) !== -1;
+                return String(a.title || '').toLowerCase().indexOf(term) !== -1
+                    || String(a.id).indexOf(term) !== -1;
             });
             renderAtemOptions(items);
         });
@@ -970,19 +960,22 @@
             if (!row) { return; }
             var atemId = parseInt(row.getAttribute('data-atem-id'), 10);
             var title = row.getAttribute('data-atem-title');
+            var pickedItem = (atemListCache || []).filter(function (a) { return a.id === atemId; })[0];
             searchErrorEl.textContent = '';
-            linkAtemToTarget(atemId)
-                .then(function (res) {
-                    if (res.success) {
-                        applyLinkedAtem(atemId, title);
-                        atemModal.hide();
-                    } else {
-                        searchErrorEl.textContent = res.message || 'Failed to link ATEM.';
-                    }
-                })
-                .catch(function () {
-                    searchErrorEl.textContent = 'Network error. Please try again.';
-                });
+            confirmAction('Link "' + title + '" to this OKR? This ATEM will be tied to this OKR card.', function () {
+                return linkAtemToTarget(atemId)
+                    .then(function (res) {
+                        if (res.success) {
+                            applyLinkedAtem(atemId, title, pickedItem ? pickedItem.issuer_staff_id : null, pickedItem ? atemStatusLabel(pickedItem) : null);
+                            atemModal.hide();
+                        } else {
+                            searchErrorEl.textContent = res.message || 'Failed to link ATEM.';
+                        }
+                    })
+                    .catch(function () {
+                        searchErrorEl.textContent = 'Network error. Please try again.';
+                    });
+            }, 'Link ATEM', 'btn-primary');
         });
 
         // =============================================================
@@ -1057,26 +1050,6 @@
                     return;
                 }
             }
-        }
-
-        // Shared confirmation modal for Attachment / Reference Link removals.
-        var _confirmModal = null, _confirmCb = null;
-        function getConfirmModal() {
-            if (!_confirmModal && typeof bootstrap !== 'undefined') {
-                _confirmModal = new bootstrap.Modal($('atem-confirm-modal'));
-                $('atem-confirm-ok').addEventListener('click', function () {
-                    var cb = _confirmCb; _confirmCb = null;
-                    if (_confirmModal) { _confirmModal.hide(); }
-                    if (cb) { cb(); }
-                });
-            }
-            return _confirmModal;
-        }
-        function confirmAction(message, onConfirm) {
-            $('atem-confirm-message').textContent = message;
-            _confirmCb = onConfirm;
-            var m = getConfirmModal();
-            if (m) { m.show(); } else { onConfirm(); }
         }
 
         function setStaffType(type) {
@@ -2002,7 +1975,9 @@
                     return linkAtemToTarget(res.data.id).then(function (linkRes) {
                         if (btn) { btn.disabled = false; btn.textContent = 'Create & Link'; }
                         if (linkRes.success) {
-                            applyLinkedAtem(res.data.id, payload.title);
+                            // Freshly created via this flow, always mode: 'final' -> issuer
+                            // is the current user and status is Active (see collectPayload).
+                            applyLinkedAtem(res.data.id, payload.title, CFG.currentStaffId, 'Active');
                             atemModal.hide();
                         } else {
                             atemSetError('atem-save-error', linkRes.message || 'ATEM created but failed to link.');
@@ -2056,7 +2031,7 @@
             outletTags = [];
             areaManagerTags = [];
             arciScope = 'outlet';
-            $('atem-title').value = '';
+            $('atem-title').value = pendingAtemTitle || '';
             if (quillEditor) { quillEditor.setText(''); }
             $('tl-start').value = '';
             $('tl-end').value = '';
@@ -2201,9 +2176,10 @@
         }
 
         // ---- public: open the modal against a given Key Result/Subtask token ----
-        function open(token) {
+        function open(token, description) {
             initOnce();
             atemTargetTokenInput.value = token;
+            pendingAtemTitle = (description || '').slice(0, 255);
             searchInput.value = '';
             listEl.innerHTML = '<div class="okr-kr-empty">Loading...</div>';
             searchErrorEl.textContent = '';
@@ -2216,8 +2192,8 @@
         return { open: open };
     })();
 
-    function openAtemModal(token) {
-        AtemLink.open(token);
+    function openAtemModal(token, description) {
+        AtemLink.open(token, description);
     }
 
     renderKeyResults();
@@ -2330,6 +2306,25 @@
         dirty = true;
     }
 
+    // Any Key Result/Subtask linked to an ATEM while still staging (no real
+    // card id existed yet, so the reverse okr_id link on the ATEM side was
+    // never set - see AtemLink's applyLinkedAtem) gets that link backfilled
+    // here once createCard hands back a real id. Best-effort: a failure here
+    // doesn't block navigation, same tolerance as the "ATEM created but
+    // failed to link" case elsewhere - the KR<->ATEM link itself (atem_id)
+    // is already durable via okrFinalizeStagedKeyResults regardless.
+    function linkStagedAtemsToNewCard(newCardId) {
+        var targets = keyResults.filter(function (r) { return r.atem_id; });
+        if (targets.length === 0) { return Promise.resolve(); }
+        return Promise.all(targets.map(function (r) {
+            return fetch(CFG.atemApiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'link-atem-okr', id: r.atem_id, okr_id: newCardId })
+            }).then(function (resp) { return resp.json(); }).catch(function () { return { success: false }; });
+        }));
+    }
+
     function saveOkr(mode, navUrl) {
         if (!validate(mode)) { scrollToFirstError(); return; }
         setError('okr-save', '');
@@ -2359,7 +2354,9 @@
             .then(function (res) {
                 if (res.success) {
                     leaving = true;
-                    window.location.href = navUrl || ('okr/view.php?id=' + res.id);
+                    linkStagedAtemsToNewCard(res.id).then(function () {
+                        window.location.href = navUrl || ('okr/view.php?id=' + res.id);
+                    });
                 } else {
                     setError('okr-save', res.message || 'Failed to save OKR.');
                     scrollToFirstError();

@@ -465,7 +465,7 @@ $okr_config = [
                 <input type="hidden" id="okr-kr-token" value="">
                 <input type="hidden" id="okr-kr-parent-token" value="">
                 <div class="mb-3">
-                    <label for="okr-kr-desc" class="form-label">Action Details <span class="okr-req">*</span></label>
+                    <label for="okr-kr-desc" class="form-label">Action <span class="okr-req">*</span></label>
                     <textarea class="form-control" id="okr-kr-desc" rows="3"></textarea>
                 </div>
                 <div class="row g-2 mb-2">
@@ -500,6 +500,34 @@ $okr_config = [
     </div>
 </div>
 
+<!-- Delete Key Result / Subtask confirmation - offers to unlink or delete the
+     ATEM too when one is linked (only ever shown for that case; a plain
+     delete with no ATEM link still uses a simple confirm()). -->
+<div class="modal fade" id="okr-kr-delete-modal" tabindex="-1" aria-labelledby="okr-kr-delete-modal-title"
+    aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="okr-kr-delete-modal-title">Delete this Key Result?</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2" id="okr-kr-delete-modal-message"></p>
+                <div id="okr-kr-delete-atem-wrap" style="display:none;">
+                    <label for="okr-kr-delete-remark" class="form-label">Reason for deleting the ATEM <span class="okr-req">*</span></label>
+                    <textarea class="form-control" id="okr-kr-delete-remark" rows="2"></textarea>
+                </div>
+                <div class="okr-form-error" id="okr-kr-delete-modal-error"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="okr-kr-delete-only-btn">Delete Key Result &amp; Unlink ATEM</button>
+                <button type="button" class="btn btn-danger" id="okr-kr-delete-atem-btn" style="display:none;">Delete Key Result &amp; ATEM</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Link ATEM modal: Search Existing ATEM / Create New ATEM (mirrors atem/create.php's own fields) -->
 <div class="modal fade" id="okr-kr-atem-modal" tabindex="-1" aria-labelledby="okr-kr-atem-modal-title"
     aria-hidden="true">
@@ -515,7 +543,7 @@ $okr_config = [
                 <!-- Search Existing ATEM -->
                 <div class="mb-2">
                     <label for="okr-kr-atem-search" class="form-label">Search ATEM cards</label>
-                    <input type="text" class="form-control" id="okr-kr-atem-search" placeholder="Search by title...">
+                    <input type="text" class="form-control" id="okr-kr-atem-search" placeholder="Search by title or ATEM ID...">
                 </div>
                 <div id="okr-kr-atem-list" class="okr-kr-atem-list"></div>
                 <div class="okr-form-error" id="okr-kr-atem-modal-error"></div>
