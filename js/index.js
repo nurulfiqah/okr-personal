@@ -160,9 +160,13 @@
                         '<td style="font-size:12px;color:#dc3545;text-align:left;' + dClickable + '"' + (dId ? ' data-nav-dept="' + dId + '" data-nav-status="Failed"' : '') + '>' + dFail + '</td>' +
                         '<td style="font-size:12px;text-align:left;">' + dFailRate + '</td>' +
                         '<td style="font-size:12px;color:#e11d48;text-align:left;' + dClickable + '"' + (dId ? ' data-nav-dept="' + dId + '" data-nav-status="Suspended"' : '') + '>' + (dept.suspended || 0) + '</td>' +
-                        // Force Terminate isn't a real status (it sets Failed +
-                        // a flag - see backend.php), so this column isn't a
-                        // clickable list.php status-filter link like the others.
+                        // Not a clickable status-filter link like the others:
+                        // this count spans two shapes (see okrIsForceTerminated
+                        // in lib.php) - cards actually stored as the Force
+                        // Terminated status, and older cards force-terminated
+                        // before that status existed (still plain Failed + the
+                        // legacy force_terminated flag). A single-status
+                        // list.php filter can't represent both at once.
                         '<td style="font-size:12px;color:#6610f2;text-align:left;">' + (dept.force_terminated || 0) + '</td>' +
                         '</tr>';
                 }

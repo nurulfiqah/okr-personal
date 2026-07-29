@@ -15,11 +15,12 @@
     // same as create.php.
     var dirty = false;
     var leaving = false;
-    // Chat is its own independent, immediately-saved action (not part of the
-    // OKR form's fields), so typing/sending a message must not trip the
-    // "unsaved changes" leave-guard below.
+    // Chat and CEO Action/Appeal Suspension are their own independent,
+    // immediately-saved actions (not part of the OKR form's fields), so
+    // typing in their textareas must not trip the "unsaved changes"
+    // leave-guard below.
     function markChanged(e) {
-        if (e && e.target && e.target.closest && e.target.closest('#okr-chat-card, #okr-kr-atem-modal')) { return; }
+        if (e && e.target && e.target.closest && e.target.closest('#okr-chat-card, #okr-kr-atem-modal, #okr-ceo-action-row')) { return; }
         dirty = true;
     }
     document.addEventListener('input', markChanged, true);
@@ -2437,18 +2438,30 @@
         }
 
         // Ticking Extended + setting an Extended Date without also updating
-        // Status leaves an inconsistent record (e.g. still "Active") - once
-        // extended, Status must reflect that as Extended, or an immediate
-        // resolution (Completed/Failed - see okrPostExtensionResolvableStatuses
-        // in lib.php, mirrored here). Applies to everyone, including admins -
-        // admins are only exempt from the *dropdown filtering* elsewhere on
-        // this page (which statuses are selectable once already extended),
-        // not from this same-session sanity check that Status was actually
-        // updated to match the Extended tick they just made.
-        if (extendedCheckbox.checked && extendedDateInput.value
-            && ['Extended', 'Completed', 'Failed'].indexOf(statusSelect.value) === -1) {
-            setError('okr-status', 'You\'ve set an Extended Date - please change Status to Extended (or Completed/Failed if this OKR is already resolved).');
-            ok = false;
+        // Status leaves an inconsistent record (e.g. still "Active"). Applies
+        // to everyone, including admins - there is no admin bypass on this
+        // rule (nor on the dropdown filtering below it once already extended).
+        //
+        // Two different allowed sets, matching okrPostExtensionResolvableStatuses
+        // in lib.php:
+        // - card.extended was already true when this page loaded (a
+        //   subsequent edit of an already-extended card): Status must
+        //   actually resolve it now - Completed (stored as Completed with
+        //   Extension) or Failed only. Staying on "Extended" is no longer
+        //   allowed past the first save.
+        // - card.extended was false (the user is extending for the first
+        //   time, this session): Status may still be left as "Extended" (an
+        //   ongoing, not-yet-resolved state), or resolved immediately as
+        //   Completed/Failed.
+        if (extendedCheckbox.checked && extendedDateInput.value) {
+            var allowedOnceExtended = card.extended ? ['Completed', 'Failed'] : ['Extended', 'Completed', 'Failed'];
+            if (allowedOnceExtended.indexOf(statusSelect.value) === -1) {
+                var msg = card.extended
+                    ? 'This OKR has already been extended - please change Status to Completed (with Extension) or Failed.'
+                    : 'You\'ve set an Extended Date - please change Status to Extended (or Completed/Failed if this OKR is already resolved).';
+                setError('okr-status', msg);
+                ok = false;
+            }
         }
 
         if (ownerState.length === 0) { setError('okr-owner', 'An owner is required.'); ok = false; }
@@ -2510,6 +2523,177 @@
         }
         submitSave();
     });
+
+    // ---------------------------------------------------------------
+    // CEO Action (Suspend/Unsuspend/Force Terminate) + Appeal Suspension -
+    // same markup/actions as view.php's, so the CEO/admin doesn't have to
+    // leave the edit form just to suspend an OKR. Unsuspend/Force-Terminate-
+    // while-Suspended and appeal-submission never actually render here
+    // (edit.php redirects away once a card is Suspended/Failed), but this
+    // mirrors view.js's handlers exactly so both stay in sync.
+    // ---------------------------------------------------------------
+    var suspendBtn = document.getElementById('okr-suspend-btn');
+    var suspendReasonWrap = document.getElementById('okr-suspend-reason-wrap');
+    var suspendReasonInput = document.getElementById('okr-suspend-reason');
+    var suspendConfirmBtn = document.getElementById('okr-suspend-confirm-btn');
+    var suspendModalEl = document.getElementById('okr-suspend-modal');
+    var suspendModal = suspendModalEl ? new bootstrap.Modal(suspendModalEl) : null;
+    var suspendFinalBtn = document.getElementById('okr-suspend-final-btn');
+
+    if (suspendBtn && suspendReasonWrap) {
+        suspendBtn.addEventListener('click', function () {
+            setError('okr-suspend', '');
+            suspendReasonWrap.style.display = 'block';
+            suspendBtn.style.display = 'none';
+        });
+    }
+
+    if (suspendConfirmBtn && suspendModal) {
+        suspendConfirmBtn.addEventListener('click', function () {
+            setError('okr-suspend-reason', '');
+            var reason = suspendReasonInput.value.trim();
+            if (!reason) {
+                setError('okr-suspend-reason', 'A reason is required to suspend an OKR.');
+                return;
+            }
+            suspendModal.show();
+        });
+    }
+
+    if (suspendFinalBtn) {
+        suspendFinalBtn.addEventListener('click', function () {
+            var reason = suspendReasonInput.value.trim();
+
+            var payload = new URLSearchParams();
+            payload.set('action', 'suspendCard');
+            payload.set('id', card.id);
+            payload.set('reason', reason);
+
+            fetch(CFG.apiUrl, { method: 'POST', body: payload })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    if (res.success) {
+                        window.location.reload();
+                    } else {
+                        suspendModal.hide();
+                        setError('okr-suspend-reason', res.message || 'Failed to suspend OKR.');
+                    }
+                })
+                .catch(function () {
+                    suspendModal.hide();
+                    setError('okr-suspend-reason', 'Network error. Please try again.');
+                });
+        });
+    }
+
+    var unsuspendBtn = document.getElementById('okr-unsuspend-btn');
+    if (unsuspendBtn) {
+        unsuspendBtn.addEventListener('click', function () {
+            setError('okr-suspend', '');
+
+            var payload = new URLSearchParams();
+            payload.set('action', 'unsuspendCard');
+            payload.set('id', card.id);
+
+            fetch(CFG.apiUrl, { method: 'POST', body: payload })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    if (res.success) {
+                        window.location.reload();
+                    } else {
+                        setError('okr-suspend', res.message || 'Failed to unsuspend OKR.');
+                    }
+                })
+                .catch(function () {
+                    setError('okr-suspend', 'Network error. Please try again.');
+                });
+        });
+    }
+
+    var forceTerminateBtn = document.getElementById('okr-force-terminate-btn');
+    var forceTerminateWrap = document.getElementById('okr-force-terminate-wrap');
+    var forceTerminateRemarkInput = document.getElementById('okr-force-terminate-remark');
+    var forceTerminateConfirmBtn = document.getElementById('okr-force-terminate-confirm-btn');
+
+    if (forceTerminateBtn && forceTerminateWrap) {
+        forceTerminateBtn.addEventListener('click', function () {
+            setError('okr-suspend', '');
+            forceTerminateWrap.style.display = 'block';
+            forceTerminateBtn.style.display = 'none';
+        });
+    }
+
+    if (forceTerminateConfirmBtn) {
+        forceTerminateConfirmBtn.addEventListener('click', function () {
+            setError('okr-force-terminate-remark', '');
+            var remark = forceTerminateRemarkInput.value.trim();
+            if (!remark) {
+                setError('okr-force-terminate-remark', 'A remark is required to force terminate an OKR.');
+                return;
+            }
+            if (!confirm('Force terminate this OKR? This cannot be undone.')) { return; }
+
+            var payload = new URLSearchParams();
+            payload.set('action', 'forceTerminateCard');
+            payload.set('id', card.id);
+            payload.set('remark', remark);
+
+            fetch(CFG.apiUrl, { method: 'POST', body: payload })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    if (res.success) {
+                        window.location.reload();
+                    } else {
+                        setError('okr-force-terminate-remark', res.message || 'Failed to force terminate OKR.');
+                    }
+                })
+                .catch(function () {
+                    setError('okr-force-terminate-remark', 'Network error. Please try again.');
+                });
+        });
+    }
+
+    var appealBtn = document.getElementById('okr-appeal-btn');
+    var appealWrap = document.getElementById('okr-appeal-wrap');
+    var appealJustificationInput = document.getElementById('okr-appeal-justification');
+    var appealConfirmBtn = document.getElementById('okr-appeal-confirm-btn');
+
+    if (appealBtn && appealWrap) {
+        appealBtn.addEventListener('click', function () {
+            setError('okr-appeal', '');
+            appealWrap.style.display = 'block';
+            appealBtn.style.display = 'none';
+        });
+    }
+
+    if (appealConfirmBtn) {
+        appealConfirmBtn.addEventListener('click', function () {
+            setError('okr-appeal-justification', '');
+            var justification = appealJustificationInput.value.trim();
+            if (!justification) {
+                setError('okr-appeal-justification', 'A justification is required to appeal.');
+                return;
+            }
+
+            var payload = new URLSearchParams();
+            payload.set('action', 'appealSuspension');
+            payload.set('id', card.id);
+            payload.set('justification', justification);
+
+            fetch(CFG.apiUrl, { method: 'POST', body: payload })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    if (res.success) {
+                        window.location.reload();
+                    } else {
+                        setError('okr-appeal-justification', res.message || 'Failed to submit appeal.');
+                    }
+                })
+                .catch(function () {
+                    setError('okr-appeal-justification', 'Network error. Please try again.');
+                });
+        });
+    }
 
     // ---------------------------------------------------------------
     // Chat Box - per-card discussion thread, modeled after ATEM's Chat Box.

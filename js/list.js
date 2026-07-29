@@ -262,6 +262,7 @@
 
     function canEdit(card) {
         return !card.deleted_at && card.result_status !== 'Suspended' && card.result_status !== 'Failed'
+            && card.result_status !== 'Force Terminated'
             && (CFG.requesterIsAdmin || card.issuer_staff_id === CFG.requesterId);
     }
 

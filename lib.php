@@ -9,7 +9,7 @@
 // admin lookup tables), so the module must not hardcode status names except
 // where the identity of a *specific* status drives business logic that isn't
 // expressible as a table scan (see okrFetchStatuses()/okrTimelineAssignableStatuses()
-// below for the DB-driven alternative used everywhere else). These five are
+// below for the DB-driven alternative used everywhere else). These six are
 // that irreducible set:
 // - ACTIVE/DRAFT: the two default statuses createCard resolves to.
 // - SUSPENDED: only ever set via the dedicated CEO Suspend/Unsuspend actions,
@@ -18,11 +18,21 @@
 //   already extended is stored as the more specific Completed with Extension
 //   status instead (see updateCard in backend.php) - a business rule, not a
 //   fact read off the table.
+// - FORCE_TERMINATED: only ever set via the dedicated CEO Force Terminate
+//   action (backend.php's forceTerminateCard), never directly assignable on
+//   the Timeline card - same pattern as Suspended. Distinct from plain
+//   Failed (an OKR that ran its course and wasn't delivered) - Force
+//   Terminate is the CEO cutting an OKR short. okr_cards.force_terminated
+//   (a legacy boolean column) still exists and is still written alongside
+//   this status for continuity with cards force-terminated before this
+//   status existed (which are stored as plain Failed + the flag) - see
+//   forceTerminateCard's comment in backend.php.
 define('OKR_STATUS_ACTIVE', 'Active');
 define('OKR_STATUS_DRAFT', 'Draft');
 define('OKR_STATUS_COMPLETED', 'Completed');
 define('OKR_STATUS_SUSPENDED', 'Suspended');
 define('OKR_STATUS_COMPLETED_EXTENSION', 'Completed with Extension');
+define('OKR_STATUS_FORCE_TERMINATED', 'Force Terminated');
 
 require_once __DIR__ . '/nas_config.php';
 
@@ -115,24 +125,42 @@ function okrFetchStatuses($conn, $include_recycled = true) {
 
 // Statuses settable via the Timeline card's Status field: every non-recycled
 // status except the ones that are only ever reached indirectly (Suspended via
-// the dedicated CEO action, Completed with Extension derived from Completed +
-// extended - see updateCard) or represented by a flag column instead of ever
-// being written to result_status (Deleted -> okr_cards.deleted_at, Force
-// Terminated -> okr_cards.force_terminated; both exist in okr_statuses only
-// for id/value parity with atem_statuses). Reads live from okr_statuses so an
-// admin renaming/adding/soft-deleting a status is picked up with no code
-// change.
+// the dedicated CEO action, Force Terminated via the dedicated CEO action,
+// Completed with Extension derived from Completed + extended - see
+// updateCard) or represented by a flag column instead of ever being written
+// to result_status via the Timeline field (Deleted -> okr_cards.deleted_at;
+// exists in okr_statuses only for id/value parity with atem_statuses). Reads
+// live from okr_statuses so an admin renaming/adding/soft-deleting a status
+// is picked up with no code change.
 function okrTimelineAssignableStatuses($conn) {
     $values = array_column(okrFetchStatuses($conn, false), 'value');
-    return array_values(array_diff($values, [OKR_STATUS_SUSPENDED, OKR_STATUS_COMPLETED_EXTENSION, 'Deleted', 'Force Terminated']));
+    return array_values(array_diff($values, [OKR_STATUS_SUSPENDED, OKR_STATUS_COMPLETED_EXTENSION, OKR_STATUS_FORCE_TERMINATED, 'Deleted']));
 }
 
-// The only statuses an extended (and not admin) OKR can still resolve to -
-// a business rule (see updateCard's once-extended restriction), not
-// something derivable from the table, so shared here rather than
-// re-declared independently by backend.php and edit.php.
+// The only statuses an already-extended OKR can still resolve to on a
+// subsequent edit (i.e. $card['extended'] was already true before this edit
+// session started - see edit.php's dropdown filtering and updateCard's
+// validation) - a business rule, not something derivable from the table, so
+// shared here rather than re-declared independently by backend.php and
+// edit.php. Deliberately does NOT include 'Extended' itself: once a card has
+// already been extended, resaving it with Status left on Extended is no
+// longer allowed - every edit from that point on must actually resolve it as
+// Completed (stored as Completed with Extension - see updateCard) or Failed.
+// Applies to everyone, admins included - unlike some other Timeline
+// restrictions, there is no admin bypass here.
 function okrPostExtensionResolvableStatuses() {
-    return [OKR_STATUS_COMPLETED, 'Extended', 'Failed'];
+    return [OKR_STATUS_COMPLETED, 'Failed'];
+}
+
+// True if a card is force-terminated, covering both shapes: cards
+// force-terminated since OKR_STATUS_FORCE_TERMINATED was introduced (status
+// itself is Force Terminated) and older cards force-terminated before then
+// (status is plain Failed, distinguished only by the legacy
+// okr_cards.force_terminated flag). $status is the card's result_status
+// value; $force_terminated_flag is the raw okr_cards.force_terminated column
+// value (may be a "0"/"1" string straight from mysqli, hence the loose check).
+function okrIsForceTerminated($status, $force_terminated_flag) {
+    return $status === OKR_STATUS_FORCE_TERMINATED || !empty($force_terminated_flag);
 }
 
 // Every "done" status value that counts as Completed for gating purposes
@@ -818,6 +846,7 @@ function okrPillClass($status) {
         'Extended'                   => 'okr-pill-extend',
         'Suspended'                  => 'okr-pill-suspended',
         'Failed'                     => 'okr-pill-fail',
+        'Force Terminated'           => 'okr-pill-fail',
     ];
     return isset($map[$status]) ? $map[$status] : 'okr-pill-active';
 }

@@ -46,14 +46,20 @@ CREATE TABLE `okr_statuses` (
 -- unused in atem_statuses too). Only id/value are mirrored from
 -- atem_statuses; description/pays_incentive/sort_order/timestamps keep this
 -- table's own convention rather than copying atem_statuses' columns (which
--- don't even exist here - system_action/incentive_treatment). 'Deleted' and
--- 'Force Terminated' are added for id/value parity even though OKR
--- implements both concepts as flag columns instead (okr_cards.deleted_at,
--- okr_cards.force_terminated - see backend.php's deleteCard/
--- forceTerminateCard) - result_status is never actually set to either value
--- by app code. okrTimelineAssignableStatuses() in lib.php excludes both from
--- the Timeline Status dropdown for that reason, same as Suspended/Completed
--- with Extension.
+-- don't even exist here - system_action/incentive_treatment). 'Deleted' is
+-- added for id/value parity even though OKR implements that concept as a
+-- flag column instead (okr_cards.deleted_at - see backend.php's
+-- deleteCard) - result_status is never actually set to it by app code.
+-- 'Force Terminated' WAS the same kind of parity-only row, but is now a
+-- real, directly-written status (see OKR_STATUS_FORCE_TERMINATED in
+-- lib.php, and backend.php's forceTerminateCard) - okr_cards.force_terminated
+-- still exists too, stamped alongside this status for continuity with older
+-- cards force-terminated before it existed (those are stored as plain
+-- Failed + the flag instead). okrTimelineAssignableStatuses() in lib.php
+-- excludes both 'Deleted' and 'Force Terminated' from the Timeline Status
+-- dropdown - Deleted because it's never a real value, Force Terminated
+-- because it's only ever reached via the dedicated action, same as
+-- Suspended/Completed with Extension.
 INSERT INTO `okr_statuses` (`id`, `value`, `description`, `pays_incentive`, `sort_order`, `created_at`, `updated_at`, `recycle`) VALUES
 (1, 'Draft', 'Not yet started.', 0, 0, '2026-07-07 11:42:50', '2026-07-07 11:42:50', 0),
 (2, 'Active', 'Not yet closed.', 0, 1, '2026-07-06 12:32:50', '2026-07-06 12:32:50', 0),

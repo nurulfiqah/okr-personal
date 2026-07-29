@@ -24,11 +24,15 @@ if (!$result || mysqli_num_rows($result) === 0) {
 $row  = mysqli_fetch_assoc($result);
 $card = okrFormatCard($row);
 
-// Failed is a terminal outcome (including force-terminated cards, which are
-// just Failed + a flag) - there's nothing left to rate once an OKR is Failed,
-// and nothing left to Force Terminate (it's already the same end state), but
-// the CEO can still Suspend a Failed OKR to reconsider it (see below).
-$is_terminal_failed = ($card['result_status'] === 'Failed');
+// Failed and Force Terminated are both terminal outcomes - there's nothing
+// left to rate once an OKR has resolved either way, and nothing left to
+// Force Terminate (it's already the same or a more final end state), but the
+// CEO can still Suspend either to reconsider it (see below). Force
+// Terminated is its own status now (see "Retired incentive columns"-style
+// note on OKR_STATUS_FORCE_TERMINATED in lib.php), but older force-
+// terminated cards are still stored as plain Failed + the legacy
+// force_terminated flag - both shapes count as terminal here.
+$is_terminal_failed = in_array($card['result_status'], ['Failed', OKR_STATUS_FORCE_TERMINATED], true);
 $is_ceo_or_admin = ($okr_is_admin || $okr_permission === 5);
 // The CEO can suspend an OKR in any status except Draft (see backend.php's
 // suspendCard, which enforces the same rule server-side) - a Draft isn't a
@@ -54,10 +58,10 @@ $can_appeal = ($card['issuer_staff_id'] === (int)$id_user
     && $card['result_status'] === OKR_STATUS_SUSPENDED && empty($card['appealed_at']));
 
 // Same edit gate as edit.php itself (issuer or admin, and not Suspended/
-// Failed) - shown here so the user doesn't have to go back to list.php just
-// to reach the Edit icon there.
+// Failed/Force Terminated) - shown here so the user doesn't have to go back
+// to list.php just to reach the Edit icon there.
 $can_edit_card = ($okr_is_admin || $card['issuer_staff_id'] === (int)$id_user)
-    && $card['result_status'] !== OKR_STATUS_SUSPENDED && $card['result_status'] !== 'Failed';
+    && $card['result_status'] !== OKR_STATUS_SUSPENDED && !$is_terminal_failed;
 
 // Days left before an unattended suspended OKR is auto-terminated (30 days
 // from the suspension timestamp) - shown as a countdown on the suspend
