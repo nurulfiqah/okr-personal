@@ -2436,6 +2436,21 @@
             ok = false;
         }
 
+        // Ticking Extended + setting an Extended Date without also updating
+        // Status leaves an inconsistent record (e.g. still "Active") - once
+        // extended, Status must reflect that as Extended, or an immediate
+        // resolution (Completed/Failed - see okrPostExtensionResolvableStatuses
+        // in lib.php, mirrored here). Applies to everyone, including admins -
+        // admins are only exempt from the *dropdown filtering* elsewhere on
+        // this page (which statuses are selectable once already extended),
+        // not from this same-session sanity check that Status was actually
+        // updated to match the Extended tick they just made.
+        if (extendedCheckbox.checked && extendedDateInput.value
+            && ['Extended', 'Completed', 'Failed'].indexOf(statusSelect.value) === -1) {
+            setError('okr-status', 'You\'ve set an Extended Date - please change Status to Extended (or Completed/Failed if this OKR is already resolved).');
+            ok = false;
+        }
+
         if (ownerState.length === 0) { setError('okr-owner', 'An owner is required.'); ok = false; }
 
         refreshKrDateBounds();

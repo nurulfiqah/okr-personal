@@ -25,18 +25,27 @@ $row  = mysqli_fetch_assoc($result);
 $card = okrFormatCard($row);
 
 // Failed is a terminal outcome (including force-terminated cards, which are
-// just Failed + a flag) - once an OKR is Failed there's nothing left for the
-// CEO to suspend (it's already resolved) and nothing left to rate.
+// just Failed + a flag) - there's nothing left to rate once an OKR is Failed,
+// and nothing left to Force Terminate (it's already the same end state), but
+// the CEO can still Suspend a Failed OKR to reconsider it (see below).
 $is_terminal_failed = ($card['result_status'] === 'Failed');
-$can_suspend = ($okr_is_admin || $okr_permission === 5) && !$is_terminal_failed;
-// Suspend/Rate are post-completion review actions - only available once the
-// OKR has actually resolved as Completed in some form (see backend.php's
-// suspendCard/rateCard, which enforce the same rule server-side).
+$is_ceo_or_admin = ($okr_is_admin || $okr_permission === 5);
+// The CEO can suspend an OKR in any status except Draft (see backend.php's
+// suspendCard, which enforces the same rule server-side) - a Draft isn't a
+// real, issued OKR yet, so there's nothing to suspend. Still subject to the
+// one-suspend-per-lifetime rule below ($already_suspended_once).
+$can_suspend = $is_ceo_or_admin && $card['result_status'] !== OKR_STATUS_DRAFT;
 $is_completed_status = in_array($card['result_status'], okrCompletedStatusValues(), true);
-$can_initiate_suspend = $can_suspend && $is_completed_status;
-$can_rate    = ($okr_is_admin || $okr_permission === 5) && !$is_terminal_failed && $is_completed_status;
-// Force Terminate uses the same gate as Suspend/Unsuspend (grade 5/admin).
-$can_force_terminate = $can_suspend;
+$can_initiate_suspend = $can_suspend;
+// Rate is still a post-completion review action - only available once the
+// OKR has actually resolved as Completed in some form (see backend.php's
+// rateCard, which enforces the same rule server-side).
+$can_rate    = $is_ceo_or_admin && !$is_terminal_failed && $is_completed_status;
+// Force Terminate keeps its own narrower gate (grade 5/admin, not Failed) -
+// unlike Suspend above, it isn't opened up to every status; it's only ever
+// reachable while Suspended, or after a Completed OKR has already used its
+// one lifetime Suspend (see backend.php's forceTerminateCard).
+$can_force_terminate = $is_ceo_or_admin && !$is_terminal_failed;
 // Only the issuer can appeal, only while Suspended, only once per
 // suspension cycle (appealed_at is cleared on unsuspend/force-terminate).
 // Shown even when the issuer also happens to be admin/grade-5 (they still
@@ -382,7 +391,7 @@ $okr_view_config = [
             <p class="okr-card-hint">This OKR has already been suspended once and cannot be suspended again. Force
                 Terminate will be available once it's marked Completed.</p>
             <?php elseif (!$can_initiate_suspend): ?>
-            <p class="okr-card-hint">Suspend is only available once this OKR has been marked Completed.</p>
+            <p class="okr-card-hint">Suspend is not available while this OKR is still a Draft.</p>
             <?php else: ?>
             <p class="okr-card-hint">Only the CEO can suspend an OKR.</p>
             <button type="button" class="btn btn-outline-secondary btn-lg" id="okr-suspend-btn">Suspend

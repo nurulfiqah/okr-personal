@@ -173,13 +173,14 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
         }
     }
 
-    // Top 10 offenders by (suspended + force_terminated) count, most first -
-    // sorted server-side so index.js just renders the array as-is.
+    // Every offender by (suspended + force_terminated) count, most first -
+    // sorted server-side so index.js just renders the array as-is. Not
+    // capped (the list can grow large) - index.php scrolls the table body
+    // instead of truncating it.
     $by_staff_suspend = array_values($by_staff);
     usort($by_staff_suspend, function ($a, $b) {
         return ($b['suspended'] + $b['force_terminated']) - ($a['suspended'] + $a['force_terminated']);
     });
-    $by_staff_suspend = array_slice($by_staff_suspend, 0, 10);
 
     echo json_encode([
         'success' => true,
@@ -1334,12 +1335,13 @@ if ($action === 'suspendCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     $card = mysqli_fetch_assoc($check);
-    // Suspend is a post-completion review action (the CEO reconsidering an
-    // OKR that's already been marked Completed/Completed with Excellence/
-    // Completed with Extension), not a mid-flight pause - not selectable
-    // while the OKR is still Draft/Active/Extended or already Failed.
-    if (!in_array($card['status_value'], okrCompletedStatusValues(), true)) {
-        echo json_encode(['success' => false, 'message' => 'Only a Completed OKR can be suspended.']);
+    // The CEO can suspend an OKR in any status except Draft - a Draft isn't
+    // a real, issued OKR yet, so there's nothing to suspend. (A currently-
+    // Suspended card is also implicitly excluded here, since it would
+    // already have a 'suspended' audit log entry and get caught by the
+    // one-suspend-per-lifetime check below.)
+    if ($card['status_value'] === OKR_STATUS_DRAFT) {
+        echo json_encode(['success' => false, 'message' => 'A Draft OKR cannot be suspended.']);
         exit;
     }
 

@@ -169,8 +169,32 @@ window.OKR_DASH = <?php echo json_encode([
     </div>
 </div>
 
-<!-- Bar chart + Department Breakdown -->
+<!-- Suspended & Force Terminated - Top Staff -->
 <div class="row g-3">
+    <div class="col-12">
+        <div class="okr-card">
+            <h6 class="okr-card-title mb-0">Suspended &amp; Force Terminated (Top Staff)</h6>
+            <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Issuers with the most suspended/force-terminated OKRs, in range - most first</div>
+            <div class="table-responsive okr-dash-scroll-table">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th style="font-size:12px;text-align:left;">Staff (Issuer)</th>
+                            <th style="font-size:12px;text-align:left;">Suspended</th>
+                            <th style="font-size:12px;text-align:left;">Force Terminated</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dash-staff-suspend-body">
+                        <tr><td colspan="3" class="text-muted" style="font-size:12px;">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bar chart + Department Breakdown -->
+<div class="row g-3 mt-0">
     <div class="col-lg-5">
         <div class="okr-card h-100">
             <h6 class="okr-card-title mb-0">Closure &amp; Failure Analysis</h6>
@@ -228,30 +252,6 @@ window.OKR_DASH = <?php echo json_encode([
                     </thead>
                     <tbody id="dash-dept-body">
                         <tr><td colspan="8" class="text-muted" style="font-size:12px;">Loading...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Suspended & Force Terminated - Top Staff -->
-<div class="row g-3 mt-0">
-    <div class="col-12">
-        <div class="okr-card">
-            <h6 class="okr-card-title mb-0">Suspended &amp; Force Terminated (Top Staff)</h6>
-            <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Issuers with the most suspended/force-terminated OKRs, in range</div>
-            <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0">
-                    <thead>
-                        <tr>
-                            <th style="font-size:12px;text-align:left;">Staff (Issuer)</th>
-                            <th style="font-size:12px;text-align:left;">Suspended</th>
-                            <th style="font-size:12px;text-align:left;">Force Terminated</th>
-                        </tr>
-                    </thead>
-                    <tbody id="dash-staff-suspend-body">
-                        <tr><td colspan="3" class="text-muted" style="font-size:12px;">Loading...</td></tr>
                     </tbody>
                 </table>
             </div>
