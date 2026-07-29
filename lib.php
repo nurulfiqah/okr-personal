@@ -114,13 +114,17 @@ function okrFetchStatuses($conn, $include_recycled = true) {
 }
 
 // Statuses settable via the Timeline card's Status field: every non-recycled
-// status except the two that are only ever reached indirectly (Suspended via
+// status except the ones that are only ever reached indirectly (Suspended via
 // the dedicated CEO action, Completed with Extension derived from Completed +
-// extended - see updateCard). Reads live from okr_statuses so an admin
-// renaming/adding/soft-deleting a status is picked up with no code change.
+// extended - see updateCard) or represented by a flag column instead of ever
+// being written to result_status (Deleted -> okr_cards.deleted_at, Force
+// Terminated -> okr_cards.force_terminated; both exist in okr_statuses only
+// for id/value parity with atem_statuses). Reads live from okr_statuses so an
+// admin renaming/adding/soft-deleting a status is picked up with no code
+// change.
 function okrTimelineAssignableStatuses($conn) {
     $values = array_column(okrFetchStatuses($conn, false), 'value');
-    return array_values(array_diff($values, [OKR_STATUS_SUSPENDED, OKR_STATUS_COMPLETED_EXTENSION]));
+    return array_values(array_diff($values, [OKR_STATUS_SUSPENDED, OKR_STATUS_COMPLETED_EXTENSION, 'Deleted', 'Force Terminated']));
 }
 
 // The only statuses an extended (and not admin) OKR can still resolve to -

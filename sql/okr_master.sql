@@ -204,9 +204,18 @@ CREATE TABLE `okr_statuses` (
 -- Dumping data for table `okr_statuses`
 --
 
--- ids match atem_statuses' ids for the same status (e.g. Completed = 3 in both
--- tables); id 7 (atem_statuses' 'Deleted') and id 9 (unused in atem_statuses)
--- are intentionally skipped here since okr_statuses has no 'Deleted' status.
+-- ids and values match atem_statuses 100% (id 9 is skipped in both tables -
+-- unused in atem_statuses too). Only id/value are mirrored from
+-- atem_statuses; description/pays_incentive/sort_order/timestamps keep this
+-- table's own convention rather than copying atem_statuses' columns (which
+-- don't even exist here - system_action/incentive_treatment). 'Deleted' and
+-- 'Force Terminated' are added for id/value parity even though OKR
+-- implements both concepts as flag columns instead (okr_cards.deleted_at,
+-- okr_cards.force_terminated - see backend.php's deleteCard/
+-- forceTerminateCard) - result_status is never actually set to either value
+-- by app code. okrTimelineAssignableStatuses() in lib.php excludes both from
+-- the Timeline Status dropdown for that reason, same as Suspended/Completed
+-- with Extension.
 INSERT INTO `okr_statuses` (`id`, `value`, `description`, `pays_incentive`, `sort_order`, `created_at`, `updated_at`, `recycle`) VALUES
 (1, 'Draft', 'Not yet started.', 0, 0, '2026-07-07 11:42:50', '2026-07-07 11:42:50', 0),
 (2, 'Active', 'Not yet closed.', 0, 1, '2026-07-06 12:32:50', '2026-07-06 12:32:50', 0),
@@ -214,8 +223,10 @@ INSERT INTO `okr_statuses` (`id`, `value`, `description`, `pays_incentive`, `sor
 (4, 'Completed with Excellence', 'Delivered beyond expectation.', 1, 3, '2026-07-06 12:32:50', '2026-07-06 12:32:50', 0),
 (5, 'Extended', 'Timeline extended / still ongoing.', 0, 4, '2026-07-06 12:32:50', '2026-07-06 12:32:50', 0),
 (6, 'Failed', 'Not delivered.', 0, 6, '2026-07-06 12:32:50', '2026-07-06 12:32:50', 0),
+(7, 'Deleted', 'Soft-deleted by the issuer or admin.', 0, 7, '2026-07-29 00:00:00', '2026-07-29 00:00:00', 0),
 (8, 'Suspended', 'Halted - CEO only.', 0, 5, '2026-07-06 12:32:50', '2026-07-06 12:32:50', 0),
-(10, 'Completed with Extension', 'Delivered with an extended timeline.', 1, 8, '2026-07-07 11:42:50', '2026-07-07 11:42:50', 0);
+(10, 'Completed with Extension', 'Delivered with an extended timeline.', 1, 8, '2026-07-07 11:42:50', '2026-07-07 11:42:50', 0),
+(11, 'Force Terminated', 'Suspended OKR force-closed by the CEO.', 0, 9, '2026-07-29 00:00:00', '2026-07-29 00:00:00', 0);
 
 --
 -- Indexes for table `okr_statuses`
@@ -228,7 +239,7 @@ ALTER TABLE `okr_statuses`
 -- AUTO_INCREMENT for table `okr_statuses`
 --
 ALTER TABLE `okr_statuses`
-  MODIFY `id` tinyint NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
+  MODIFY `id` tinyint NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
 
 -- --------------------------------------------------------
 
