@@ -266,6 +266,15 @@
             && (CFG.requesterIsAdmin || card.issuer_staff_id === CFG.requesterId);
     }
 
+    // Resolved/locked outcomes - clicking one of these cards should land on
+    // the read-only view (there's an Edit link there too, for the rare cases
+    // still editable - e.g. a Completed card - rather than jumping straight
+    // into edit mode for something that's already been decided).
+    var TERMINAL_STATUSES = ['Completed', 'Completed with Excellence', 'Completed with Extension', 'Suspended', 'Failed', 'Force Terminated'];
+    function isTerminalStatus(card) {
+        return TERMINAL_STATUSES.indexOf(card.result_status) !== -1;
+    }
+
     // Admin can delete any card; the issuer can only delete their own card
     // while it's still a Draft - once it's Active/closed/etc. only an admin
     // can remove it.
@@ -330,10 +339,18 @@
         rows.forEach(function (card) {
             var tr = document.createElement('tr');
             if (card.deleted_at) { tr.classList.add('okr-row-deleted'); }
-            var actions = '<a class="btn btn-outline-secondary btn-sm" href="okr/view.php?id=' + card.id + '" title="View"><i class="bi bi-eye"></i></a>';
-            if (canEdit(card)) {
-                actions += ' <a class="btn btn-outline-secondary btn-sm" href="okr/edit.php?id=' + card.id + '" title="Edit"><i class="bi bi-pencil"></i></a>';
-            }
+            // One primary action per row instead of separate View/Edit icons -
+            // a resolved/locked card (see isTerminalStatus) opens read-only
+            // view.php by default, UNLESS the requester qualifies for a
+            // terminal-status revert (see canTerminalRevert), in which case
+            // it opens edit.php straight into that restricted mode instead
+            // (mirrors ATEM); anything still in-flight opens straight into
+            // edit.php for whoever can edit it, otherwise falls back to
+            // view.php too.
+            var openEdit = !isTerminalStatus(card) && canEdit(card);
+            var actions = openEdit
+                ? '<a class="btn btn-outline-secondary btn-sm" href="okr/edit.php?id=' + card.id + '" title="Edit"><i class="bi bi-pencil"></i></a>'
+                : '<a class="btn btn-outline-secondary btn-sm" href="okr/view.php?id=' + card.id + '" title="View"><i class="bi bi-eye"></i></a>';
             if (canDelete(card)) {
                 actions += ' <button type="button" class="btn btn-outline-danger btn-sm okr-list-delete-btn" data-id="' + card.id + '" title="Delete"><i class="bi bi-trash"></i></button>';
             }

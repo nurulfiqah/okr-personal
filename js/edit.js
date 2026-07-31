@@ -2504,7 +2504,7 @@
             .then(function (res) {
                 if (res.success) {
                     leaving = true;
-                    window.location.href = 'okr/view.php?id=' + card.id + '&saved=1';
+                    window.location.href = 'okr/list.php';
                 } else {
                     restoreButton(saveBtn);
                     setError('okr-save', res.message || 'Failed to save OKR.');

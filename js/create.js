@@ -2355,7 +2355,7 @@
                 if (res.success) {
                     leaving = true;
                     linkStagedAtemsToNewCard(res.id).then(function () {
-                        window.location.href = navUrl || ('okr/view.php?id=' + res.id);
+                        window.location.href = navUrl || 'okr/list.php';
                     });
                 } else {
                     setError('okr-save', res.message || 'Failed to save OKR.');
