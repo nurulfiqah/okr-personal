@@ -1,0 +1,2 @@
+[2026-08-03 11:37:53] [WARNING] [dispatchOkrEmail] Skipped - recipient has no email on file | {"card_id":24,"to_name":"Nurul Syafiqah","subject":"OKR Appeal Submitted: twst (OKR #24)"}
+[2026-08-03 11:38:13] [WARNING] [dispatchOkrEmail] Skipped - recipient has no email on file | {"card_id":25,"to_name":"Nurul Syafiqah","subject":"OKR Suspended: test"}

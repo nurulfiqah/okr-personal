@@ -176,10 +176,11 @@ $okr_view_config = [
                 <h6 class="okr-card-title"><i class="bi bi-file-earmark-text"></i> OKR<?php echo (int)$card['id']; ?>
                     Details</h6>
                 <div class="d-flex align-items-center gap-2">
-                    <span
-                        class="okr-pill <?php echo okrPillClass($card['result_status']); ?>"><?php echo htmlspecialchars(okrStatusDisplayLabel($card['result_status'], $card['extended'])); ?></span>
                     <?php if ($card['is_suspended']): ?>
                     <span class="okr-pill okr-pill-suspended"><i class="bi bi-pause-circle"></i> Suspended</span>
+                    <?php else: ?>
+                    <span
+                        class="okr-pill <?php echo okrPillClass($card['result_status']); ?>"><?php echo htmlspecialchars(okrStatusDisplayLabel($card['result_status'], $card['extended'])); ?></span>
                     <?php endif; ?>
                     <?php if ($can_edit_card): ?>
                     <a href="okr/edit.php?id=<?php echo (int)$card['id']; ?>" class="btn btn-outline-secondary btn-sm">

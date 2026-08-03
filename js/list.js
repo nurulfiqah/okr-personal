@@ -377,14 +377,17 @@
             // card.result_status already reads "Completed with Extension" from
             // the server when applicable (see backend.php's updateCard) - no
             // client-side label override needed.
-            var statusCell = card.deleted_at
-                ? '<span class="okr-pill okr-pill-fail">Deleted</span>'
-                : '<span class="okr-pill ' + card.pill_class + '">' + escapeHtml(card.result_status) + '</span>';
-            // Suspending no longer changes result_status - shown as a
-            // separate badge alongside the real status pill (see is_suspended
-            // in lib.php/backend.php's suspendCard).
-            if (!card.deleted_at && card.is_suspended) {
-                statusCell += ' <span class="okr-pill okr-pill-suspended"><i class="bi bi-pause-circle"></i> Suspended</span>';
+            // Suspending no longer changes result_status (see is_suspended in
+            // lib.php/backend.php's suspendCard), but the table shows just the
+            // one "Suspended" pill while suspended - not the real status pill
+            // alongside it - to keep this column to a single badge.
+            var statusCell;
+            if (card.deleted_at) {
+                statusCell = '<span class="okr-pill okr-pill-fail">Deleted</span>';
+            } else if (card.is_suspended) {
+                statusCell = '<span class="okr-pill okr-pill-suspended"><i class="bi bi-pause-circle"></i> Suspended</span>';
+            } else {
+                statusCell = '<span class="okr-pill ' + card.pill_class + '">' + escapeHtml(card.result_status) + '</span>';
             }
             tr.innerHTML =
                 '<td><span class="okr-id">#OKR' + card.id + '</span></td>' +
