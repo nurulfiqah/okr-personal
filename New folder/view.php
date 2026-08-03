@@ -34,14 +34,11 @@ $card = okrFormatCard($row);
 // force_terminated flag - both shapes count as terminal here.
 $is_terminal_failed = in_array($card['result_status'], ['Failed', OKR_STATUS_FORCE_TERMINATED], true);
 $is_ceo_or_admin = ($okr_is_admin || $okr_permission === 5);
-// Suspend no longer overwrites result_status (see backend.php's
-// suspendCard) - $card['is_suspended'] is the source of truth for "is this
-// card currently suspended", independent of whatever status it's showing.
-// The CEO can suspend an OKR in any status except Draft - a Draft isn't a
+// The CEO can suspend an OKR in any status except Draft (see backend.php's
+// suspendCard, which enforces the same rule server-side) - a Draft isn't a
 // real, issued OKR yet, so there's nothing to suspend. Still subject to the
-// one-suspend-per-lifetime rule below ($already_suspended_once), and can't
-// suspend a card that's already suspended.
-$can_suspend = $is_ceo_or_admin && $card['result_status'] !== OKR_STATUS_DRAFT && !$card['is_suspended'];
+// one-suspend-per-lifetime rule below ($already_suspended_once).
+$can_suspend = $is_ceo_or_admin && $card['result_status'] !== OKR_STATUS_DRAFT;
 $is_completed_status = in_array($card['result_status'], okrCompletedStatusValues(), true);
 $can_initiate_suspend = $can_suspend;
 // Rate is still a post-completion review action - only available once the
@@ -50,28 +47,28 @@ $can_initiate_suspend = $can_suspend;
 $can_rate    = $is_ceo_or_admin && !$is_terminal_failed && $is_completed_status;
 // Force Terminate keeps its own narrower gate (grade 5/admin, not Failed) -
 // unlike Suspend above, it isn't opened up to every status; it's only ever
-// reachable while currently suspended, or after a Completed OKR has already
-// used its one lifetime Suspend (see backend.php's forceTerminateCard).
+// reachable while Suspended, or after a Completed OKR has already used its
+// one lifetime Suspend (see backend.php's forceTerminateCard).
 $can_force_terminate = $is_ceo_or_admin && !$is_terminal_failed;
-// Only the issuer can appeal, only while currently suspended, only once per
+// Only the issuer can appeal, only while Suspended, only once per
 // suspension cycle (appealed_at is cleared on unsuspend/force-terminate).
 // Shown even when the issuer also happens to be admin/grade-5 (they still
 // see it alongside the CEO Action card's direct Unsuspend/Force Terminate).
 $can_appeal = ($card['issuer_staff_id'] === (int)$id_user
-    && $card['is_suspended'] && empty($card['appealed_at']));
+    && $card['result_status'] === OKR_STATUS_SUSPENDED && empty($card['appealed_at']));
 
-// Same edit gate as edit.php itself (issuer or admin, and not currently
-// suspended/Failed/Force Terminated) - shown here so the user doesn't have
-// to go back to list.php just to reach the Edit icon there.
+// Same edit gate as edit.php itself (issuer or admin, and not Suspended/
+// Failed/Force Terminated) - shown here so the user doesn't have to go back
+// to list.php just to reach the Edit icon there.
 $can_edit_card = ($okr_is_admin || $card['issuer_staff_id'] === (int)$id_user)
-    && !$card['is_suspended'] && !$is_terminal_failed;
+    && $card['result_status'] !== OKR_STATUS_SUSPENDED && !$is_terminal_failed;
 
 // Days left before an unattended suspended OKR is auto-terminated (30 days
 // from the suspension timestamp) - shown as a countdown on the suspend
 // notice banner.
 $suspend_days_left = null;
-if ($card['is_suspended'] && !empty($card['suspended_at'])) {
-    $suspend_deadline  = strtotime($card['suspended_at']) + (30 * 24 * 60 * 60);
+if ($card['result_status'] === OKR_STATUS_SUSPENDED && !empty($card['closed_at'])) {
+    $suspend_deadline  = strtotime($card['closed_at']) + (30 * 24 * 60 * 60);
     $suspend_days_left = max(0, (int)floor(($suspend_deadline - time()) / 86400));
 }
 
@@ -147,16 +144,16 @@ $okr_view_config = [
 ];
 ?>
 
-<?php if ($card['is_suspended']): ?>
+<?php if ($card['result_status'] === OKR_STATUS_SUSPENDED): ?>
 <div class="okr-alert-notice mb-3 d-flex justify-content-between align-items-start gap-3">
     <div>
         <i class="bi bi-slash-circle"></i> <strong>This OKR card has been suspended.</strong>
-        Its Status stays as shown below - unsuspending simply lifts the suspension. Any unattended suspended OKR
-        will be terminated after 30 days.
-        <?php if ($card['suspended_by_name']): ?>
-        <span class="okr-alert-notice-meta">Suspended by <?php echo htmlspecialchars($card['suspended_by_name']); ?>
-            <?php if ($card['suspended_at']): ?>
-            on <?php echo htmlspecialchars(date('d-m-Y H:i', strtotime($card['suspended_at']))); ?>
+        Unsuspending it will restore it to Active status. Any unattended suspended OKR will be terminated after 30
+        days.
+        <?php if ($card['closed_by_name']): ?>
+        <span class="okr-alert-notice-meta">Suspended by <?php echo htmlspecialchars($card['closed_by_name']); ?>
+            <?php if ($card['closed_at']): ?>
+            on <?php echo htmlspecialchars(date('d-m-Y H:i', strtotime($card['closed_at']))); ?>
             <?php endif; ?>.
         </span>
         <?php endif; ?>
@@ -178,9 +175,6 @@ $okr_view_config = [
                 <div class="d-flex align-items-center gap-2">
                     <span
                         class="okr-pill <?php echo okrPillClass($card['result_status']); ?>"><?php echo htmlspecialchars(okrStatusDisplayLabel($card['result_status'], $card['extended'])); ?></span>
-                    <?php if ($card['is_suspended']): ?>
-                    <span class="okr-pill okr-pill-suspended"><i class="bi bi-pause-circle"></i> Suspended</span>
-                    <?php endif; ?>
                     <?php if ($can_edit_card): ?>
                     <a href="okr/edit.php?id=<?php echo (int)$card['id']; ?>" class="btn btn-outline-secondary btn-sm">
                         <i class="bi bi-pencil"></i> Edit</a>
@@ -334,17 +328,9 @@ $okr_view_config = [
                 readonly>
         </div>
         <div class="col-md-4">
-            <label class="form-label" for="okr-closure-date">Closure Date</label>
-            <?php $can_edit_closure = okrCanEditClosureDate($card['result_status'], $card['issuer_staff_id'], !empty($card['deleted_at']), $id_user, $okr_permission, $okr_is_admin); ?>
-            <input type="date" class="form-control" id="okr-closure-date"
-                value="<?php echo htmlspecialchars($card['closure_date'] ?? ''); ?>"
-                min="<?php echo htmlspecialchars($card['start_date']); ?>" max="<?php echo date('Y-m-d'); ?>"
-                <?php echo $can_edit_closure ? '' : 'readonly'; ?>>
-            <?php if ($can_edit_closure): ?>
-            <div class="okr-form-error" id="okr-closure-date-error"></div>
-            <button type="button" class="btn btn-outline-secondary btn-sm mt-1" id="okr-closure-date-save-btn">Save
-                Closure Date</button>
-            <?php endif; ?>
+            <label class="form-label">Closure Date</label>
+            <input type="date" class="form-control" value="<?php echo htmlspecialchars($card['closure_date'] ?? ''); ?>"
+                readonly>
         </div>
 
         <div class="col-12">
@@ -355,41 +341,33 @@ $okr_view_config = [
     </div>
 </div>
 
-<?php if ($latest_suspend_log || $is_ceo_or_admin || $can_appeal): ?>
+<?php if ($latest_suspend_log || $can_suspend || $can_appeal): ?>
 <div class="row g-3 mt-3">
     <div class="col-md-6">
-        <div class="okr-card h-100" style="border-left:4px solid #ffc107;">
-            <h6 class="okr-card-title" style="color:#856404;"><i class="bi bi-pause-circle"></i> CEO Action</h6>
+        <div class="okr-card h-100">
+            <h6 class="okr-card-title"><i class="bi bi-pause-circle"></i> CEO Action</h6>
             <?php foreach ($suspend_logs as $suspend_log):
                 $suspend_reason_text = preg_replace('/^.*?:\s*/', '', $suspend_log['summary'], 1);
-                $suspend_verb        = $suspend_log['event'] === 'force_terminated' ? 'Force Terminated' : 'Suspended';
+                $suspend_verb        = $suspend_log['event'] === 'force_terminated' ? 'Force terminated' : 'Suspended';
             ?>
-            <p class="okr-card-hint"><?php echo $suspend_log['event'] === 'force_terminated' ? 'This OKR was force terminated.' : 'This OKR has been suspended.'; ?></p>
-            <div class="row g-3 mt-1 mb-2">
-                <div class="col-md-6">
-                    <label class="form-label"><?php echo htmlspecialchars($suspend_verb); ?> By</label>
-                    <div style="font-size:13px;"><?php echo htmlspecialchars($suspend_log['actor_name'] ? $suspend_log['actor_name'] : 'Unknown'); ?></div>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label"><?php echo htmlspecialchars($suspend_verb); ?> On</label>
-                    <div style="font-size:13px;"><?php echo htmlspecialchars(date('d-m-Y H:i', strtotime($suspend_log['created_at']))); ?></div>
-                </div>
-                <div class="col-12">
-                    <label class="form-label">Reason</label>
-                    <div style="font-size:13px;white-space:pre-wrap;"><?php echo htmlspecialchars($suspend_reason_text); ?></div>
+            <div class="okr-card-hint mb-2">
+                <strong>Reason:</strong> <?php echo nl2br(htmlspecialchars($suspend_reason_text)); ?>
+                <div class="okr-alert-notice-meta"><?php echo htmlspecialchars($suspend_verb); ?> by
+                    <?php echo htmlspecialchars($suspend_log['actor_name'] ? $suspend_log['actor_name'] : 'Unknown'); ?>
+                    on <?php echo htmlspecialchars(date('d-m-Y H:i', strtotime($suspend_log['created_at']))); ?>
                 </div>
             </div>
             <?php endforeach; ?>
-            <?php if ($is_ceo_or_admin): ?>
+            <?php if ($can_suspend): ?>
             <div class="okr-form-error" id="okr-suspend-error"></div>
-            <?php if ($card['is_suspended']): ?>
+            <?php if ($card['result_status'] === OKR_STATUS_SUSPENDED): ?>
             <hr class="my-3">
-            <p class="okr-card-hint">Unsuspending will lift the suspension - its Status stays as-is, it was never
-                changed by suspending.</p>
+            <p class="okr-card-hint">Unsuspending will reopen this OKR as Active — its Status and Closure Date will
+                be reset.</p>
             <div class="d-flex gap-2">
-                <button type="button" class="btn btn-success btn-sm" id="okr-unsuspend-btn">Unsuspend
+                <button type="button" class="btn btn-outline-secondary" id="okr-unsuspend-btn">Unsuspend
                     OKR</button>
-                <button type="button" class="btn btn-danger btn-sm" id="okr-force-terminate-btn">Force
+                <button type="button" class="btn btn-outline-danger" id="okr-force-terminate-btn">Force
                     Terminate</button>
             </div>
             <div id="okr-force-terminate-wrap" style="display:none;" class="mt-2">
@@ -403,7 +381,7 @@ $okr_view_config = [
             <?php elseif ($already_suspended_once && $is_completed_status): ?>
             <p class="okr-card-hint">This OKR has already been suspended once and cannot be suspended again. Force
                 Terminate is the only action left.</p>
-            <button type="button" class="btn btn-danger btn-sm" id="okr-force-terminate-btn">Force
+            <button type="button" class="btn btn-outline-danger" id="okr-force-terminate-btn">Force
                 Terminate</button>
             <div id="okr-force-terminate-wrap" style="display:none;" class="mt-2">
                 <label for="okr-force-terminate-remark" class="form-label">Remark <span class="okr-req">*</span></label>
@@ -420,7 +398,7 @@ $okr_view_config = [
             <p class="okr-card-hint">Suspend is not available while this OKR is still a Draft.</p>
             <?php else: ?>
             <p class="okr-card-hint">Only the CEO can suspend an OKR.</p>
-            <button type="button" class="btn btn-warning" id="okr-suspend-btn">Suspend
+            <button type="button" class="btn btn-outline-secondary btn-lg" id="okr-suspend-btn">Suspend
                 OKR</button>
             <div id="okr-suspend-reason-wrap" style="display:none;" class="mt-2">
                 <label for="okr-suspend-reason" class="form-label">Reason <span class="okr-req">*</span></label>
@@ -435,24 +413,16 @@ $okr_view_config = [
         </div>
     </div>
     <div class="col-md-6">
-        <div class="okr-card h-100" style="border-left:4px solid #0d6efd;">
-            <h6 class="okr-card-title" style="color:#0d6efd;"><i class="bi bi-megaphone"></i> Appeal Suspension</h6>
+        <div class="okr-card h-100">
+            <h6 class="okr-card-title"><i class="bi bi-megaphone"></i> Appeal Suspension</h6>
             <?php foreach ($appeal_logs as $appeal_log):
                 $appeal_reason_text = preg_replace('/^.*?:\s*/', '', $appeal_log['summary'], 1);
             ?>
-            <p class="okr-card-hint">The issuer has appealed this suspension.</p>
-            <div class="row g-3 mt-1 mb-2">
-                <div class="col-md-6">
-                    <label class="form-label">Appealed By</label>
-                    <div style="font-size:13px;"><?php echo htmlspecialchars($appeal_log['actor_name'] ? $appeal_log['actor_name'] : 'Unknown'); ?></div>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Appealed On</label>
-                    <div style="font-size:13px;"><?php echo htmlspecialchars(date('d-m-Y H:i', strtotime($appeal_log['created_at']))); ?></div>
-                </div>
-                <div class="col-12">
-                    <label class="form-label">Appeal Reason</label>
-                    <div style="font-size:13px;white-space:pre-wrap;"><?php echo htmlspecialchars($appeal_reason_text); ?></div>
+            <div class="okr-card-hint mb-2">
+                <strong>Reason:</strong> <?php echo nl2br(htmlspecialchars($appeal_reason_text)); ?>
+                <div class="okr-alert-notice-meta">
+                    Appealed by <?php echo htmlspecialchars($appeal_log['actor_name'] ? $appeal_log['actor_name'] : 'Unknown'); ?>
+                    on <?php echo htmlspecialchars(date('d-m-Y H:i', strtotime($appeal_log['created_at']))); ?>
                 </div>
             </div>
             <?php endforeach; ?>
@@ -460,7 +430,7 @@ $okr_view_config = [
             <p class="okr-card-hint">Explain why you believe this suspension should be reconsidered. This will be
                 emailed to the person who suspended the card. You can only submit one appeal per suspension.</p>
             <div class="okr-form-error" id="okr-appeal-error"></div>
-            <button type="button" class="btn btn-outline-primary btn-sm" id="okr-appeal-btn">Appeal</button>
+            <button type="button" class="btn btn-outline-secondary" id="okr-appeal-btn">Appeal</button>
             <div id="okr-appeal-wrap" style="display:none;" class="mt-2">
                 <label for="okr-appeal-justification" class="form-label">Justification <span
                         class="okr-req">*</span></label>

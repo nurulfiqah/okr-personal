@@ -49,13 +49,14 @@ function okrCardSelectSql($where, $include_deleted = false) {
                    ow2.nama_staff AS owner2_name, ow2.department AS owner2_department,
                    iss.nama_staff AS issuer_name, iss.department AS issuer_department,
                    os.value AS status_value, rb.nama_staff AS rated_by_name,
-                   cb.nama_staff AS closed_by_name
+                   cb.nama_staff AS closed_by_name, sb.nama_staff AS suspended_by_name
             FROM okr_cards c
             LEFT JOIN staff ow  ON c.owner_staff_id  = ow.id
             LEFT JOIN staff ow2 ON c.owner2_staff_id = ow2.id
             LEFT JOIN staff iss ON c.issuer_staff_id = iss.id
             LEFT JOIN staff rb  ON c.rated_by = rb.id
             LEFT JOIN staff cb  ON c.closed_by = cb.id
+            LEFT JOIN staff sb  ON c.suspended_by = sb.id
             LEFT JOIN okr_statuses os ON c.result_status = os.id
             WHERE $deleted_clause$where";
 }
@@ -84,6 +85,13 @@ function okrFormatCard($row) {
         'appeal_justification' => $row['appeal_justification'] ?? null,
         'appealed_at'       => $row['appealed_at'] ?? null,
         'force_terminated'  => !empty($row['force_terminated']),
+        // Suspend no longer overwrites result_status (see suspendCard in
+        // backend.php) - is_suspended/suspended_by/suspended_at are the
+        // source of truth for "is this card currently suspended", layered
+        // independently on top of whatever status the card already had.
+        'is_suspended'      => !empty($row['is_suspended']),
+        'suspended_by_name' => $row['suspended_by_name'] ?? null,
+        'suspended_at'      => $row['suspended_at'] ?? null,
         'rating'            => $row['rating'] !== null ? (float)$row['rating'] : null,
         'rated_by_name'     => $row['rated_by_name'] ?? null,
         'rated_at'          => $row['rated_at'] ?? null,
@@ -93,6 +101,13 @@ function okrFormatCard($row) {
         'final_due_date'    => (!empty($row['extended']) && $row['closed_at'])
             ? substr($row['closed_at'], 0, 10)
             : $row['end_date'],
+        // Closure Date is now an independently user-settable field (see
+        // okrCanEditClosureDate() below and backend.php's updateCard) - a
+        // completion marker, not just a status-transition side-effect. Still
+        // auto-stamped to "today" the moment a card first closes, but stays
+        // editable afterward within its own permission/date-range rules.
+        // Suspend clears it ("writes off" the closure date) rather than
+        // stamping it.
         'closure_date'      => $row['closed_at'] ? substr($row['closed_at'], 0, 10) : null,
         'result_status_id'  => (int)$row['result_status'],
         'result_status'     => $row['status_value'],
@@ -102,6 +117,30 @@ function okrFormatCard($row) {
         'created_at'        => $row['created_at'],
         'deleted_at'        => $row['deleted_at'] ?? null,
     ];
+}
+
+// Every status this OKR must NOT be in for a Closure Date to be manually
+// editable - a business rule (see the ticket this implements), not derivable
+// from the table. Deliberately does not include Suspended: while suspended,
+// Closure Date is cleared and locked (see suspendCard), not user-editable.
+function okrClosureDateLockedStatuses() {
+    return [OKR_STATUS_DRAFT, OKR_STATUS_ACTIVE, 'Failed', OKR_STATUS_SUSPENDED];
+}
+
+// True if $requester may manually set/change this card's Closure Date -
+// Issuer, CEO (grade 5), or admin, and only once the card has actually left
+// Draft/Active (nothing to close yet) and isn't Failed, Suspended, or
+// soft-deleted (see okrClosureDateLockedStatuses()). Takes the raw status
+// *value* (not a full card array) since callers hold that in differently-
+// shaped rows (okrFormatCard()'s 'result_status' vs a raw query's
+// 'status_value') - passing the value directly avoids that ambiguity.
+function okrCanEditClosureDate($status_value, $issuer_staff_id, $is_deleted, $requester_id, $requester_grade, $requester_is_admin) {
+    if ($is_deleted) {
+        return false;
+    }
+    $is_privileged = $requester_is_admin || (int)$requester_grade === 5
+        || (int)$issuer_staff_id === (int)$requester_id;
+    return $is_privileged && !in_array($status_value, okrClosureDateLockedStatuses(), true);
 }
 
 // The single DB-driven source of truth for okr_statuses' shape - every status

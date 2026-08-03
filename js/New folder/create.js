@@ -1,50 +1,40 @@
 (function () {
-    var CFG = window.OKR_EDIT_CONFIG || { staff: [], departments: [], levels: [] };
-    var card = CFG.card || {};
+    var CFG = window.OKR_CONFIG || { staff: [], departments: [], levels: [] };
 
     // Bootstrap 5 popovers need explicit JS init - data-bs-toggle="popover"
-    // alone (the OKR Type field's info icon) does nothing without this.
+    // alone does nothing without this.
     document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function (el) {
         new bootstrap.Popover(el);
     });
 
-    var referenceLinks = (CFG.referenceLinks || []).slice(); // { id, name, url }
-    var attachments = (CFG.attachments || []).slice(); // { id, original_name, size }
+    var referenceLinks = []; // { token, name, url }
+    var stagedFiles = []; // { token, name, size }
 
-    // Warn on refresh/close/back navigation once the user has started editing,
-    // same as create.php.
+    // Session-first draft lifecycle, mirrors ATEM's create page: every field
+    // change marks the form dirty and (debounced) silently autosaves it to
+    // the session via saveDraftState, so a refresh/reopen restores it. The
+    // actual Leave-modal/navigation-guard wiring lives in bindLeaveGuard()
+    // near the bottom, once saveOkr()/cancelOkr() exist to call into.
     var dirty = false;
     var leaving = false;
-    // Chat and CEO Action/Appeal Suspension are their own independent,
-    // immediately-saved actions (not part of the OKR form's fields), so
-    // typing in their textareas must not trip the "unsaved changes"
-    // leave-guard below.
-    function markChanged(e) {
-        if (e && e.target && e.target.closest && e.target.closest('#okr-chat-card, #okr-kr-atem-modal, #okr-ceo-action-row')) { return; }
+    var _syncTimer = null;
+
+    function scheduleSync() {
+        if (_syncTimer) { clearTimeout(_syncTimer); }
+        _syncTimer = setTimeout(function () {
+            var body = new URLSearchParams();
+            body.set('action', 'saveDraftState');
+            body.set('state', JSON.stringify(buildDraftState()));
+            fetch(CFG.apiUrl, { method: 'POST', body: body }).catch(function () {});
+        }, 500);
+    }
+
+    function markChanged() {
         dirty = true;
+        scheduleSync();
     }
     document.addEventListener('input', markChanged, true);
     document.addEventListener('change', markChanged, true);
-    window.addEventListener('beforeunload', function (e) {
-        if (dirty && !leaving) {
-            e.preventDefault();
-            e.returnValue = '';
-            return '';
-        }
-    });
-    document.addEventListener('click', function (e) {
-        if (!dirty || leaving) { return; }
-        var a = e.target.closest ? e.target.closest('a[href]') : null;
-        if (!a) { return; }
-        var href = a.getAttribute('href');
-        if (!href || href.charAt(0) === '#' || href.indexOf('javascript:') === 0) { return; }
-        if (a.getAttribute('target') === '_blank') { return; }
-        if (!confirm('Leave this page? Changes you made may not be saved.')) {
-            e.preventDefault();
-        } else {
-            leaving = true;
-        }
-    });
 
     function setError(id, msg) {
         var el = document.getElementById(id + '-error');
@@ -66,6 +56,48 @@
         if (!btn) { return; }
         btn.disabled = false;
         if (btn.dataset.originalText !== undefined) { btn.textContent = btn.dataset.originalText; }
+    }
+
+    // Shared styled confirmation modal (never the browser's native confirm())
+    // for any destructive/consequential action - Attachment/Reference Link
+    // removal, Link ATEM picks, plain Key Result/Subtask deletion. onConfirm
+    // may return a Promise; when it does, the OK button shows a loading
+    // state and the modal stays open until it settles, instead of hiding
+    // immediately and leaving the action to finish invisibly in the background.
+    var _confirmModal = null, _confirmCb = null;
+    function getConfirmModal() {
+        if (!_confirmModal && typeof bootstrap !== 'undefined') {
+            _confirmModal = new bootstrap.Modal(document.getElementById('atem-confirm-modal'));
+            document.getElementById('atem-confirm-ok').addEventListener('click', function () {
+                var cb = _confirmCb; _confirmCb = null;
+                var okBtn = document.getElementById('atem-confirm-ok');
+                var originalText = okBtn ? okBtn.textContent : '';
+                if (okBtn) { okBtn.disabled = true; okBtn.textContent = 'Please wait...'; }
+                var result = cb ? cb() : null;
+                function settle() {
+                    if (okBtn) { okBtn.disabled = false; okBtn.textContent = originalText; }
+                    if (_confirmModal) { _confirmModal.hide(); }
+                }
+                if (result && typeof result.then === 'function') {
+                    result.then(settle, settle);
+                } else {
+                    settle();
+                }
+            });
+        }
+        return _confirmModal;
+    }
+    function confirmAction(message, onConfirm, okLabel, okClass) {
+        document.getElementById('atem-confirm-message').textContent = message;
+        _confirmCb = onConfirm;
+        var okBtn = document.getElementById('atem-confirm-ok');
+        if (okBtn) {
+            okBtn.disabled = false;
+            okBtn.textContent = okLabel || 'Remove';
+            okBtn.className = 'btn ' + (okClass || 'btn-danger');
+        }
+        var m = getConfirmModal();
+        if (m) { m.show(); } else { onConfirm(); }
     }
 
     function clearErrors() {
@@ -100,6 +132,46 @@
         return bytes + ' B';
     }
 
+    // ---------------------------------------------------------------
+    // Start/End dates: End Date can't be before Start Date. Start Date
+    // also can't be before today unless the admin's Backdate toggle is on
+    // (atem/admin/index.php).
+    // ---------------------------------------------------------------
+    var startDateInput = document.getElementById('okr-start');
+    var endDateInput = document.getElementById('okr-end');
+    if (!CFG.backdateEnabled) {
+        var todayStr = new Date().toISOString().slice(0, 10);
+        startDateInput.min = todayStr;
+        endDateInput.min = todayStr;
+    }
+    startDateInput.addEventListener('change', function () {
+        endDateInput.min = startDateInput.value;
+        if (endDateInput.value && startDateInput.value && endDateInput.value < startDateInput.value) {
+            endDateInput.value = startDateInput.value;
+        }
+        refreshKrDateBounds();
+    });
+    endDateInput.addEventListener('change', function () {
+        refreshKrDateBounds();
+    });
+
+    // Key Results can be staged before the OKR's own Start/End Date are
+    // filled in (no min/max to constrain them yet) - once those dates are
+    // set/changed, re-check every staged Key Result/Subtask against the new
+    // range and surface a reminder banner if any of them now fall outside it.
+    var krDateWarningEl = document.getElementById('okr-kr-date-warning');
+    function refreshKrDateBounds() {
+        var min = startDateInput.value || '';
+        var max = endDateInput.value || '';
+
+        var outOfRange = keyResults.some(function (row) {
+            return (min && row.start_date && row.start_date < min)
+                || (max && row.start_date && row.start_date > max)
+                || (min && row.end_date && row.end_date < min)
+                || (max && row.end_date && row.end_date > max);
+        });
+        if (krDateWarningEl) { krDateWarningEl.style.display = outOfRange ? '' : 'none'; }
+    }
 
     function escapeHtml(s) {
         return String(s).replace(/[&<>"']/g, function (c) {
@@ -239,103 +311,10 @@
         renderOwnerMembers();
         renderOwnerStaffList();
     }
-
-    // Prefill from the card's current saved owners before wiring change handlers.
-    [card.owner_staff_id, card.owner2_staff_id].forEach(function (ownerId) {
-        if (!ownerId) { return; }
-        var staff = CFG.staff.filter(function (s) { return s.id === ownerId; })[0];
-        if (!staff) { return; }
-        var deptId = (staff.deptIds || [])[0] || null;
-        ownerState.push({
-            staff_id: staff.id,
-            staff_name: staff.name,
-            dept_id: deptId,
-            department_name: departmentName(deptId)
-        });
-    });
     refreshOwnerUI();
 
     // ---------------------------------------------------------------
-    // Timeline: Start/End/Status + once-only Extended + auto Final Due Date.
-    // ---------------------------------------------------------------
-    var statusSelect = document.getElementById('okr-status');
-
-    var startInput = document.getElementById('okr-start');
-    var endInput = document.getElementById('okr-end');
-    var extendedCheckbox = document.getElementById('okr-extended');
-    var extendedDateWrap = document.getElementById('okr-extended-date-wrap');
-    var extendedDateReq = document.getElementById('okr-extended-date-req');
-    var extendedDateInput = document.getElementById('okr-extended-date');
-    var finalDueInput = document.getElementById('okr-final-due');
-
-    function refreshFinalDue() {
-        // Final Due Date never mirrors the Extended Date target — it stays
-        // End Date until the OKR is actually resolved (Complete/Fail),
-        // at which point the server stamps closed_at and it follows that
-        // on reload instead.
-        finalDueInput.value = endInput.value;
-    }
-
-    // End Date can't be before Start Date (or before today, unless the
-    // admin's Backdate toggle is on - atem/admin/index.php); Extended Date
-    // can't be before the (original) End Date it's extending past.
-    var todayStr = new Date().toISOString().slice(0, 10);
-    endInput.min = (!CFG.backdateEnabled && startInput.value < todayStr) ? todayStr : startInput.value;
-    extendedDateInput.min = card.end_date || endInput.value;
-    endInput.addEventListener('change', function () {
-        if (startInput.value && endInput.value < startInput.value) {
-            endInput.value = startInput.value;
-        }
-        extendedDateInput.min = endInput.value;
-        if (extendedDateInput.value && extendedDateInput.value < endInput.value) {
-            extendedDateInput.value = endInput.value;
-        }
-        refreshKrDateBounds();
-    });
-    startInput.addEventListener('change', function () {
-        refreshKrDateBounds();
-    });
-
-    // Key Results can have dates set before the OKR's own Start/End Date
-    // change - re-check every Key Result/Subtask against the new range
-    // whenever it changes and surface a reminder banner if any of them now
-    // fall outside it.
-    var krDateWarningEl = document.getElementById('okr-kr-date-warning');
-    function refreshKrDateBounds() {
-        var min = startInput.value || '';
-        var max = endInput.value || '';
-
-        var outOfRange = krList.some(function (row) {
-            return (min && row.start_date && row.start_date < min)
-                || (max && row.start_date && row.start_date > max)
-                || (min && row.end_date && row.end_date < min)
-                || (max && row.end_date && row.end_date > max);
-        });
-        if (krDateWarningEl) { krDateWarningEl.style.display = outOfRange ? '' : 'none'; }
-    }
-
-    function applyExtendedToggle(on) {
-        extendedCheckbox.checked = on;
-        extendedDateWrap.style.display = on ? '' : 'none';
-        extendedDateReq.style.display = on ? '' : 'none';
-        extendedDateInput.disabled = !on;
-        if (!on) { extendedDateInput.value = ''; }
-        refreshFinalDue();
-    }
-
-    if (!card.extended) {
-        extendedDateInput.disabled = !extendedCheckbox.checked;
-        extendedCheckbox.addEventListener('change', function () {
-            applyExtendedToggle(extendedCheckbox.checked);
-        });
-        extendedDateInput.addEventListener('change', refreshFinalDue);
-    }
-    endInput.addEventListener('change', refreshFinalDue);
-    statusSelect.addEventListener('change', refreshFinalDue);
-    refreshFinalDue();
-
-    // ---------------------------------------------------------------
-    // Reference links (real actions against the existing card, not staging)
+    // Reference links
     // ---------------------------------------------------------------
     var reflinkListEl = document.getElementById('okr-reflink-list');
     var reflinkModalEl = document.getElementById('okr-reflink-modal');
@@ -351,7 +330,7 @@
             var row = document.createElement('div');
             row.className = 'okr-reflink-row';
             row.innerHTML = '<a href="' + link.url + '" target="_blank" rel="noopener">' + link.name + '</a>' +
-                '<span class="okr-reflink-remove" data-id="' + link.id + '">&times;</span>';
+                '<span class="okr-reflink-remove" data-token="' + link.token + '">&times;</span>';
             reflinkListEl.appendChild(row);
         });
     }
@@ -373,8 +352,7 @@
         }
 
         var body = new URLSearchParams();
-        body.set('action', 'addReferenceLink');
-        body.set('id', card.id);
+        body.set('action', 'stageReferenceLink');
         body.set('name', name);
         body.set('url', url);
 
@@ -384,7 +362,8 @@
             .then(function (res) {
                 restoreButton(reflinkSaveBtn);
                 if (res.success) {
-                    referenceLinks.push({ id: res.id, name: name, url: url });
+                    referenceLinks.push({ token: res.token, name: res.name, url: res.url });
+                    markChanged();
                     renderReferenceLinks();
                     setError('reflink-section', '');
                     reflinkModal.hide();
@@ -401,52 +380,46 @@
     reflinkListEl.addEventListener('click', function (e) {
         if (!e.target.classList.contains('okr-reflink-remove')) { return; }
         var el = e.target;
-        var id = parseInt(el.getAttribute('data-id'), 10);
+        var token = el.getAttribute('data-token');
         el.style.pointerEvents = 'none';
         el.style.opacity = '0.4';
         var body = new URLSearchParams();
-        body.set('action', 'deleteReferenceLink');
-        body.set('id', id);
+        body.set('action', 'removeStagedReferenceLink');
+        body.set('token', token);
         fetch(CFG.apiUrl, { method: 'POST', body: body })
-            .then(function (r) { return r.json(); })
-            .then(function (res) {
-                if (res.success) {
-                    referenceLinks = referenceLinks.filter(function (l) { return l.id !== id; });
-                    renderReferenceLinks();
-                } else {
-                    el.style.pointerEvents = '';
-                    el.style.opacity = '';
-                    setError('reflink-section', res.message || 'Failed to remove link.');
-                }
+            .then(function () {
+                referenceLinks = referenceLinks.filter(function (l) { return l.token !== token; });
+                markChanged();
+                renderReferenceLinks();
             })
             .catch(function () {
-                el.style.pointerEvents = '';
-                el.style.opacity = '';
-                setError('reflink-section', 'Network error. Please try again.');
+                referenceLinks = referenceLinks.filter(function (l) { return l.token !== token; });
+                markChanged();
+                renderReferenceLinks();
             });
     });
 
     renderReferenceLinks();
 
     // ---------------------------------------------------------------
-    // Attachments (real actions against the existing card, not staging)
+    // Attachments
     // ---------------------------------------------------------------
     var fileListEl = document.getElementById('okr-file-list');
     var dropzoneEl = document.getElementById('okr-dropzone');
     var fileInputEl = document.getElementById('okr-file-input');
 
     function renderFiles() {
-        if (attachments.length === 0) {
+        if (stagedFiles.length === 0) {
             fileListEl.innerHTML = '<div class="okr-empty-state">No files attached.</div>';
             return;
         }
         fileListEl.innerHTML = '';
-        attachments.forEach(function (file) {
+        stagedFiles.forEach(function (file) {
             var row = document.createElement('div');
             row.className = 'okr-file-row';
-            row.innerHTML = '<a class="okr-file-name" href="okr/download.php?id=' + file.id + '">' + file.original_name + '</a>' +
+            row.innerHTML = '<span class="okr-file-name">' + file.name + '</span>' +
                 '<span class="okr-file-size">' + formatSize(file.size) + '</span>' +
-                '<span class="okr-file-remove" data-id="' + file.id + '">&times;</span>';
+                '<span class="okr-file-remove" data-token="' + file.token + '">&times;</span>';
             fileListEl.appendChild(row);
         });
     }
@@ -454,8 +427,7 @@
     function uploadFile(file) {
         setError('okr-file', '');
         var body = new FormData();
-        body.set('action', 'addAttachment');
-        body.set('id', card.id);
+        body.set('action', 'stageAttachment');
         body.set('file', file);
 
         var pendingRow = document.createElement('div');
@@ -469,7 +441,8 @@
             .then(function (res) {
                 pendingRow.remove();
                 if (res.success) {
-                    attachments.push({ id: res.id, original_name: file.name, size: file.size, mime_type: file.type });
+                    stagedFiles.push({ token: res.token, name: res.name, size: res.size });
+                    markChanged();
                     renderFiles();
                 } else {
                     renderFiles();
@@ -513,28 +486,22 @@
     fileListEl.addEventListener('click', function (e) {
         if (e.target.classList.contains('okr-file-remove')) {
             var el = e.target;
-            var id = parseInt(el.getAttribute('data-id'), 10);
+            var token = el.getAttribute('data-token');
             el.style.pointerEvents = 'none';
             el.style.opacity = '0.4';
             var body = new URLSearchParams();
-            body.set('action', 'deleteAttachment');
-            body.set('id', id);
+            body.set('action', 'removeStagedAttachment');
+            body.set('token', token);
             fetch(CFG.apiUrl, { method: 'POST', body: body })
-                .then(function (r) { return r.json(); })
-                .then(function (res) {
-                    if (res.success) {
-                        attachments = attachments.filter(function (f) { return f.id !== id; });
-                        renderFiles();
-                    } else {
-                        el.style.pointerEvents = '';
-                        el.style.opacity = '';
-                        setError('okr-file', res.message || 'Failed to remove file.');
-                    }
+                .then(function () {
+                    stagedFiles = stagedFiles.filter(function (f) { return f.token !== token; });
+                    markChanged();
+                    renderFiles();
                 })
                 .catch(function () {
-                    el.style.pointerEvents = '';
-                    el.style.opacity = '';
-                    setError('okr-file', 'Network error. Please try again.');
+                    stagedFiles = stagedFiles.filter(function (f) { return f.token !== token; });
+                    markChanged();
+                    renderFiles();
                 });
         }
     });
@@ -542,37 +509,37 @@
     renderFiles();
 
     // ---------------------------------------------------------------
-    // Key Result Progress (real actions against the existing card - a
-    // 2-level Key Result / Subtask list, self-referential via parent_id,
-    // modeled after iidas's project_detail.php Progression Task widget)
+    // Key Result Progress - staged in the session like reference
+    // links/attachments, since there's no card_id yet. Top-level rows,
+    // their subtasks, and ATEM links are all staged against tokens and
+    // only resolved into real rows/columns once createCard succeeds
+    // (okrFinalizeStagedKeyResults in lib.php).
     // ---------------------------------------------------------------
-    var krList = []; // flat rows from listKeyResults: { id, parent_id, description, created_by, creator_name, atem_id, status_id, status_value, pill_class, start_date, end_date, has_children, display_status_value, display_pill_class }
-    var atemMap = {}; // resolved ATEM id -> { id, title, ... }, lazily fetched from list-atems
+    var keyResults = []; // flat: { token, parent_token, description, creator_name, atem_id, status_id, status_value, pill_class, start_date, end_date }
     var krListEl = document.getElementById('okr-kr-list');
     var krModalEl = document.getElementById('okr-kr-modal');
     var krModal = new bootstrap.Modal(krModalEl);
     var krCreatedByInput = document.getElementById('okr-kr-created-by');
+    var krStatusSelect = document.getElementById('okr-kr-status');
     var krStartInput = document.getElementById('okr-kr-start');
     var krEndInput = document.getElementById('okr-kr-end');
-    var krStatusSelect = document.getElementById('okr-kr-status');
+    var krTokenInput = document.getElementById('okr-kr-token');
+    var krParentTokenInput = document.getElementById('okr-kr-parent-token');
     var krDeleteModalEl = document.getElementById('okr-kr-delete-modal');
     var krDeleteModal = new bootstrap.Modal(krDeleteModalEl);
-    var krDeleteTarget = null; // { id, atem_id }
+    var krDeleteTarget = null; // { token, parent_token, atem_id }
 
-    function krChildren(parentId) {
-        return krList.filter(function (r) { return r.parent_id === parentId; });
+    function krChildren(parentToken) {
+        return keyResults.filter(function (r) { return r.parent_token === parentToken; });
     }
 
     function krRowHtml(row, index, isSubtask) {
-        var dragHandle = isSubtask ? '<span class="okr-kr-drag-handle" title="Drag to reorder">&#9776;</span>' : '';
-
         var atemCell = '<span class="okr-kr-col-value okr-kr-col-value--muted">&mdash;</span>';
         if (row.atem_id) {
-            var atem = atemMap[row.atem_id];
-            var atemLabel = atem ? escapeHtml(atem.title) : ('ATEM #' + row.atem_id);
+            var atemLabel = row.atem_title || ('ATEM #' + row.atem_id);
             atemCell = '<div class="okr-kr-atem-badge">'
                 + '<i class="bi bi-link-45deg"></i> '
-                + '<a href="' + CFG.atemViewUrl + '?id=' + row.atem_id + '" target="_blank" rel="noopener">' + atemLabel + '</a>'
+                + '<a href="' + CFG.atemViewUrl + '?id=' + row.atem_id + '" target="_blank" rel="noopener">' + escapeHtml(atemLabel) + '</a>'
                 + '</div>';
         }
 
@@ -583,9 +550,8 @@
             ? '<span class="okr-kr-col-value">' + formatKrDate(row.end_date) + '</span>'
             : '<span class="okr-kr-col-value okr-kr-col-value--muted">&mdash;</span>';
 
-        return '<div class="okr-kr-row' + (isSubtask ? ' okr-kr-row--subtask' : '') + '" data-id="' + row.id + '"'
-            + (isSubtask ? ' draggable="true" data-parent-id="' + row.parent_id + '"' : '') + '>'
-            + '<div class="okr-kr-num">' + dragHandle + index + '</div>'
+        return '<div class="okr-kr-row' + (isSubtask ? ' okr-kr-row--subtask' : '') + '" data-token="' + row.token + '">'
+            + '<div class="okr-kr-num">' + index + '</div>'
             + '<div class="okr-kr-body">'
             + '<div class="okr-kr-action-cell">'
             + '<span class="okr-kr-col-label">Action</span>'
@@ -610,7 +576,7 @@
     }
 
     function renderKeyResults() {
-        var topLevel = krList.filter(function (r) { return !r.parent_id; });
+        var topLevel = keyResults.filter(function (r) { return !r.parent_token; });
         if (topLevel.length === 0) {
             krListEl.innerHTML = '<div class="okr-kr-empty">No Key Results added yet.</div>';
             refreshKrDateBounds();
@@ -619,7 +585,7 @@
         var html = '';
         topLevel.forEach(function (row, i) {
             html += krRowHtml(row, (i + 1), false);
-            krChildren(row.id).forEach(function (sub, j) {
+            krChildren(row.token).forEach(function (sub, j) {
                 html += krRowHtml(sub, (i + 1) + '.' + (j + 1), true);
             });
         });
@@ -627,154 +593,25 @@
         refreshKrDateBounds();
     }
 
-    // ---------------------------------------------------------------
-    // Subtask drag-to-reorder - modeled after iidas's project_detail.js
-    // Task/Subtask drag-and-drop (native HTML5 DnD, no library). Only
-    // Subtasks can be dragged (not top-level Key Results), and only among
-    // siblings under the same parent (data-parent-id must match). Event
-    // listeners are delegated on krListEl so they survive re-renders.
-    // ---------------------------------------------------------------
-    var draggedSubtaskEl = null;
-
-    function persistSubtaskOrder(parentIdStr) {
-        var domSubtasks = krListEl.querySelectorAll('.okr-kr-row--subtask[data-parent-id="' + parentIdStr + '"]');
-        var orders = {};
-        domSubtasks.forEach(function (el, i) {
-            var subId = parseInt(el.getAttribute('data-id'), 10);
-            orders[subId] = i;
-            var data = krList.filter(function (r) { return r.id === subId; })[0];
-            if (data) { data.sort_order = i; }
-        });
-        // Stable sort - only reorders items that share the same parent_id,
-        // everything else (top-level order, other parents' children) is
-        // left exactly where it was.
-        krList.sort(function (a, b) {
-            if (a.parent_id === null || b.parent_id === null || a.parent_id !== b.parent_id) { return 0; }
-            return (a.sort_order || 0) - (b.sort_order || 0);
-        });
-        renderKeyResults();
-
-        var body = new URLSearchParams();
-        body.set('action', 'reorderKeyResultSubtasks');
-        body.set('parent_id', parentIdStr);
-        body.set('orders', JSON.stringify(orders));
-        fetch(CFG.apiUrl, { method: 'POST', body: body })
-            .then(function (r) { return r.json(); })
-            .then(function (res) {
-                if (!res.success) {
-                    setError('okr-kr', res.message || 'Failed to save new order.');
-                    loadKeyResults();
-                }
-            })
-            .catch(function () {
-                setError('okr-kr', 'Network error. Please try again.');
-                loadKeyResults();
-            });
-    }
-
-    krListEl.addEventListener('dragstart', function (e) {
-        var row = e.target.closest ? e.target.closest('.okr-kr-row--subtask[draggable="true"]') : null;
-        if (!row) { e.preventDefault(); return; }
-        draggedSubtaskEl = row;
-        row.style.opacity = '0.5';
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', row.getAttribute('data-id'));
-    });
-
-    krListEl.addEventListener('dragend', function () {
-        if (draggedSubtaskEl) { draggedSubtaskEl.style.opacity = ''; }
-        draggedSubtaskEl = null;
-        krListEl.querySelectorAll('.okr-kr-drag-over').forEach(function (el) {
-            el.classList.remove('okr-kr-drag-over');
-        });
-    });
-
-    krListEl.addEventListener('dragover', function (e) {
-        if (!draggedSubtaskEl) { return; }
-        var row = e.target.closest ? e.target.closest('.okr-kr-row--subtask') : null;
-        if (!row || row === draggedSubtaskEl
-            || row.getAttribute('data-parent-id') !== draggedSubtaskEl.getAttribute('data-parent-id')) { return; }
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        row.classList.add('okr-kr-drag-over');
-    });
-
-    krListEl.addEventListener('dragleave', function (e) {
-        var row = e.target.closest ? e.target.closest('.okr-kr-row--subtask') : null;
-        if (row) { row.classList.remove('okr-kr-drag-over'); }
-    });
-
-    krListEl.addEventListener('drop', function (e) {
-        if (!draggedSubtaskEl) { return; }
-        var row = e.target.closest ? e.target.closest('.okr-kr-row--subtask') : null;
-        if (!row || row === draggedSubtaskEl) { return; }
-        var parentId = draggedSubtaskEl.getAttribute('data-parent-id');
-        if (row.getAttribute('data-parent-id') !== parentId) { return; }
-        e.preventDefault();
-        row.classList.remove('okr-kr-drag-over');
-
-        var rect = row.getBoundingClientRect();
-        var after = (e.clientY - rect.top) > (rect.height / 2);
-        row.parentNode.insertBefore(draggedSubtaskEl, after ? row.nextSibling : row);
-
-        persistSubtaskOrder(parentId);
-    });
-
-    function loadKeyResults() {
-        var body = new URLSearchParams();
-        body.set('action', 'listKeyResults');
-        body.set('id', card.id);
-        fetch(CFG.apiUrl + '?' + body.toString())
-            .then(function (r) { return r.json(); })
-            .then(function (res) {
-                if (!res.success) {
-                    setError('okr-kr', res.message || 'Failed to load Key Results.');
-                    return;
-                }
-                krList = res.data || [];
-                var hasUnresolved = krList.some(function (r) { return r.atem_id && !atemMap[r.atem_id]; });
-                if (!hasUnresolved) {
-                    renderKeyResults();
-                    return;
-                }
-                fetch(CFG.atemApiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'list-atems' })
-                })
-                    .then(function (r) { return r.json(); })
-                    .then(function (atemRes) {
-                        var items = (atemRes && atemRes.success) ? (atemRes.data || []) : [];
-                        items.forEach(function (a) { atemMap[a.id] = a; });
-                        renderKeyResults();
-                    })
-                    .catch(function () { renderKeyResults(); });
-            })
-            .catch(function () {
-                setError('okr-kr', 'Network error while loading Key Results.');
-            });
-    }
-
-    var krModalOriginalStatusId = null;
-
     function openKrModal(opts) {
         setError('okr-kr-modal', '');
-        document.getElementById('okr-kr-id').value = opts.id || '';
-        document.getElementById('okr-kr-parent-id').value = opts.parent_id || '';
+        krTokenInput.value = opts.token || '';
+        krParentTokenInput.value = opts.parentToken || '';
         document.getElementById('okr-kr-desc').value = opts.description || '';
         krStartInput.value = opts.start_date || '';
         krEndInput.value = opts.end_date || '';
-        krModalOriginalStatusId = opts.status_id || null;
         if (opts.status_id) { krStatusSelect.value = opts.status_id; }
         else { krStatusSelect.selectedIndex = 0; }
-        krCreatedByInput.value = opts.id ? (opts.creatorName || '') : (CFG.currentUserName || '');
-        document.getElementById('okr-kr-modal-title').textContent = opts.parent_id ? (opts.id ? 'Edit Subtask' : 'Add Subtask') : (opts.id ? 'Edit Key Result' : 'Add Key Result');
+        krCreatedByInput.value = opts.token ? (opts.creatorName || '') : (CFG.currentUserName || '');
+        document.getElementById('okr-kr-modal-title').textContent = opts.parentToken
+            ? (opts.token ? 'Edit Subtask' : 'Add Subtask')
+            : (opts.token ? 'Edit Key Result' : 'Add Key Result');
 
-        // Key Result dates must fall within the OKR's own Start/End Date.
-        krStartInput.min = startInput.value || '';
-        krStartInput.max = endInput.value || '';
-        krEndInput.min = startInput.value || '';
-        krEndInput.max = endInput.value || '';
+        // Key Result / Subtask dates must fall within the OKR's own Start/End Date.
+        krStartInput.min = startDateInput.value || '';
+        krStartInput.max = endDateInput.value || '';
+        krEndInput.min = startDateInput.value || '';
+        krEndInput.max = endDateInput.value || '';
 
         krModal.show();
     }
@@ -783,104 +620,147 @@
         openKrModal({});
     });
 
-    // Shared styled confirmation modal (never the browser's native confirm())
-    // for any destructive/consequential action - Attachment/Reference Link
-    // removal, Link ATEM picks, plain Key Result/Subtask deletion. onConfirm
-    // may return a Promise; when it does, the OK button shows a loading
-    // state and the modal stays open until it settles, instead of hiding
-    // immediately and leaving the action to finish invisibly in the background.
-    var _confirmModal = null, _confirmCb = null;
-    function getConfirmModal() {
-        if (!_confirmModal && typeof bootstrap !== 'undefined') {
-            _confirmModal = new bootstrap.Modal(document.getElementById('atem-confirm-modal'));
-            document.getElementById('atem-confirm-ok').addEventListener('click', function () {
-                var cb = _confirmCb; _confirmCb = null;
-                var okBtn = document.getElementById('atem-confirm-ok');
-                var originalText = okBtn ? okBtn.textContent : '';
-                if (okBtn) { okBtn.disabled = true; okBtn.textContent = 'Please wait...'; }
-                var result = cb ? cb() : null;
-                function settle() {
-                    if (okBtn) { okBtn.disabled = false; okBtn.textContent = originalText; }
-                    if (_confirmModal) { _confirmModal.hide(); }
-                }
-                if (result && typeof result.then === 'function') {
-                    result.then(settle, settle);
-                } else {
-                    settle();
-                }
-            });
+    var krSaveBtn = document.getElementById('okr-kr-save-btn');
+    krSaveBtn.addEventListener('click', function () {
+        setError('okr-kr-modal', '');
+        var description = document.getElementById('okr-kr-desc').value.trim();
+        if (!description) {
+            setError('okr-kr-modal', 'Action Details is required.');
+            return;
         }
-        return _confirmModal;
-    }
-    function confirmAction(message, onConfirm, okLabel, okClass) {
-        document.getElementById('atem-confirm-message').textContent = message;
-        _confirmCb = onConfirm;
-        var okBtn = document.getElementById('atem-confirm-ok');
-        if (okBtn) {
-            okBtn.disabled = false;
-            okBtn.textContent = okLabel || 'Remove';
-            okBtn.className = 'btn ' + (okClass || 'btn-danger');
+
+        var editingToken = krTokenInput.value;
+        var parentToken = krParentTokenInput.value;
+
+        function stageIt() {
+            var body = new URLSearchParams();
+            body.set('action', parentToken ? 'stageKeyResultSubtask' : 'stageKeyResult');
+            if (parentToken) { body.set('parent_token', parentToken); }
+            body.set('description', description);
+            body.set('start_date', krStartInput.value);
+            body.set('end_date', krEndInput.value);
+            body.set('status_id', krStatusSelect.value);
+
+            fetch(CFG.apiUrl, { method: 'POST', body: body })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    restoreButton(krSaveBtn);
+                    if (res.success) {
+                        var newRow = {
+                            token: res.token,
+                            parent_token: parentToken || null,
+                            description: res.description,
+                            creator_name: res.creator_name,
+                            atem_id: null,
+                            start_date: res.start_date,
+                            end_date: res.end_date,
+                            status_id: res.status_id,
+                            status_value: res.status_value,
+                            pill_class: res.pill_class
+                        };
+                        if (editingToken) {
+                            var idx = keyResults.findIndex(function (r) { return r.token === editingToken; });
+                            if (idx !== -1) {
+                                newRow.atem_id = keyResults[idx].atem_id;
+                                keyResults[idx] = newRow;
+                            } else {
+                                keyResults.push(newRow);
+                            }
+                        } else {
+                            keyResults.push(newRow);
+                        }
+                        markChanged();
+                        renderKeyResults();
+                        krModal.hide();
+                    } else {
+                        setError('okr-kr-modal', res.message || 'Failed to save Key Result.');
+                    }
+                })
+                .catch(function () {
+                    restoreButton(krSaveBtn);
+                    setError('okr-kr-modal', 'Network error. Please try again.');
+                });
         }
-        var m = getConfirmModal();
-        if (m) { m.show(); } else { onConfirm(); }
-    }
+
+        setButtonLoading(krSaveBtn, 'Saving...');
+        if (editingToken) {
+            // Editing re-stages under a new token (staged rows have no id to
+            // update in place yet) - remove the old one first, then replace it.
+            var removeBody = new URLSearchParams();
+            if (parentToken) {
+                removeBody.set('action', 'removeStagedKeyResultSubtask');
+                removeBody.set('parent_token', parentToken);
+                removeBody.set('token', editingToken);
+            } else {
+                removeBody.set('action', 'removeStagedKeyResult');
+                removeBody.set('token', editingToken);
+            }
+            fetch(CFG.apiUrl, { method: 'POST', body: removeBody }).then(stageIt).catch(stageIt);
+        } else {
+            stageIt();
+        }
+    });
 
     krListEl.addEventListener('click', function (e) {
-        var row = e.target.closest ? e.target.closest('.okr-kr-row') : null;
+        var row = e.target.closest('.okr-kr-row');
         if (!row) { return; }
-        var id = parseInt(row.getAttribute('data-id'), 10);
-        var data = krList.filter(function (r) { return r.id === id; })[0];
+        var token = row.getAttribute('data-token');
+        var data = keyResults.filter(function (r) { return r.token === token; })[0];
         if (!data) { return; }
 
         if (e.target.closest('.okr-kr-add-atem')) {
-            openAtemModal(id, data.description);
-        } else if (e.target.closest('.okr-kr-add-sub')) {
-            openKrModal({ parent_id: id });
-        } else if (e.target.closest('.okr-kr-edit')) {
+            openAtemModal(token, data.description);
+            return;
+        }
+
+        if (e.target.closest('.okr-kr-add-sub')) {
+            openKrModal({ parentToken: token });
+            return;
+        }
+
+        if (e.target.closest('.okr-kr-edit')) {
             openKrModal({
-                id: data.id,
-                parent_id: data.parent_id,
+                token: data.token,
+                parentToken: data.parent_token,
                 description: data.description,
                 start_date: data.start_date,
                 end_date: data.end_date,
                 creatorName: data.creator_name,
                 status_id: data.status_id
             });
-        } else if (e.target.closest('.okr-kr-delete')) {
+            return;
+        }
+
+        if (e.target.closest('.okr-kr-delete')) {
             if (data.atem_id) {
                 openKrDeleteModal(data);
                 return;
             }
             confirmAction(
-                'Delete this ' + (data.parent_id ? 'Subtask' : 'Key Result') + '? This cannot be undone.',
-                function () { return performDeleteKeyResult(id); },
+                'Delete this ' + (data.parent_token ? 'Subtask' : 'Key Result') + '? This cannot be undone.',
+                function () { return performDeleteStagedKeyResult(token, data.parent_token); },
                 'Delete', 'btn-danger'
             );
         }
     });
 
-    function performDeleteKeyResult(id) {
+    function performDeleteStagedKeyResult(token, parentToken) {
         var body = new URLSearchParams();
-        body.set('action', 'deleteKeyResult');
-        body.set('id', id);
-        return fetch(CFG.apiUrl, { method: 'POST', body: body })
-            .then(function (r) { return r.json(); })
-            .then(function (res) {
-                if (res.success) { loadKeyResults(); }
-                else { setError('okr-kr', res.message || 'Failed to delete.'); }
-            })
-            .catch(function () { setError('okr-kr', 'Network error. Please try again.'); });
-    }
-
-    // Reverse-unlink (ATEM -> OKR): clears atems.okr_id, mirrors linkAtemOkrReverse
-    // in the AtemLink IIFE below but reachable from this scope (delete flow
-    // isn't nested inside that IIFE).
-    function unlinkAtemFromOkr(atemId) {
-        return fetch(CFG.atemApiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'link-atem-okr', id: atemId, okr_id: null })
-        }).then(function (r) { return r.json(); });
+        if (parentToken) {
+            body.set('action', 'removeStagedKeyResultSubtask');
+            body.set('parent_token', parentToken);
+            body.set('token', token);
+        } else {
+            body.set('action', 'removeStagedKeyResult');
+            body.set('token', token);
+        }
+        var p = fetch(CFG.apiUrl, { method: 'POST', body: body }).catch(function () {});
+        // Deleting a top-level Key Result also drops its staged subtasks client-side
+        // (the session entry disappears server-side along with them).
+        keyResults = keyResults.filter(function (r) { return r.token !== token && r.parent_token !== token; });
+        markChanged();
+        renderKeyResults();
+        return p;
     }
 
     function deleteAtemBridge(atemId, remark) {
@@ -892,13 +772,12 @@
     }
 
     // ---------------------------------------------------------------
-    // Delete Key Result / Subtask when an ATEM is linked - offers to either
-    // unlink the ATEM (default, ATEM itself is untouched) or delete the ATEM
-    // too. Deleting the ATEM is only offered when the requester is its
-    // Issuer and it's still Draft/Active - a stricter, OKR-side-only rule on
-    // top of atem-api's own destroy() guard (issuer-or-SuperAdmin, blocks
-    // only the 4 terminal statuses) since this button intentionally doesn't
-    // expose the SuperAdmin override atem-api's endpoint otherwise allows.
+    // Delete a staged Key Result / Subtask when an ATEM is linked. Unlike
+    // edit.js there's no reverse-link to unlink here - create.php's Link
+    // ATEM never sets the ATEM's okr_id (no real card id exists yet), so
+    // "Delete Key Result Only" just drops the staged row same as any other
+    // delete. "Delete Key Result & ATEM" is still gated the same way -
+    // requester must be the ATEM's Issuer and it must still be Draft/Active.
     // ---------------------------------------------------------------
     var krDeleteMsgEl = document.getElementById('okr-kr-delete-modal-message');
     var krDeleteAtemWrapEl = document.getElementById('okr-kr-delete-atem-wrap');
@@ -908,19 +787,15 @@
     function openKrDeleteModal(data) {
         setError('okr-kr-delete-modal', '');
         krDeleteRemarkInput.value = '';
-        krDeleteTarget = { id: data.id, atem_id: data.atem_id };
+        krDeleteTarget = { token: data.token, parent_token: data.parent_token, atem_id: data.atem_id };
 
-        var atem = atemMap[data.atem_id];
-        var atemTitle = atem ? atem.title : ('ATEM #' + data.atem_id);
-        var atemIssuerId = atem ? atem.issuer_staff_id : null;
-        var atemStatusValue = atem
-            ? (typeof atem.status === 'string' ? atem.status : (atem.status && atem.status.value))
-            : null;
-        var canDeleteAtem = !!(CFG.currentStaffId && atemIssuerId && CFG.currentStaffId === atemIssuerId
-            && (atemStatusValue === 'Active' || atemStatusValue === 'Draft'));
+        var atemTitle = data.atem_title || ('ATEM #' + data.atem_id);
+        var canDeleteAtem = !!(CFG.currentStaffId && data.atem_issuer_staff_id
+            && CFG.currentStaffId === data.atem_issuer_staff_id
+            && (data.atem_status_value === 'Active' || data.atem_status_value === 'Draft'));
 
         document.getElementById('okr-kr-delete-modal-title').textContent =
-            'Delete this ' + (data.parent_id ? 'Subtask' : 'Key Result') + '?';
+            'Delete this ' + (data.parent_token ? 'Subtask' : 'Key Result') + '?';
 
         if (canDeleteAtem) {
             krDeleteMsgEl.textContent = 'This is linked to ATEM "' + atemTitle + '". Choose whether to delete '
@@ -928,12 +803,12 @@
             krDeleteAtemWrapEl.style.display = '';
             krDeleteAtemBtn.style.display = '';
         } else {
-            var why = !atem ? '' : (atemIssuerId !== CFG.currentStaffId
+            var why = data.atem_issuer_staff_id !== CFG.currentStaffId
                 ? 'only the ATEM Issuer can delete it'
-                : 'it is no longer Draft or Active');
+                : 'it is no longer Draft or Active';
             krDeleteMsgEl.textContent = 'This is linked to ATEM "' + atemTitle + '". The ATEM cannot be deleted '
-                + 'from this page' + (why ? ' because ' + why : '') + ' - deleting this Key Result will unlink it '
-                + 'instead; the ATEM itself will remain.';
+                + 'from this page because ' + why + ' - deleting this Key Result will unlink it instead; the '
+                + 'ATEM itself will remain.';
             krDeleteAtemWrapEl.style.display = 'none';
             krDeleteAtemBtn.style.display = 'none';
         }
@@ -945,22 +820,11 @@
     krDeleteOnlyBtn.addEventListener('click', function () {
         if (!krDeleteTarget) { return; }
         var target = krDeleteTarget;
-        setError('okr-kr-delete-modal', '');
         setButtonLoading(krDeleteOnlyBtn, 'Deleting...');
-        unlinkAtemFromOkr(target.atem_id)
-            .then(function (res) {
-                if (!res.success) {
-                    restoreButton(krDeleteOnlyBtn);
-                    setError('okr-kr-delete-modal', res.message || 'Failed to unlink ATEM.');
-                    return;
-                }
+        performDeleteStagedKeyResult(target.token, target.parent_token)
+            .then(function () {
+                restoreButton(krDeleteOnlyBtn);
                 krDeleteModal.hide();
-                restoreButton(krDeleteOnlyBtn);
-                performDeleteKeyResult(target.id);
-            })
-            .catch(function () {
-                restoreButton(krDeleteOnlyBtn);
-                setError('okr-kr-delete-modal', 'Network error. Please try again.');
             });
     });
 
@@ -981,9 +845,9 @@
                     setError('okr-kr-delete-modal', res.message || 'Failed to delete ATEM.');
                     return;
                 }
-                krDeleteModal.hide();
                 restoreButton(krDeleteAtemBtn);
-                performDeleteKeyResult(target.id);
+                krDeleteModal.hide();
+                performDeleteStagedKeyResult(target.token, target.parent_token);
             })
             .catch(function () {
                 restoreButton(krDeleteAtemBtn);
@@ -991,101 +855,44 @@
             });
     });
 
-    var krSaveBtn = document.getElementById('okr-kr-save-btn');
-    krSaveBtn.addEventListener('click', function () {
-        setError('okr-kr-modal', '');
-        var description = document.getElementById('okr-kr-desc').value.trim();
-        if (!description) {
-            setError('okr-kr-modal', 'Action Details is required.');
-            return;
-        }
-
-        var id = document.getElementById('okr-kr-id').value;
-        var parentId = document.getElementById('okr-kr-parent-id').value;
-        var statusChanged = id && String(krStatusSelect.value) !== String(krModalOriginalStatusId || '');
-
-        var body = new URLSearchParams();
-        body.set('action', id ? 'updateKeyResult' : 'createKeyResult');
-        if (id) {
-            body.set('id', id);
-        } else {
-            body.set('card_id', card.id);
-            if (parentId) { body.set('parent_id', parentId); }
-        }
-        body.set('description', description);
-        body.set('start_date', krStartInput.value);
-        body.set('end_date', krEndInput.value);
-        body.set('status_id', krStatusSelect.value);
-
-        setButtonLoading(krSaveBtn, 'Saving...');
-        fetch(CFG.apiUrl, { method: 'POST', body: body })
-            .then(function (r) { return r.json(); })
-            .then(function (res) {
-                if (res.success) {
-                    krModal.hide();
-                    restoreButton(krSaveBtn);
-                    // Its status just changed and it's linked to an ATEM - rather than
-                    // silently mirroring the new status onto the ATEM (which would skip
-                    // atem-api's own business rules, e.g. requiring an Outcome Attachment
-                    // before Completed), send the user to update the ATEM itself.
-                    if (statusChanged && res.atem_id) {
-                        window.location.href = CFG.atemViewUrl + '?id=' + res.atem_id + '&mode=edit';
-                        return;
-                    }
-                    loadKeyResults();
-                } else {
-                    restoreButton(krSaveBtn);
-                    setError('okr-kr-modal', res.message || 'Failed to save.');
-                }
-            })
-            .catch(function () {
-                restoreButton(krSaveBtn);
-                setError('okr-kr-modal', 'Network error. Please try again.');
-            });
-    });
-
-    loadKeyResults();
-
     // ---------------------------------------------------------------
     // Link ATEM modal: Search Existing ATEM (always visible) + Create New
     // ATEM (toggled inline below it, mirrors atem/create.php's own fields
     // and submits via atem/api.php's save-atem action exactly like that
-    // page does). Ported from create.js, adapted for real (already-saved)
-    // Key Result/Subtask rows addressed by id instead of staged tokens -
-    // linkAtemToTarget persists via the real linkKeyResultAtem backend
-    // action instead of stageKeyResultAtemLink. Wrapped in its own IIFE
-    // since it ports a large amount of atem/js/create.js's logic - keeping
-    // it in a private scope avoids any name collisions with this file's own
-    // escapeHtml/setError/fillSelect (which have different signatures than
-    // ATEM's originals).
+    // page does). Wrapped in its own IIFE since it ports a large amount of
+    // atem/js/create.js's logic - keeping it in a private scope avoids any
+    // name collisions with this file's own escapeHtml/setError/fillSelect
+    // (which have different signatures than ATEM's originals).
     // ---------------------------------------------------------------
     var AtemLink = (function () {
         var ATEM_CFG = window.ATEM_CREATE_CONFIG || {};
         var atemModalEl = document.getElementById('okr-kr-atem-modal');
         var atemModal = new bootstrap.Modal(atemModalEl);
-        var atemTargetIdInput = document.getElementById('okr-kr-atem-target-id');
+        var atemTargetTokenInput = document.getElementById('okr-kr-atem-target-token');
         var pendingAtemTitle = ''; // Action text of the Key Result the modal was opened against - prefills the Create New ATEM title
 
         function $(id) { return document.getElementById(id); }
 
-        // ---- link-back to OKR: persists atem_id onto the real Key Result
-        // (or Subtask) row that the modal was opened against. Shared by both
-        // the Search pick and the Create-New save. ----
+        // ---- link-back to OKR: persists atem_id onto the staged Key Result
+        // (or Subtask) that the modal was opened against. Shared by both the
+        // Search pick and the Create-New save. ----
         function linkAtemToTarget(atemId) {
             var body = new URLSearchParams();
-            body.set('action', 'linkKeyResultAtem');
-            body.set('id', atemTargetIdInput.value);
+            body.set('action', 'stageKeyResultAtemLink');
+            body.set('token', atemTargetTokenInput.value);
             body.set('atem_id', atemId);
             return fetch(CFG.apiUrl, { method: 'POST', body: body }).then(function (r) { return r.json(); });
         }
 
-        function applyLinkedAtem(atemId, title) {
-            var data = krList.filter(function (r) { return r.id === parseInt(atemTargetIdInput.value, 10); })[0];
+        function applyLinkedAtem(atemId, title, issuerStaffId, statusValue) {
+            var data = keyResults.filter(function (r) { return r.token === atemTargetTokenInput.value; })[0];
             if (data) {
                 data.atem_id = atemId;
                 data.atem_title = title || ('ATEM #' + atemId);
+                data.atem_issuer_staff_id = (issuerStaffId != null) ? issuerStaffId : null;
+                data.atem_status_value = statusValue || null;
             }
-            atemMap[atemId] = { id: atemId, title: title || ('ATEM #' + atemId) };
+            markChanged();
             renderKeyResults();
         }
 
@@ -1148,38 +955,22 @@
             renderAtemOptions(items);
         });
 
-        // Reverse link (ATEM -> OKR): sets/clears atems.okr_id via atem-api's
-        // dedicated okr-link endpoint. Only relevant when linking an existing
-        // ATEM - Create New sets okr_id directly at creation time instead.
-        function linkAtemOkrReverse(atemId) {
-            return fetch(CFG.atemApiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'link-atem-okr', id: atemId, okr_id: card.id })
-            }).then(function (r) { return r.json(); });
-        }
-
         listEl.addEventListener('click', function (e) {
             var row = e.target.closest ? e.target.closest('.okr-kr-atem-row') : null;
             if (!row) { return; }
             var atemId = parseInt(row.getAttribute('data-atem-id'), 10);
             var title = row.getAttribute('data-atem-title');
+            var pickedItem = (atemListCache || []).filter(function (a) { return a.id === atemId; })[0];
             searchErrorEl.textContent = '';
             confirmAction('Link "' + title + '" to this OKR? This ATEM will be tied to this OKR card.', function () {
-                return linkAtemOkrReverse(atemId)
-                    .then(function (okrLinkRes) {
-                        if (!okrLinkRes.success) {
-                            searchErrorEl.textContent = okrLinkRes.message || 'Failed to link ATEM.';
-                            return;
+                return linkAtemToTarget(atemId)
+                    .then(function (res) {
+                        if (res.success) {
+                            applyLinkedAtem(atemId, title, pickedItem ? pickedItem.issuer_staff_id : null, pickedItem ? atemStatusLabel(pickedItem) : null);
+                            atemModal.hide();
+                        } else {
+                            searchErrorEl.textContent = res.message || 'Failed to link ATEM.';
                         }
-                        return linkAtemToTarget(atemId).then(function (res) {
-                            if (res.success) {
-                                applyLinkedAtem(atemId, title);
-                                atemModal.hide();
-                            } else {
-                                searchErrorEl.textContent = res.message || 'ATEM linked but failed to attach to Key Result.';
-                            }
-                        });
                     })
                     .catch(function () {
                         searchErrorEl.textContent = 'Network error. Please try again.';
@@ -1953,21 +1744,22 @@
         }
 
         // Pre-fills the ATEM's own Reference Link requirement with a link back
-        // to this OKR (already a real, saved card on edit.php - unlike
-        // create.php's not-yet-saved draft), so this ATEM is traceable back to
-        // the OKR that spawned it, and the issuer isn't forced to go find/paste
-        // that URL manually. Added once per Create-pane open, not re-added if
-        // already present.
+        // to the OKR being created, using the real Draft-status row
+        // okrEnsureDraftCard() created the moment this page opened (see
+        // create.php) - so this ATEM is traceable back to the OKR that spawned
+        // it, and the issuer isn't forced to go find/paste that URL manually.
+        // Added once per Create-pane open, not re-added if already present.
         function addOkrReferenceLinkIfMissing() {
+            if (!CFG.draftCardId) { return; }
             // atem-api's reference_links.*.url validation requires a fully
             // qualified URL, not a bare relative path - resolve against
             // <base href="/odb/"> so this works in every environment
             // (localhost, staging, production) without hardcoding a host.
-            var url = new URL(CFG.okrViewUrl + '?id=' + card.id, document.baseURI).href;
+            var url = new URL(CFG.okrViewUrl + '?id=' + CFG.draftCardId, document.baseURI).href;
             if (reflinks.some(function (r) { return r.url === url; })) { return; }
             var objectiveEl = document.getElementById('okr-objective');
             var objective = objectiveEl ? objectiveEl.value.trim() : '';
-            var name = objective ? ('OKR: ' + objective.slice(0, 60)) : ('OKR #' + card.id);
+            var name = objective ? ('OKR: ' + objective.slice(0, 60)) : ('OKR #' + CFG.draftCardId);
             reflinks.unshift({ name: name, url: url });
             renderReferenceLinks();
         }
@@ -2165,7 +1957,6 @@
                 end_date: $('tl-end').value || null,
                 arci: flattenArci(),
                 reference_links: reflinks,
-                okr_id: card.id,
                 mode: 'final'
             };
         }
@@ -2184,7 +1975,9 @@
                     return linkAtemToTarget(res.data.id).then(function (linkRes) {
                         if (btn) { btn.disabled = false; btn.textContent = 'Create & Link'; }
                         if (linkRes.success) {
-                            applyLinkedAtem(res.data.id, payload.title);
+                            // Freshly created via this flow, always mode: 'final' -> issuer
+                            // is the current user and status is Active (see collectPayload).
+                            applyLinkedAtem(res.data.id, payload.title, CFG.currentStaffId, 'Active');
                             atemModal.hide();
                         } else {
                             atemSetError('atem-save-error', linkRes.message || 'ATEM created but failed to link.');
@@ -2382,10 +2175,10 @@
             }
         }
 
-        // ---- public: open the modal against a given Key Result/Subtask id ----
-        function open(id, description) {
+        // ---- public: open the modal against a given Key Result/Subtask token ----
+        function open(token, description) {
             initOnce();
-            atemTargetIdInput.value = id;
+            atemTargetTokenInput.value = token;
             pendingAtemTitle = (description || '').slice(0, 255);
             searchInput.value = '';
             listEl.innerHTML = '<div class="okr-kr-empty">Loading...</div>';
@@ -2399,21 +2192,26 @@
         return { open: open };
     })();
 
-    function openAtemModal(id, description) {
-        AtemLink.open(id, description);
+    function openAtemModal(token, description) {
+        AtemLink.open(token, description);
     }
+
+    renderKeyResults();
 
     // ---------------------------------------------------------------
     // Validation + save
     // ---------------------------------------------------------------
-    function validate() {
+    // mode 'draft' skips only the reference-link requirement (backend.php's
+    // one relaxed rule) - every other field stays required since okr_cards
+    // has them as NOT NULL columns regardless of status.
+    function validate(mode) {
         clearErrors();
         var ok = true;
 
         var objective = document.getElementById('okr-objective').value.trim();
         if (!objective) { setError('okr-objective', 'Objective is required.'); ok = false; }
 
-        if (referenceLinks.length === 0) {
+        if (mode !== 'draft' && referenceLinks.length === 0) {
             setError('reflink-section', 'At least one reference link (e.g. the Trello board) is required.');
             ok = false;
         }
@@ -2424,45 +2222,6 @@
         var end = document.getElementById('okr-end').value;
         if (!end) { setError('okr-end', 'End date is required.'); ok = false; }
         else if (start && end < start) { setError('okr-end', 'End date cannot be before start date.'); ok = false; }
-
-        if (!statusSelect.value) { setError('okr-status', 'Select a status.'); ok = false; }
-
-        if (statusSelect.value === 'Extended' && !extendedCheckbox.checked) {
-            setError('okr-status', 'Tick "Extended?" and set an Extended Date when Status is Extended.');
-            ok = false;
-        }
-
-        if (extendedCheckbox.checked && !extendedDateInput.value) {
-            setError('okr-status', 'Extended Date is required when Extended is checked.');
-            ok = false;
-        }
-
-        // Ticking Extended + setting an Extended Date without also updating
-        // Status leaves an inconsistent record (e.g. still "Active"). Applies
-        // to everyone, including admins - there is no admin bypass on this
-        // rule (nor on the dropdown filtering below it once already extended).
-        //
-        // Two different allowed sets, matching okrPostExtensionResolvableStatuses
-        // in lib.php:
-        // - card.extended was already true when this page loaded (a
-        //   subsequent edit of an already-extended card): Status must
-        //   actually resolve it now - Completed (stored as Completed with
-        //   Extension) or Failed only. Staying on "Extended" is no longer
-        //   allowed past the first save.
-        // - card.extended was false (the user is extending for the first
-        //   time, this session): Status may still be left as "Extended" (an
-        //   ongoing, not-yet-resolved state), or resolved immediately as
-        //   Completed/Failed.
-        if (extendedCheckbox.checked && extendedDateInput.value) {
-            var allowedOnceExtended = card.extended ? ['Completed', 'Failed'] : ['Extended', 'Completed', 'Failed'];
-            if (allowedOnceExtended.indexOf(statusSelect.value) === -1) {
-                var msg = card.extended
-                    ? 'This OKR has already been extended - please change Status to Completed (with Extension) or Failed.'
-                    : 'You\'ve set an Extended Date - please change Status to Extended (or Completed/Failed if this OKR is already resolved).';
-                setError('okr-status', msg);
-                ok = false;
-            }
-        }
 
         if (ownerState.length === 0) { setError('okr-owner', 'An owner is required.'); ok = false; }
 
@@ -2475,7 +2234,104 @@
         return ok;
     }
 
-    function submitSave() {
+    // ---------------------------------------------------------------
+    // Session draft autosave (survives refresh) + Save as Draft (a real,
+    // status=Draft okr_cards row) - mirrors ATEM's draft-save/draft-clear
+    // and saveAtem(mode, navUrl)/cancelAtem(navUrl).
+    // ---------------------------------------------------------------
+    function buildDraftState() {
+        return {
+            objective: document.getElementById('okr-objective').value,
+            start_date: document.getElementById('okr-start').value,
+            end_date: document.getElementById('okr-end').value,
+            owner_state: ownerState
+        };
+    }
+
+    function hydrateDraftState(draft) {
+        if (!draft) { return; }
+        if (typeof draft.objective === 'string' && draft.objective) {
+            document.getElementById('okr-objective').value = draft.objective;
+        }
+        if (draft.start_date) { startDateInput.value = draft.start_date; }
+        if (draft.end_date) { endDateInput.value = draft.end_date; }
+        if (Array.isArray(draft.owner_state) && draft.owner_state.length) { ownerState = draft.owner_state; }
+        refreshOwnerUI();
+
+        if (Array.isArray(draft.reflinks) && draft.reflinks.length) {
+            referenceLinks = draft.reflinks;
+            renderReferenceLinks();
+        }
+        if (Array.isArray(draft.attachments) && draft.attachments.length) {
+            stagedFiles = draft.attachments;
+            renderFiles();
+        }
+        if (Array.isArray(draft.keyResults) && draft.keyResults.length) {
+            // PHP hydrates each staged Key Result with its subtasks nested
+            // inside - flatten into the same parent_token-linked shape the
+            // rest of this section works with.
+            keyResults = [];
+            draft.keyResults.forEach(function (kr) {
+                keyResults.push({
+                    token: kr.token,
+                    parent_token: null,
+                    description: kr.description,
+                    creator_name: kr.creator_name,
+                    atem_id: kr.atem_id || null,
+                    start_date: kr.start_date,
+                    end_date: kr.end_date,
+                    status_id: kr.status_id,
+                    status_value: kr.status_value,
+                    pill_class: kr.pill_class
+                });
+                (kr.subtasks || []).forEach(function (sub) {
+                    keyResults.push({
+                        token: sub.token,
+                        parent_token: kr.token,
+                        description: sub.description,
+                        creator_name: sub.creator_name,
+                        atem_id: null,
+                        start_date: sub.start_date,
+                        end_date: sub.end_date,
+                        status_id: sub.status_id,
+                        status_value: sub.status_value,
+                        pill_class: sub.pill_class
+                    });
+                });
+            });
+            renderKeyResults();
+        }
+
+        // Restored content is unsaved (no DB row yet), so leaving should still warn.
+        dirty = true;
+    }
+
+    // Any Key Result/Subtask linked to an ATEM while still staging (no real
+    // card id existed yet, so the reverse okr_id link on the ATEM side was
+    // never set - see AtemLink's applyLinkedAtem) gets that link backfilled
+    // here once createCard hands back a real id. Best-effort: a failure here
+    // doesn't block navigation, same tolerance as the "ATEM created but
+    // failed to link" case elsewhere - the KR<->ATEM link itself (atem_id)
+    // is already durable via okrFinalizeStagedKeyResults regardless.
+    function linkStagedAtemsToNewCard(newCardId) {
+        var targets = keyResults.filter(function (r) { return r.atem_id; });
+        if (targets.length === 0) { return Promise.resolve(); }
+        return Promise.all(targets.map(function (r) {
+            return fetch(CFG.atemApiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'link-atem-okr', id: r.atem_id, okr_id: newCardId })
+            }).then(function (resp) { return resp.json(); }).catch(function () { return { success: false }; });
+        }));
+    }
+
+    function saveOkr(mode, navUrl) {
+        if (!validate(mode)) { scrollToFirstError(); return; }
+        setError('okr-save', '');
+
+        var btn = document.getElementById('okr-save-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+
         var deptScopeIds = ownerState.map(function (m) { return m.dept_id; }).filter(function (v) { return !!v; });
         var deptScope = deptScopeIds.filter(function (v, i) { return deptScopeIds.indexOf(v) === i; }).join(',');
 
@@ -2483,8 +2339,8 @@
         var owner2 = ownerState[1] || {};
 
         var payload = new URLSearchParams();
-        payload.set('action', 'updateCard');
-        payload.set('id', card.id);
+        payload.set('action', 'createCard');
+        payload.set('mode', mode);
         payload.set('objective', document.getElementById('okr-objective').value.trim());
         payload.set('owner_staff_id', owner1.staff_id || '');
         payload.set('owner2_staff_id', owner2.staff_id || '');
@@ -2492,419 +2348,96 @@
         payload.set('dept_scope', deptScope);
         payload.set('start_date', document.getElementById('okr-start').value);
         payload.set('end_date', document.getElementById('okr-end').value);
-        payload.set('result_status', statusSelect.value);
-        payload.set('extended', extendedCheckbox.checked ? '1' : '');
-        payload.set('extended_date', extendedDateInput.value);
-        payload.set('remarks', document.getElementById('okr-remarks').value.trim());
-        var closureDateEl = document.getElementById('okr-closure');
-        if (closureDateEl && !closureDateEl.disabled) { payload.set('closure_date', closureDateEl.value); }
 
-        var saveBtn = document.getElementById('okr-save-btn');
-        setButtonLoading(saveBtn, 'Saving...');
         fetch(CFG.apiUrl, { method: 'POST', body: payload })
             .then(function (r) { return r.json(); })
             .then(function (res) {
                 if (res.success) {
                     leaving = true;
-                    window.location.href = 'okr/list.php';
+                    linkStagedAtemsToNewCard(res.id).then(function () {
+                        window.location.href = navUrl || ('okr/view.php?id=' + res.id);
+                    });
                 } else {
-                    restoreButton(saveBtn);
                     setError('okr-save', res.message || 'Failed to save OKR.');
+                    scrollToFirstError();
+                    if (btn) { btn.disabled = false; btn.textContent = 'Save OKR'; }
                 }
             })
             .catch(function () {
-                restoreButton(saveBtn);
                 setError('okr-save', 'Network error. Please try again.');
+                scrollToFirstError();
+                if (btn) { btn.disabled = false; btn.textContent = 'Save OKR'; }
             });
     }
+
+    function cancelOkr(navUrl) {
+        var body = new URLSearchParams();
+        body.set('action', 'clearDraftState');
+        fetch(CFG.apiUrl, { method: 'POST', body: body }).then(function () {
+            leaving = true;
+            window.location.href = navUrl || 'okr/list.php';
+        }).catch(function () {
+            leaving = true;
+            window.location.href = navUrl || 'okr/list.php';
+        });
+    }
+
+    // ------------------------------------------------------------ leave guard
+    var pendingNavUrl = 'okr/list.php';
+    var leaveModalEl = document.getElementById('okr-leave-modal');
+    var leaveModal = leaveModalEl ? new bootstrap.Modal(leaveModalEl) : null;
+
+    function showLeaveModal(navUrl) {
+        pendingNavUrl = navUrl || 'okr/list.php';
+        if (leaveModal) { leaveModal.show(); }
+    }
+
+    function bindLeaveGuard() {
+        var cancelBtn = document.getElementById('okr-cancel-btn');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', function () { showLeaveModal('okr/list.php'); });
+        }
+        var leaveCancelBtn = document.getElementById('okr-leave-cancel');
+        if (leaveCancelBtn) {
+            leaveCancelBtn.addEventListener('click', function () {
+                if (leaveModal) { leaveModal.hide(); }
+                cancelOkr(pendingNavUrl);
+            });
+        }
+        var leaveDraftBtn = document.getElementById('okr-leave-draft');
+        if (leaveDraftBtn) {
+            leaveDraftBtn.addEventListener('click', function () {
+                if (leaveModal) { leaveModal.hide(); }
+                saveOkr('draft', pendingNavUrl);
+            });
+        }
+
+        // Intercept in-app navigation links while there are unsaved changes.
+        document.addEventListener('click', function (e) {
+            if (!dirty || leaving) { return; }
+            var a = e.target.closest ? e.target.closest('a[href]') : null;
+            if (!a) { return; }
+            var href = a.getAttribute('href');
+            if (!href || href.charAt(0) === '#' || href.indexOf('javascript:') === 0) { return; }
+            if (a.getAttribute('target') === '_blank') { return; }
+            e.preventDefault();
+            showLeaveModal(a.href);
+        });
+
+        // Tab close / refresh: only a generic browser prompt is possible.
+        window.addEventListener('beforeunload', function (e) {
+            if (dirty && !leaving) {
+                e.preventDefault();
+                e.returnValue = '';
+                return '';
+            }
+        });
+    }
+    bindLeaveGuard();
 
     document.getElementById('okr-save-btn').addEventListener('click', function () {
-        if (!validate()) {
-            scrollToFirstError();
-            return;
-        }
-        submitSave();
+        saveOkr('final');
     });
 
-    // ---------------------------------------------------------------
-    // CEO Action (Suspend/Unsuspend/Force Terminate) + Appeal Suspension -
-    // same markup/actions as view.php's, so the CEO/admin doesn't have to
-    // leave the edit form just to suspend an OKR. Unsuspend/Force-Terminate-
-    // while-Suspended and appeal-submission never actually render here
-    // (edit.php redirects away once a card is Suspended/Failed), but this
-    // mirrors view.js's handlers exactly so both stay in sync.
-    // ---------------------------------------------------------------
-    var suspendBtn = document.getElementById('okr-suspend-btn');
-    var suspendReasonWrap = document.getElementById('okr-suspend-reason-wrap');
-    var suspendReasonInput = document.getElementById('okr-suspend-reason');
-    var suspendConfirmBtn = document.getElementById('okr-suspend-confirm-btn');
-    var suspendModalEl = document.getElementById('okr-suspend-modal');
-    var suspendModal = suspendModalEl ? new bootstrap.Modal(suspendModalEl) : null;
-    var suspendFinalBtn = document.getElementById('okr-suspend-final-btn');
-
-    if (suspendBtn && suspendReasonWrap) {
-        suspendBtn.addEventListener('click', function () {
-            setError('okr-suspend', '');
-            suspendReasonWrap.style.display = 'block';
-            suspendBtn.style.display = 'none';
-        });
-    }
-
-    if (suspendConfirmBtn && suspendModal) {
-        suspendConfirmBtn.addEventListener('click', function () {
-            setError('okr-suspend-reason', '');
-            var reason = suspendReasonInput.value.trim();
-            if (!reason) {
-                setError('okr-suspend-reason', 'A reason is required to suspend an OKR.');
-                return;
-            }
-            suspendModal.show();
-        });
-    }
-
-    if (suspendFinalBtn) {
-        suspendFinalBtn.addEventListener('click', function () {
-            var reason = suspendReasonInput.value.trim();
-
-            var payload = new URLSearchParams();
-            payload.set('action', 'suspendCard');
-            payload.set('id', card.id);
-            payload.set('reason', reason);
-
-            fetch(CFG.apiUrl, { method: 'POST', body: payload })
-                .then(function (r) { return r.json(); })
-                .then(function (res) {
-                    if (res.success) {
-                        window.location.reload();
-                    } else {
-                        suspendModal.hide();
-                        setError('okr-suspend-reason', res.message || 'Failed to suspend OKR.');
-                    }
-                })
-                .catch(function () {
-                    suspendModal.hide();
-                    setError('okr-suspend-reason', 'Network error. Please try again.');
-                });
-        });
-    }
-
-    var unsuspendBtn = document.getElementById('okr-unsuspend-btn');
-    if (unsuspendBtn) {
-        unsuspendBtn.addEventListener('click', function () {
-            setError('okr-suspend', '');
-
-            var payload = new URLSearchParams();
-            payload.set('action', 'unsuspendCard');
-            payload.set('id', card.id);
-
-            fetch(CFG.apiUrl, { method: 'POST', body: payload })
-                .then(function (r) { return r.json(); })
-                .then(function (res) {
-                    if (res.success) {
-                        window.location.reload();
-                    } else {
-                        setError('okr-suspend', res.message || 'Failed to unsuspend OKR.');
-                    }
-                })
-                .catch(function () {
-                    setError('okr-suspend', 'Network error. Please try again.');
-                });
-        });
-    }
-
-    var forceTerminateBtn = document.getElementById('okr-force-terminate-btn');
-    var forceTerminateWrap = document.getElementById('okr-force-terminate-wrap');
-    var forceTerminateRemarkInput = document.getElementById('okr-force-terminate-remark');
-    var forceTerminateConfirmBtn = document.getElementById('okr-force-terminate-confirm-btn');
-
-    if (forceTerminateBtn && forceTerminateWrap) {
-        forceTerminateBtn.addEventListener('click', function () {
-            setError('okr-suspend', '');
-            forceTerminateWrap.style.display = 'block';
-            forceTerminateBtn.style.display = 'none';
-        });
-    }
-
-    if (forceTerminateConfirmBtn) {
-        forceTerminateConfirmBtn.addEventListener('click', function () {
-            setError('okr-force-terminate-remark', '');
-            var remark = forceTerminateRemarkInput.value.trim();
-            if (!remark) {
-                setError('okr-force-terminate-remark', 'A remark is required to force terminate an OKR.');
-                return;
-            }
-            if (!confirm('Force terminate this OKR? This cannot be undone.')) { return; }
-
-            var payload = new URLSearchParams();
-            payload.set('action', 'forceTerminateCard');
-            payload.set('id', card.id);
-            payload.set('remark', remark);
-
-            fetch(CFG.apiUrl, { method: 'POST', body: payload })
-                .then(function (r) { return r.json(); })
-                .then(function (res) {
-                    if (res.success) {
-                        window.location.reload();
-                    } else {
-                        setError('okr-force-terminate-remark', res.message || 'Failed to force terminate OKR.');
-                    }
-                })
-                .catch(function () {
-                    setError('okr-force-terminate-remark', 'Network error. Please try again.');
-                });
-        });
-    }
-
-    var appealBtn = document.getElementById('okr-appeal-btn');
-    var appealWrap = document.getElementById('okr-appeal-wrap');
-    var appealJustificationInput = document.getElementById('okr-appeal-justification');
-    var appealConfirmBtn = document.getElementById('okr-appeal-confirm-btn');
-
-    if (appealBtn && appealWrap) {
-        appealBtn.addEventListener('click', function () {
-            setError('okr-appeal', '');
-            appealWrap.style.display = 'block';
-            appealBtn.style.display = 'none';
-        });
-    }
-
-    if (appealConfirmBtn) {
-        appealConfirmBtn.addEventListener('click', function () {
-            setError('okr-appeal-justification', '');
-            var justification = appealJustificationInput.value.trim();
-            if (!justification) {
-                setError('okr-appeal-justification', 'A justification is required to appeal.');
-                return;
-            }
-
-            var payload = new URLSearchParams();
-            payload.set('action', 'appealSuspension');
-            payload.set('id', card.id);
-            payload.set('justification', justification);
-
-            fetch(CFG.apiUrl, { method: 'POST', body: payload })
-                .then(function (r) { return r.json(); })
-                .then(function (res) {
-                    if (res.success) {
-                        window.location.reload();
-                    } else {
-                        setError('okr-appeal-justification', res.message || 'Failed to submit appeal.');
-                    }
-                })
-                .catch(function () {
-                    setError('okr-appeal-justification', 'Network error. Please try again.');
-                });
-        });
-    }
-
-    // ---------------------------------------------------------------
-    // Chat Box - per-card discussion thread, modeled after ATEM's Chat Box.
-    // Own messages can be edited/unsent within a 60s window (also enforced
-    // server-side); a 4s poll does a full resync so edits/unsends from other
-    // viewers propagate, mirroring ATEM's polling pattern.
-    // ---------------------------------------------------------------
-    var chatWrapEl = document.getElementById('okr-chat-wrap');
-    if (chatWrapEl && card.id) {
-        var CHAT_EDIT_WINDOW_MS = 60000;
-        var chatMessages = CFG.chatMessages ? CFG.chatMessages.slice() : [];
-        var chatInput = document.getElementById('okr-chat-input');
-        var chatSendBtn = document.getElementById('okr-chat-send-btn');
-
-        function chatWithinEditWindow(createdAt) {
-            var createdMs = new Date(String(createdAt).replace(' ', 'T')).getTime();
-            return (Date.now() - createdMs) < CHAT_EDIT_WINDOW_MS;
-        }
-
-        function chatBubbleHtml(m) {
-            var mine = CFG.currentStaffId && m.sender_staff_id === CFG.currentStaffId;
-            var canEdit = mine && chatWithinEditWindow(m.created_at);
-            var actions = canEdit
-                ? '<div class="okr-chat-bubble-actions">'
-                    + '<button type="button" class="okr-chat-edit-btn" data-id="' + m.id + '">Edit</button>'
-                    + '<button type="button" class="okr-chat-unsend-btn" data-id="' + m.id + '">Unsend</button>'
-                    + '</div>'
-                : '';
-            return '<div class="okr-chat-bubble' + (mine ? ' okr-chat-bubble-mine' : '') + '" data-message-id="' + m.id + '" data-created-at="' + escapeHtml(m.created_at) + '">'
-                + '<div class="okr-chat-bubble-header"><strong>' + escapeHtml(m.sender_name) + '</strong> <span class="okr-chat-bubble-time">' + escapeHtml(m.created_at) + '</span></div>'
-                + '<div class="okr-chat-bubble-body" id="okr-chat-body-' + m.id + '">' + escapeHtml(m.message) + '</div>'
-                + actions
-                + '</div>';
-        }
-
-        function renderChat() {
-            if (chatMessages.length === 0) {
-                chatWrapEl.innerHTML = '<div class="okr-empty-state">No messages yet.</div>';
-                return;
-            }
-            var html = '';
-            chatMessages.forEach(function (m) { html += chatBubbleHtml(m); });
-            chatWrapEl.innerHTML = html;
-            chatWrapEl.scrollTop = chatWrapEl.scrollHeight;
-        }
-
-        // Strips expired Edit/Unsend buttons every 5s without a full
-        // re-render, so the 60s window closes without waiting for a poll.
-        function refreshChatActionVisibility() {
-            chatMessages.forEach(function (m) {
-                var mine = CFG.currentStaffId && m.sender_staff_id === CFG.currentStaffId;
-                var bubble = chatWrapEl.querySelector('[data-message-id="' + m.id + '"]');
-                if (!bubble) { return; }
-                var actionsEl = bubble.querySelector('.okr-chat-bubble-actions');
-                var stillEditable = mine && chatWithinEditWindow(m.created_at);
-                if (!stillEditable && actionsEl) { actionsEl.remove(); }
-            });
-        }
-
-        function loadChatMessages() {
-            var body = new URLSearchParams();
-            body.set('action', 'listChatMessages');
-            body.set('id', card.id);
-            fetch(CFG.apiUrl + '?' + body.toString())
-                .then(function (r) { return r.json(); })
-                .then(function (res) {
-                    if (!res.success) { return; }
-                    var incoming = res.data || [];
-                    if (JSON.stringify(incoming) !== JSON.stringify(chatMessages)) {
-                        chatMessages = incoming;
-                        renderChat();
-                    }
-                })
-                .catch(function () {});
-        }
-
-        function sendChatMessage() {
-            var message = chatInput.value.trim();
-            if (!message) { return; }
-            setError('okr-chat', '');
-
-            var body = new URLSearchParams();
-            body.set('action', 'sendChatMessage');
-            body.set('id', card.id);
-            body.set('message', message);
-
-            setButtonLoading(chatSendBtn, 'Sending...');
-            fetch(CFG.apiUrl, { method: 'POST', body: body })
-                .then(function (r) { return r.json(); })
-                .then(function (res) {
-                    restoreButton(chatSendBtn);
-                    if (res.success) {
-                        chatMessages.push({
-                            id: res.id,
-                            sender_staff_id: res.sender_staff_id,
-                            sender_name: res.sender_name,
-                            message: res.message,
-                            created_at: res.created_at,
-                            updated_at: res.updated_at
-                        });
-                        chatInput.value = '';
-                        renderChat();
-                    } else {
-                        setError('okr-chat', res.message || 'Failed to send message.');
-                    }
-                })
-                .catch(function () {
-                    restoreButton(chatSendBtn);
-                    setError('okr-chat', 'Network error. Please try again.');
-                });
-        }
-
-        function startEditChatMessage(id) {
-            var m = chatMessages.filter(function (x) { return x.id === id; })[0];
-            if (!m) { return; }
-            var bodyEl = document.getElementById('okr-chat-body-' + id);
-            if (!bodyEl) { return; }
-            bodyEl.innerHTML = '<textarea class="okr-chat-edit-textarea" rows="2">' + escapeHtml(m.message) + '</textarea>'
-                + '<div class="okr-chat-edit-actions">'
-                + '<button type="button" class="okr-chat-save-btn" data-id="' + id + '">Save</button>'
-                + '<button type="button" class="okr-chat-cancel-btn" data-id="' + id + '">Cancel</button>'
-                + '</div>';
-            bodyEl.querySelector('textarea').focus();
-        }
-
-        function cancelEditChatMessage(id) {
-            var m = chatMessages.filter(function (x) { return x.id === id; })[0];
-            var bodyEl = document.getElementById('okr-chat-body-' + id);
-            if (m && bodyEl) { bodyEl.textContent = m.message; }
-        }
-
-        function saveEditChatMessage(id) {
-            var bodyEl = document.getElementById('okr-chat-body-' + id);
-            if (!bodyEl) { return; }
-            var textarea = bodyEl.querySelector('textarea');
-            var message = textarea ? textarea.value.trim() : '';
-            if (!message) { return; }
-            var saveBtn = bodyEl.querySelector('.okr-chat-save-btn');
-
-            var body = new URLSearchParams();
-            body.set('action', 'editChatMessage');
-            body.set('id', id);
-            body.set('message', message);
-
-            setButtonLoading(saveBtn, 'Saving...');
-            fetch(CFG.apiUrl, { method: 'POST', body: body })
-                .then(function (r) { return r.json(); })
-                .then(function (res) {
-                    if (res.success) {
-                        var m = chatMessages.filter(function (x) { return x.id === id; })[0];
-                        if (m) { m.message = res.message; }
-                        renderChat();
-                    } else {
-                        restoreButton(saveBtn);
-                        alert(res.message || 'Failed to save message.');
-                    }
-                })
-                .catch(function () {
-                    restoreButton(saveBtn);
-                    alert('Network error. Please try again.');
-                });
-        }
-
-        function unsendChatMessage(id) {
-            confirmAction('Unsend this message?', function () {
-                var body = new URLSearchParams();
-                body.set('action', 'unsendChatMessage');
-                body.set('id', id);
-                return fetch(CFG.apiUrl, { method: 'POST', body: body })
-                    .then(function (r) { return r.json(); })
-                    .then(function (res) {
-                        if (res.success) {
-                            chatMessages = chatMessages.filter(function (x) { return x.id !== id; });
-                            renderChat();
-                        } else {
-                            alert(res.message || 'Failed to unsend message.');
-                        }
-                    })
-                    .catch(function () {
-                        alert('Network error. Please try again.');
-                    });
-            }, 'Unsend', 'btn-danger');
-        }
-
-        chatWrapEl.addEventListener('click', function (e) {
-            var editBtn = e.target.closest('.okr-chat-edit-btn');
-            var unsendBtn = e.target.closest('.okr-chat-unsend-btn');
-            var saveBtn = e.target.closest('.okr-chat-save-btn');
-            var cancelBtn = e.target.closest('.okr-chat-cancel-btn');
-            if (editBtn) { startEditChatMessage(parseInt(editBtn.getAttribute('data-id'), 10)); }
-            else if (unsendBtn) { unsendChatMessage(parseInt(unsendBtn.getAttribute('data-id'), 10)); }
-            else if (saveBtn) { saveEditChatMessage(parseInt(saveBtn.getAttribute('data-id'), 10)); }
-            else if (cancelBtn) { cancelEditChatMessage(parseInt(cancelBtn.getAttribute('data-id'), 10)); }
-        });
-
-        if (chatSendBtn) {
-            chatSendBtn.addEventListener('click', sendChatMessage);
-        }
-        if (chatInput) {
-            chatInput.addEventListener('keydown', function (e) {
-                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                    e.preventDefault();
-                    sendChatMessage();
-                }
-            });
-        }
-
-        renderChat();
-        setInterval(loadChatMessages, 4000);
-        setInterval(refreshChatActionVisibility, 5000);
-    }
+    hydrateDraftState(CFG.draft);
 })();

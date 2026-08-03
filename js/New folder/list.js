@@ -261,25 +261,9 @@
     }
 
     function canEdit(card) {
-        // Suspending no longer changes result_status - check the flag
-        // directly (see is_suspended in lib.php/backend.php's suspendCard),
-        // not a status value that a suspended card would never actually have.
-        return !card.deleted_at && !card.is_suspended && card.result_status !== 'Failed'
+        return !card.deleted_at && card.result_status !== 'Suspended' && card.result_status !== 'Failed'
             && card.result_status !== 'Force Terminated'
             && (CFG.requesterIsAdmin || card.issuer_staff_id === CFG.requesterId);
-    }
-
-    // Resolved/locked outcomes - clicking one of these cards should land on
-    // the read-only view (there's an Edit link there too, for the rare cases
-    // still editable - e.g. a Completed card - rather than jumping straight
-    // into edit mode for something that's already been decided).
-    var TERMINAL_STATUSES = ['Completed', 'Completed with Excellence', 'Completed with Extension', 'Failed', 'Force Terminated'];
-    function isTerminalStatus(card) {
-        // Suspended is no longer a result_status value a card can hold (see
-        // is_suspended) - treat currently-suspended as terminal here too
-        // (locked pending Unsuspend/Force Terminate), regardless of its real
-        // underlying status.
-        return card.is_suspended || TERMINAL_STATUSES.indexOf(card.result_status) !== -1;
     }
 
     // Admin can delete any card; the issuer can only delete their own card
@@ -309,17 +293,7 @@
 
         var rows = CFG.cards.filter(function (card) {
             if (statuses.length === 0) return false;
-            // Suspending no longer changes result_status (see is_suspended in
-            // lib.php/backend.php's suspendCard) - a card keeps matching its
-            // own real status regardless of suspension, but the "Suspended"
-            // checkbox additionally matches on card.is_suspended so it still
-            // finds every currently-suspended card, whatever status it's
-            // showing.
-            if (statuses.length < allStatusCount) {
-                var matchesStatus = statuses.indexOf(card.result_status) !== -1
-                    || (card.is_suspended && statuses.indexOf('Suspended') !== -1);
-                if (!matchesStatus) return false;
-            }
+            if (statuses.length < allStatusCount && statuses.indexOf(card.result_status) === -1) return false;
             if (deptId) {
                 var deptIds = (card.dept_scope || '').split(',').map(function (s) { return s.trim(); });
                 if (deptIds.indexOf(deptId) === -1) return false;
@@ -356,18 +330,10 @@
         rows.forEach(function (card) {
             var tr = document.createElement('tr');
             if (card.deleted_at) { tr.classList.add('okr-row-deleted'); }
-            // One primary action per row instead of separate View/Edit icons -
-            // a resolved/locked card (see isTerminalStatus) opens read-only
-            // view.php by default, UNLESS the requester qualifies for a
-            // terminal-status revert (see canTerminalRevert), in which case
-            // it opens edit.php straight into that restricted mode instead
-            // (mirrors ATEM); anything still in-flight opens straight into
-            // edit.php for whoever can edit it, otherwise falls back to
-            // view.php too.
-            var openEdit = !isTerminalStatus(card) && canEdit(card);
-            var actions = openEdit
-                ? '<a class="btn btn-outline-secondary btn-sm" href="okr/edit.php?id=' + card.id + '" title="Edit"><i class="bi bi-pencil"></i></a>'
-                : '<a class="btn btn-outline-secondary btn-sm" href="okr/view.php?id=' + card.id + '" title="View"><i class="bi bi-eye"></i></a>';
+            var actions = '<a class="btn btn-outline-secondary btn-sm" href="okr/view.php?id=' + card.id + '" title="View"><i class="bi bi-eye"></i></a>';
+            if (canEdit(card)) {
+                actions += ' <a class="btn btn-outline-secondary btn-sm" href="okr/edit.php?id=' + card.id + '" title="Edit"><i class="bi bi-pencil"></i></a>';
+            }
             if (canDelete(card)) {
                 actions += ' <button type="button" class="btn btn-outline-danger btn-sm okr-list-delete-btn" data-id="' + card.id + '" title="Delete"><i class="bi bi-trash"></i></button>';
             }
@@ -380,12 +346,6 @@
             var statusCell = card.deleted_at
                 ? '<span class="okr-pill okr-pill-fail">Deleted</span>'
                 : '<span class="okr-pill ' + card.pill_class + '">' + escapeHtml(card.result_status) + '</span>';
-            // Suspending no longer changes result_status - shown as a
-            // separate badge alongside the real status pill (see is_suspended
-            // in lib.php/backend.php's suspendCard).
-            if (!card.deleted_at && card.is_suspended) {
-                statusCell += ' <span class="okr-pill okr-pill-suspended"><i class="bi bi-pause-circle"></i> Suspended</span>';
-            }
             tr.innerHTML =
                 '<td><span class="okr-id">#OKR' + card.id + '</span></td>' +
                 '<td>' + escapeHtml(card.objective).slice(0, 80) + '</td>' +

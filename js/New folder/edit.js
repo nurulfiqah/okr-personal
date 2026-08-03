@@ -2496,8 +2496,6 @@
         payload.set('extended', extendedCheckbox.checked ? '1' : '');
         payload.set('extended_date', extendedDateInput.value);
         payload.set('remarks', document.getElementById('okr-remarks').value.trim());
-        var closureDateEl = document.getElementById('okr-closure');
-        if (closureDateEl && !closureDateEl.disabled) { payload.set('closure_date', closureDateEl.value); }
 
         var saveBtn = document.getElementById('okr-save-btn');
         setButtonLoading(saveBtn, 'Saving...');
@@ -2506,7 +2504,7 @@
             .then(function (res) {
                 if (res.success) {
                     leaving = true;
-                    window.location.href = 'okr/list.php';
+                    window.location.href = 'okr/view.php?id=' + card.id + '&saved=1';
                 } else {
                     restoreButton(saveBtn);
                     setError('okr-save', res.message || 'Failed to save OKR.');

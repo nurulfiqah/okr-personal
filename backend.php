@@ -89,7 +89,7 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
         $filter_sql .= " AND (c.owner_staff_id = $filter_staff_id OR c.owner2_staff_id = $filter_staff_id OR c.issuer_staff_id = $filter_staff_id)";
     }
 
-    $query = "SELECT c.id, os.value AS result_status, c.force_terminated,
+    $query = "SELECT c.id, os.value AS result_status, c.force_terminated, c.is_suspended,
                      c.start_date, c.end_date, c.issuer_staff_id,
                      iss.nama_staff AS issuer_name, iss.department AS issuer_department
               FROM okr_cards c
@@ -147,19 +147,24 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
             // in its own bucket, so it doesn't double up against ordinary
             // Failed cards.
             $is_force_terminated = okrIsForceTerminated($status, $row['force_terminated']);
+            // is_suspended is independent of result_status now (see
+            // suspendCard) - a suspended card keeps showing whatever status
+            // it already had, so this is checked separately from $status
+            // throughout, not folded into the status-based buckets above.
+            $is_suspended = !empty($row['is_suspended']);
 
             $by_dept[$dept_id]['cards']++;
             if ($is_complete) { $by_dept[$dept_id]['complete']++; }
             if ($status === 'Completed with Excellence') { $by_dept[$dept_id]['excellence']++; }
             if ($status === 'Failed' && !$is_force_terminated) { $by_dept[$dept_id]['fail']++; }
-            if ($status === OKR_STATUS_SUSPENDED) { $by_dept[$dept_id]['suspended']++; }
+            if ($is_suspended) { $by_dept[$dept_id]['suspended']++; }
             if ($is_force_terminated) { $by_dept[$dept_id]['force_terminated']++; }
 
             // Top offenders for the Suspended & Force Terminated ranking -
             // keyed by issuer, only tallying the two buckets that matter
             // there so a staff member with no suspensions never shows up.
             $issuer_id = (int)$row['issuer_staff_id'];
-            if ($status === OKR_STATUS_SUSPENDED || $is_force_terminated) {
+            if ($is_suspended || $is_force_terminated) {
                 if (!isset($by_staff[$issuer_id])) {
                     $by_staff[$issuer_id] = [
                         'staff_id' => $issuer_id,
@@ -167,7 +172,7 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
                         'suspended' => 0, 'force_terminated' => 0,
                     ];
                 }
-                if ($status === OKR_STATUS_SUSPENDED) { $by_staff[$issuer_id]['suspended']++; }
+                if ($is_suspended) { $by_staff[$issuer_id]['suspended']++; }
                 if ($is_force_terminated) { $by_staff[$issuer_id]['force_terminated']++; }
             }
         }
@@ -652,7 +657,7 @@ if ($action === 'createKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT c.issuer_staff_id, os.value AS status_value
+    $check = mysqli_query($conn, "SELECT c.issuer_staff_id, c.is_suspended, os.value AS status_value
                                    FROM okr_cards c LEFT JOIN okr_statuses os ON c.result_status = os.id
                                    WHERE c.id = $card_id AND c.deleted_at IS NULL");
     if (!$check || mysqli_num_rows($check) === 0) {
@@ -664,7 +669,7 @@ if ($action === 'createKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['success' => false, 'message' => 'Only the issuer can add Key Results.']);
         exit;
     }
-    if ($card['status_value'] === 'Suspended' || $card['status_value'] === 'Failed' || $card['status_value'] === OKR_STATUS_FORCE_TERMINATED) {
+    if (!empty($card['is_suspended']) || $card['status_value'] === 'Failed' || $card['status_value'] === OKR_STATUS_FORCE_TERMINATED) {
         echo json_encode(['success' => false, 'message' => 'This OKR is locked and can no longer be edited.']);
         exit;
     }
@@ -722,7 +727,7 @@ if ($action === 'updateKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT kr.card_id, kr.parent_id, kr.atem_id, c.issuer_staff_id, os.value AS status_value
+    $check = mysqli_query($conn, "SELECT kr.card_id, kr.parent_id, kr.atem_id, c.issuer_staff_id, c.is_suspended, os.value AS status_value
                                    FROM okr_key_results kr
                                    JOIN okr_cards c ON kr.card_id = c.id
                                    LEFT JOIN okr_statuses os ON c.result_status = os.id
@@ -736,7 +741,7 @@ if ($action === 'updateKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['success' => false, 'message' => 'Only the issuer can edit Key Results.']);
         exit;
     }
-    if ($kr['status_value'] === 'Suspended' || $kr['status_value'] === 'Failed' || $kr['status_value'] === OKR_STATUS_FORCE_TERMINATED) {
+    if (!empty($kr['is_suspended']) || $kr['status_value'] === 'Failed' || $kr['status_value'] === OKR_STATUS_FORCE_TERMINATED) {
         echo json_encode(['success' => false, 'message' => 'This OKR is locked and can no longer be edited.']);
         exit;
     }
@@ -823,7 +828,7 @@ if ($action === 'syncKeyResultStatusFromAtem' && $_SERVER['REQUEST_METHOD'] === 
     }
     $status_id = $allowed_by_value[$status_value];
 
-    $rows_res = mysqli_query($conn, "SELECT kr.id, kr.card_id, kr.parent_id, c.issuer_staff_id, os.value AS card_status_value
+    $rows_res = mysqli_query($conn, "SELECT kr.id, kr.card_id, kr.parent_id, c.issuer_staff_id, c.is_suspended AS card_is_suspended, os.value AS card_status_value
                                       FROM okr_key_results kr
                                       JOIN okr_cards c ON kr.card_id = c.id
                                       LEFT JOIN okr_statuses os ON c.result_status = os.id
@@ -833,7 +838,7 @@ if ($action === 'syncKeyResultStatusFromAtem' && $_SERVER['REQUEST_METHOD'] === 
         while ($row = mysqli_fetch_assoc($rows_res)) {
             // Literal issuer only - no admin bypass, per this feature's own rule.
             if ((int)$row['issuer_staff_id'] !== $requester_id) { continue; }
-            if ($row['card_status_value'] === 'Suspended' || $row['card_status_value'] === 'Failed' || $row['card_status_value'] === OKR_STATUS_FORCE_TERMINATED) { continue; }
+            if (!empty($row['card_is_suspended']) || $row['card_status_value'] === 'Failed' || $row['card_status_value'] === OKR_STATUS_FORCE_TERMINATED) { continue; }
 
             if ($row['parent_id'] === null && in_array($status_value, ['Completed', 'Completed with Excellence'], true)) {
                 $active_sub = mysqli_query($conn, "SELECT kr2.id FROM okr_key_results kr2
@@ -862,7 +867,7 @@ if ($action === 'deleteKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT kr.card_id, kr.parent_id, kr.description, c.issuer_staff_id, os.value AS status_value
+    $check = mysqli_query($conn, "SELECT kr.card_id, kr.parent_id, kr.description, c.issuer_staff_id, c.is_suspended, os.value AS status_value
                                    FROM okr_key_results kr
                                    JOIN okr_cards c ON kr.card_id = c.id
                                    LEFT JOIN okr_statuses os ON c.result_status = os.id
@@ -876,7 +881,7 @@ if ($action === 'deleteKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['success' => false, 'message' => 'Only the issuer can remove Key Results.']);
         exit;
     }
-    if ($kr['status_value'] === 'Suspended' || $kr['status_value'] === 'Failed' || $kr['status_value'] === OKR_STATUS_FORCE_TERMINATED) {
+    if (!empty($kr['is_suspended']) || $kr['status_value'] === 'Failed' || $kr['status_value'] === OKR_STATUS_FORCE_TERMINATED) {
         echo json_encode(['success' => false, 'message' => 'This OKR is locked and can no longer be edited.']);
         exit;
     }
@@ -902,7 +907,7 @@ if ($action === 'linkKeyResultAtem' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT kr.card_id, c.issuer_staff_id, os.value AS status_value
+    $check = mysqli_query($conn, "SELECT kr.card_id, c.issuer_staff_id, c.is_suspended, os.value AS status_value
                                    FROM okr_key_results kr
                                    JOIN okr_cards c ON kr.card_id = c.id
                                    LEFT JOIN okr_statuses os ON c.result_status = os.id
@@ -916,7 +921,7 @@ if ($action === 'linkKeyResultAtem' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['success' => false, 'message' => 'Only the issuer can link ATEM.']);
         exit;
     }
-    if ($kr['status_value'] === 'Suspended' || $kr['status_value'] === 'Failed' || $kr['status_value'] === OKR_STATUS_FORCE_TERMINATED) {
+    if (!empty($kr['is_suspended']) || $kr['status_value'] === 'Failed' || $kr['status_value'] === OKR_STATUS_FORCE_TERMINATED) {
         echo json_encode(['success' => false, 'message' => 'This OKR is locked and can no longer be edited.']);
         exit;
     }
@@ -945,7 +950,7 @@ if ($action === 'reorderKeyResultSubtasks' && $_SERVER['REQUEST_METHOD'] === 'PO
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT kr.card_id, c.issuer_staff_id, os.value AS status_value
+    $check = mysqli_query($conn, "SELECT kr.card_id, c.issuer_staff_id, c.is_suspended, os.value AS status_value
                                    FROM okr_key_results kr
                                    JOIN okr_cards c ON kr.card_id = c.id
                                    LEFT JOIN okr_statuses os ON c.result_status = os.id
@@ -959,7 +964,7 @@ if ($action === 'reorderKeyResultSubtasks' && $_SERVER['REQUEST_METHOD'] === 'PO
         echo json_encode(['success' => false, 'message' => 'Only the issuer can reorder subtasks.']);
         exit;
     }
-    if ($kr['status_value'] === 'Suspended' || $kr['status_value'] === 'Failed' || $kr['status_value'] === OKR_STATUS_FORCE_TERMINATED) {
+    if (!empty($kr['is_suspended']) || $kr['status_value'] === 'Failed' || $kr['status_value'] === OKR_STATUS_FORCE_TERMINATED) {
         echo json_encode(['success' => false, 'message' => 'This OKR is locked and can no longer be edited.']);
         exit;
     }
@@ -1078,9 +1083,10 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT c.issuer_staff_id, c.objective,
+    $check = mysqli_query($conn, "SELECT c.issuer_staff_id, c.objective, c.is_suspended,
                                           c.owner_staff_id, c.owner2_staff_id, c.owner2_purpose, c.dept_scope,
-                                          c.start_date, c.end_date, c.extended, c.extended_date, c.remarks, os.value AS status_value
+                                          c.start_date, c.end_date, c.extended, c.extended_date, c.remarks, c.closed_at,
+                                          os.value AS status_value
                                    FROM okr_cards c LEFT JOIN okr_statuses os ON c.result_status = os.id
                                    WHERE c.id = $id AND c.deleted_at IS NULL");
     if (!$check || mysqli_num_rows($check) === 0) {
@@ -1092,7 +1098,7 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['success' => false, 'message' => 'Only the issuer can edit this OKR.']);
         exit;
     }
-    if ($card['status_value'] === 'Suspended' || $card['status_value'] === 'Failed' || $card['status_value'] === OKR_STATUS_FORCE_TERMINATED) {
+    if (!empty($card['is_suspended']) || $card['status_value'] === 'Failed' || $card['status_value'] === OKR_STATUS_FORCE_TERMINATED) {
         echo json_encode(['success' => false, 'message' => 'This OKR is locked and can no longer be edited.']);
         exit;
     }
@@ -1206,6 +1212,22 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $closed_sql = '';
     }
+    // Closure Date is a real, independently-editable completion marker now
+    // (not purely a side-effect of the open/closed transition above) - the
+    // Issuer, CEO, or admin may set/adjust it afterward, within Start Date..
+    // today, as long as the resulting status isn't Draft/Active/Failed/
+    // Suspended (see okrCanEditClosureDate()/okrClosureDateLockedStatuses()
+    // in lib.php). Overrides the automatic $closed_sql above when supplied.
+    $closure_date_posted = trim($_POST['closure_date'] ?? '');
+    if ($closure_date_posted !== '' && okrCanEditClosureDate($final_status, $card['issuer_staff_id'], false, $requester_id, $requester_grade, $requester_is_admin)) {
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $closure_date_posted)
+            || $closure_date_posted < $start_date || $closure_date_posted > date('Y-m-d')) {
+            echo json_encode(['success' => false, 'message' => 'Closure Date must be between Start Date and today.']);
+            exit;
+        }
+        $closure_date_e = mysqli_real_escape_string($conn, $closure_date_posted);
+        $closed_sql = ", closed_by = $requester_id, closed_at = '$closure_date_e'";
+    }
     // Locking is a separate action from completing (handled elsewhere) — a
     // Complete status alone does not lock the card from further edits.
     $update = "UPDATE okr_cards SET
@@ -1225,6 +1247,9 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($card['dept_scope'] !== $dept_scope_safe) { $changes['dept_scope'] = [$card['dept_scope'], $dept_scope_safe]; }
         if ($card['start_date'] !== $start_date) { $changes['start_date'] = [$card['start_date'], $start_date]; }
         if ($card['end_date'] !== $end_date) { $changes['end_date'] = [$card['end_date'], $end_date]; }
+        if ($closure_date_posted !== '' && substr((string)$card['closed_at'], 0, 10) !== $closure_date_posted) {
+            $changes['closure_date'] = [$card['closed_at'] ? substr($card['closed_at'], 0, 10) : null, $closure_date_posted];
+        }
         if ($card['status_value'] !== $final_status) { $changes['result_status'] = [$card['status_value'], $final_status]; }
         if (!(bool)$card['extended'] && $extended) { $changes['extended'] = [false, true]; }
         if ((string)$card['extended_date'] !== $extended_date) { $changes['extended_date'] = [$card['extended_date'], $extended_date]; }
@@ -1322,7 +1347,7 @@ if ($action === 'suspendCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT c.objective, c.issuer_staff_id, os.value AS status_value,
+    $check = mysqli_query($conn, "SELECT c.objective, c.issuer_staff_id, c.is_suspended, os.value AS status_value,
                                           s.nama_staff AS issuer_name, s.email AS issuer_email
                                    FROM okr_cards c
                                    LEFT JOIN okr_statuses os ON c.result_status = os.id
@@ -1334,20 +1359,21 @@ if ($action === 'suspendCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $card = mysqli_fetch_assoc($check);
     // The CEO can suspend an OKR in any status except Draft - a Draft isn't
-    // a real, issued OKR yet, so there's nothing to suspend. (A currently-
-    // Suspended card is also implicitly excluded here, since it would
-    // already have a 'suspended' audit log entry and get caught by the
-    // one-suspend-per-lifetime check below.)
+    // a real, issued OKR yet, so there's nothing to suspend.
     if ($card['status_value'] === OKR_STATUS_DRAFT) {
         echo json_encode(['success' => false, 'message' => 'A Draft OKR cannot be suspended.']);
         exit;
     }
+    if (!empty($card['is_suspended'])) {
+        echo json_encode(['success' => false, 'message' => 'This OKR is already suspended.']);
+        exit;
+    }
 
-    // An OKR can only ever be suspended once in its lifetime - once it has
-    // been unsuspended back to Active it cannot be suspended again. Checked
-    // against the audit log (never cleared) rather than okr_cards.closed_at
-    // (which unsuspendCard nulls out), so a previous suspend cycle is still
-    // detected after the card returns to Active.
+    // An OKR can only ever be suspended once in its lifetime - once
+    // unsuspended it cannot be suspended again. Checked against the audit
+    // log (never cleared) rather than is_suspended alone (which
+    // unsuspendCard clears), so a previous suspend cycle is still detected
+    // after the card is reopened.
     $already_suspended_check = mysqli_query($conn, "SELECT 1 FROM okr_audit_logs
                                                       WHERE card_id = $id AND event = 'suspended' LIMIT 1");
     if ($already_suspended_check && mysqli_num_rows($already_suspended_check) > 0) {
@@ -1361,13 +1387,17 @@ if ($action === 'suspendCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $status_id = okrStatusIdByValue($conn, OKR_STATUS_SUSPENDED);
-    $reason_e  = mysqli_real_escape_string($conn, $reason);
-    $update = "UPDATE okr_cards SET result_status = $status_id, closed_by = $requester_id, closed_at = NOW(),
+    // Suspend no longer touches result_status - the card keeps showing
+    // whatever status it already had (see okrFormatCard's is_suspended
+    // comment in lib.php). Closure Date is "written off" (cleared) rather
+    // than stamped, since a suspend is a pause, not a completion.
+    $reason_e = mysqli_real_escape_string($conn, $reason);
+    $update = "UPDATE okr_cards SET is_suspended = 1, suspended_by = $requester_id, suspended_at = NOW(),
+               closed_by = NULL, closed_at = NULL,
                remarks = '$reason_e', appeal_justification = NULL, appealed_at = NULL WHERE id = $id";
     if (mysqli_query($conn, $update)) {
         okrLogAudit($conn, $id, $requester_id, 'suspended',
-            ['result_status' => [$card['status_value'], OKR_STATUS_SUSPENDED]], 'Suspended by CEO: ' . $reason);
+            ['is_suspended' => [false, true]], 'Suspended by CEO: ' . $reason);
 
         // Best-effort - a mail failure must never affect this response, the
         // status change already committed above.
@@ -1391,27 +1421,27 @@ if ($action === 'unsuspendCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT os.value AS status_value
-                                   FROM okr_cards c LEFT JOIN okr_statuses os ON c.result_status = os.id
+    $check = mysqli_query($conn, "SELECT c.is_suspended
+                                   FROM okr_cards c
                                    WHERE c.id = $id AND c.deleted_at IS NULL");
     if (!$check || mysqli_num_rows($check) === 0) {
         echo json_encode(['success' => false, 'message' => 'Card not found.']);
         exit;
     }
     $card = mysqli_fetch_assoc($check);
-    if ($card['status_value'] !== OKR_STATUS_SUSPENDED) {
+    if (empty($card['is_suspended'])) {
         echo json_encode(['success' => false, 'message' => 'This OKR is not suspended.']);
         exit;
     }
 
-    // Unsuspend always reopens as Active (write off Closure Date) - it no
-    // longer restores whatever status the card had before it was suspended.
-    $status_id = okrStatusIdByValue($conn, OKR_STATUS_ACTIVE);
-    $update = "UPDATE okr_cards SET result_status = $status_id, closed_by = NULL, closed_at = NULL,
+    // Unsuspend just clears the flag - result_status was never touched by
+    // suspendCard, so there's nothing to restore. Closure Date stays cleared
+    // (it was written off on suspend, not carried over).
+    $update = "UPDATE okr_cards SET is_suspended = 0, suspended_by = NULL, suspended_at = NULL,
                appeal_justification = NULL, appealed_at = NULL WHERE id = $id";
     if (mysqli_query($conn, $update)) {
         okrLogAudit($conn, $id, $requester_id, 'unsuspended',
-            ['result_status' => [OKR_STATUS_SUSPENDED, OKR_STATUS_ACTIVE]], 'Unsuspended by CEO. Reopened as Active.');
+            ['is_suspended' => [true, false]], 'Unsuspended by CEO.');
         echo json_encode(['success' => true]);
     } else {
         echo json_encode(['success' => false, 'message' => 'Database error: ' . mysqli_error($conn)]);
@@ -1432,10 +1462,9 @@ if ($action === 'appealSuspension' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT c.objective, c.issuer_staff_id, c.appealed_at, os.value AS status_value,
+    $check = mysqli_query($conn, "SELECT c.objective, c.issuer_staff_id, c.appealed_at, c.is_suspended,
                                           s.nama_staff AS issuer_name
                                    FROM okr_cards c
-                                   LEFT JOIN okr_statuses os ON c.result_status = os.id
                                    LEFT JOIN staff s ON c.issuer_staff_id = s.id
                                    WHERE c.id = $id AND c.deleted_at IS NULL");
     if (!$check || mysqli_num_rows($check) === 0) {
@@ -1447,7 +1476,7 @@ if ($action === 'appealSuspension' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['success' => false, 'message' => 'Only the issuer can appeal a suspension.']);
         exit;
     }
-    if ($card['status_value'] !== OKR_STATUS_SUSPENDED) {
+    if (empty($card['is_suspended'])) {
         echo json_encode(['success' => false, 'message' => 'This OKR is not suspended.']);
         exit;
     }
@@ -1487,7 +1516,7 @@ if ($action === 'forceTerminateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT os.value AS status_value
+    $check = mysqli_query($conn, "SELECT c.is_suspended, os.value AS status_value
                                    FROM okr_cards c LEFT JOIN okr_statuses os ON c.result_status = os.id
                                    WHERE c.id = $id AND c.deleted_at IS NULL");
     if (!$check || mysqli_num_rows($check) === 0) {
@@ -1495,18 +1524,17 @@ if ($action === 'forceTerminateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     $card = mysqli_fetch_assoc($check);
-    // Reachable while Suspended (the normal Suspend > Appeal > Force
-    // Terminate flow), or once the OKR has already used up its one lifetime
-    // Suspend and returned to Active - since it can never be suspended again
-    // (see suspendCard above), Force Terminate becomes the CEO's only
+    // Reachable while currently suspended (the normal Suspend > Appeal >
+    // Force Terminate flow), or once the OKR has already used up its one
+    // lifetime Suspend and been reopened - since it can never be suspended
+    // again (see suspendCard above), Force Terminate becomes the CEO's only
     // remaining action against it.
-    if ($card['status_value'] === OKR_STATUS_SUSPENDED) {
+    if (!empty($card['is_suspended'])) {
         // ok - normal suspended-card force terminate
     } else {
-        // Once returned to Active/Completed after its one lifetime Suspend,
-        // Force Terminate follows the same "only against a Completed OKR"
-        // rule as Suspend/Rate - not available while still Draft/Active/
-        // Extended.
+        // Once reopened after its one lifetime Suspend, Force Terminate
+        // follows the same "only against a Completed OKR" rule as
+        // Suspend/Rate - not available while still Draft/Active/Extended.
         $already_suspended_check = mysqli_query($conn, "SELECT 1 FROM okr_audit_logs
                                                           WHERE card_id = $id AND event = 'suspended' LIMIT 1");
         $already_suspended = $already_suspended_check && mysqli_num_rows($already_suspended_check) > 0;
@@ -1522,15 +1550,63 @@ if ($action === 'forceTerminateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     // (those are stored as plain Failed + the flag; dashboardStats and the
     // "is this force-terminated" checks elsewhere treat either shape as
     // force-terminated - see okrIsForceTerminated() usage below and in
-    // dashboardStats above).
+    // dashboardStats above). Also resolves the suspension itself (if any) -
+    // is_suspended/suspended_by/suspended_at are cleared, since the card is
+    // no longer "currently suspended", it's now a resolved, terminal outcome.
     $status_id = okrStatusIdByValue($conn, OKR_STATUS_FORCE_TERMINATED);
     $remark_e  = mysqli_real_escape_string($conn, $remark);
-    $update = "UPDATE okr_cards SET result_status = $status_id, force_terminated = 1, closed_by = $requester_id, closed_at = NOW(),
+    $update = "UPDATE okr_cards SET result_status = $status_id, force_terminated = 1,
+               is_suspended = 0, suspended_by = NULL, suspended_at = NULL,
+               closed_by = $requester_id, closed_at = NOW(),
                remarks = '$remark_e', appeal_justification = NULL, appealed_at = NULL WHERE id = $id";
     if (mysqli_query($conn, $update)) {
         okrLogAudit($conn, $id, $requester_id, 'force_terminated',
             ['result_status' => [$card['status_value'], OKR_STATUS_FORCE_TERMINATED]], 'Force terminated by CEO: ' . $remark);
         echo json_encode(['success' => true]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Database error: ' . mysqli_error($conn)]);
+    }
+    exit;
+}
+
+// Standalone Closure Date edit, callable directly from view.php (which
+// otherwise has no write path for a card's other fields - this avoids
+// routing through updateCard's full field set just to touch one date).
+// Same permission/range rule as the Closure Date field on the edit form -
+// see okrCanEditClosureDate()/okrClosureDateLockedStatuses() in lib.php.
+if ($action === 'updateClosureDate' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $id = (int)($_POST['id'] ?? 0);
+    $closure_date = trim($_POST['closure_date'] ?? '');
+    if ($id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Invalid card.']);
+        exit;
+    }
+
+    $check = mysqli_query($conn, "SELECT c.issuer_staff_id, c.start_date, c.closed_at, os.value AS status_value
+                                   FROM okr_cards c LEFT JOIN okr_statuses os ON c.result_status = os.id
+                                   WHERE c.id = $id AND c.deleted_at IS NULL");
+    if (!$check || mysqli_num_rows($check) === 0) {
+        echo json_encode(['success' => false, 'message' => 'Card not found.']);
+        exit;
+    }
+    $card = mysqli_fetch_assoc($check);
+    if (!okrCanEditClosureDate($card['status_value'], $card['issuer_staff_id'], false, $requester_id, $requester_grade, $requester_is_admin)) {
+        echo json_encode(['success' => false, 'message' => 'You are not allowed to set the Closure Date on this OKR.']);
+        exit;
+    }
+    if ($closure_date === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $closure_date)
+        || $closure_date < $card['start_date'] || $closure_date > date('Y-m-d')) {
+        echo json_encode(['success' => false, 'message' => 'Closure Date must be between Start Date and today.']);
+        exit;
+    }
+
+    $closure_date_e = mysqli_real_escape_string($conn, $closure_date);
+    $update = "UPDATE okr_cards SET closed_by = $requester_id, closed_at = '$closure_date_e' WHERE id = $id";
+    if (mysqli_query($conn, $update)) {
+        $old_closure = $card['closed_at'] ? substr($card['closed_at'], 0, 10) : null;
+        okrLogAudit($conn, $id, $requester_id, 'updated',
+            ['closure_date' => [$old_closure, $closure_date]], 'Closure Date set to ' . $closure_date . '.');
+        echo json_encode(['success' => true, 'closure_date' => $closure_date]);
     } else {
         echo json_encode(['success' => false, 'message' => 'Database error: ' . mysqli_error($conn)]);
     }

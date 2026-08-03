@@ -120,14 +120,20 @@ $okr_list_config = [
                     <ul class="okr-s2-list" id="okr-filter-status-list" style="padding:4px 0;">
                         <?php
                         // As a filter, list every real status a card can currently
-                        // hold - including Suspended, Completed with Extension, and
-                        // Force Terminated (its own status now - see
+                        // hold - including Completed with Extension and Force
+                        // Terminated (its own status now - see
                         // OKR_STATUS_FORCE_TERMINATED in lib.php) - read live from
                         // okr_statuses rather than a fixed list. Excludes Deleted only:
                         // that row exists in okr_statuses solely for id/value parity
                         // with atem_statuses and is never actually written to a card's
                         // result_status (see okrTimelineAssignableStatuses in lib.php),
-                        // so no card could ever match it here.
+                        // so no card could ever match it here. 'Suspended' is kept in
+                        // this list even though it's no longer written to result_status
+                        // either (suspending a card no longer changes its status at all
+                        // - see is_suspended in lib.php/backend.php's suspendCard) -
+                        // list.js's filter matches this checkbox against
+                        // card.is_suspended instead of card.result_status, so the
+                        // checkbox itself doesn't need to move or duplicate.
                         $list_status_options = array_values(array_diff(
                             array_column(okrFetchStatuses($conn, false), 'value'),
                             ['Deleted']

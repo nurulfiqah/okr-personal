@@ -438,43 +438,6 @@
     }
 
     // ---------------------------------------------------------------
-    // Closure Date - Issuer/CEO/admin only, and only outside Draft/Active/
-    // Failed/Suspended (see okrCanEditClosureDate() in lib.php). Standalone
-    // save (not part of the read-only page's other fields).
-    // ---------------------------------------------------------------
-    var closureDateInput = document.getElementById('okr-closure-date');
-    var closureDateSaveBtn = document.getElementById('okr-closure-date-save-btn');
-    if (closureDateSaveBtn && closureDateInput) {
-        closureDateSaveBtn.addEventListener('click', function () {
-            setError('okr-closure-date', '');
-            var value = closureDateInput.value;
-            if (!value) {
-                setError('okr-closure-date', 'Closure Date is required.');
-                return;
-            }
-
-            var payload = new URLSearchParams();
-            payload.set('action', 'updateClosureDate');
-            payload.set('id', CFG.card.id);
-            payload.set('closure_date', value);
-
-            closureDateSaveBtn.disabled = true;
-            fetch(CFG.apiUrl, { method: 'POST', body: payload })
-                .then(function (r) { return r.json(); })
-                .then(function (res) {
-                    closureDateSaveBtn.disabled = false;
-                    if (!res.success) {
-                        setError('okr-closure-date', res.message || 'Failed to save Closure Date.');
-                    }
-                })
-                .catch(function () {
-                    closureDateSaveBtn.disabled = false;
-                    setError('okr-closure-date', 'Network error. Please try again.');
-                });
-        });
-    }
-
-    // ---------------------------------------------------------------
     // Chat Box - per-card discussion thread, modeled after ATEM's Chat Box.
     // Own messages can be edited/unsent within a 60s window (also enforced
     // server-side); a 4s poll does a full resync so edits/unsends from other
