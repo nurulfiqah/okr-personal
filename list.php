@@ -226,8 +226,8 @@ $okr_list_config = [
                     <th>Owner(s)</th>
                     <th class="okr-sortable" data-col="start_date">Start Date</th>
                     <th class="okr-sortable" data-col="end_date">End Date</th>
-                    <th class="okr-sortable" data-col="result_status">Status</th>
                     <th class="okr-sortable" data-col="closure_date">Closure Date</th>
+                    <th class="okr-sortable" data-col="result_status">Status</th>
                     <th style="width:110px;">Action</th>
                 </tr>
             </thead>

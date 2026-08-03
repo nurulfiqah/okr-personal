@@ -396,8 +396,8 @@
                 '<td>' + ownerCell(card) + '</td>' +
                 '<td>' + escapeHtml(card.start_date) + '</td>' +
                 '<td>' + escapeHtml(card.end_date) + '</td>' +
-                '<td>' + statusCell + '</td>' +
                 '<td>' + escapeHtml(card.closure_date || '-') + '</td>' +
+                '<td>' + statusCell + '</td>' +
                 '<td class="okr-view-actions">' + actions + '</td>';
             tbody.appendChild(tr);
         });
