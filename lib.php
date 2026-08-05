@@ -580,6 +580,24 @@ function okrCanPostChat($card, $requester_id, $is_admin) {
         || (!empty($card['owner2_staff_id']) && $requester_id === (int)$card['owner2_staff_id']);
 }
 
+// Same "issuer, owner, or owner2" membership as okrCanPostChat above, but
+// governs a wider set of collaborative write actions on view.php that an
+// Owner (not just the issuer/admin) may now perform directly from the card's
+// read-only page, without needing edit.php access: updating a Key Result/
+// Subtask's status (backend.php's updateKeyResult - description/dates there
+// stay issuer/admin-only, forced back to their stored values for an
+// owner-only requester), and adding/removing Attachments and Reference
+// Links (addAttachment/deleteAttachment/addReferenceLink/deleteReferenceLink).
+function okrCanCollaborateOnCard($card, $requester_id, $is_admin) {
+    if ($is_admin) {
+        return true;
+    }
+    $requester_id = (int)$requester_id;
+    return $requester_id === (int)$card['issuer_staff_id']
+        || (!empty($card['owner_staff_id']) && $requester_id === (int)$card['owner_staff_id'])
+        || (!empty($card['owner2_staff_id']) && $requester_id === (int)$card['owner2_staff_id']);
+}
+
 function okrFetchChatMessages($conn, $card_id) {
     $messages = [];
     $result = mysqli_query($conn, "SELECT m.id, m.sender_staff_id, m.message, m.created_at, m.updated_at,

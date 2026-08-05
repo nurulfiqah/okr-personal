@@ -570,14 +570,20 @@ if ($action === 'addReferenceLink' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT issuer_staff_id FROM okr_cards WHERE id = $id AND deleted_at IS NULL");
+    $check = mysqli_query($conn, "SELECT c.issuer_staff_id, c.owner_staff_id, c.owner2_staff_id, c.is_suspended, os.value AS status_value
+                                   FROM okr_cards c LEFT JOIN okr_statuses os ON c.result_status = os.id
+                                   WHERE c.id = $id AND c.deleted_at IS NULL");
     if (!$check || mysqli_num_rows($check) === 0) {
         echo json_encode(['success' => false, 'message' => 'Card not found.']);
         exit;
     }
     $card = mysqli_fetch_assoc($check);
-    if (!$requester_is_admin && (int)$card['issuer_staff_id'] !== $requester_id) {
-        echo json_encode(['success' => false, 'message' => 'Only the issuer can add reference links.']);
+    if (!okrCanCollaborateOnCard($card, $requester_id, $requester_is_admin)) {
+        echo json_encode(['success' => false, 'message' => 'Only the issuer, owner, or admin can add reference links.']);
+        exit;
+    }
+    if (!empty($card['is_suspended']) || $card['status_value'] === 'Failed' || $card['status_value'] === OKR_STATUS_FORCE_TERMINATED) {
+        echo json_encode(['success' => false, 'message' => 'This OKR is locked and can no longer be edited.']);
         exit;
     }
 
@@ -601,9 +607,11 @@ if ($action === 'deleteReferenceLink' && $_SERVER['REQUEST_METHOD'] === 'POST') 
         exit;
     }
 
-    $query = "SELECT rl.card_id, rl.name, c.issuer_staff_id
+    $query = "SELECT rl.card_id, rl.name, c.issuer_staff_id, c.owner_staff_id, c.owner2_staff_id,
+                     c.is_suspended, os.value AS status_value
               FROM okr_reference_links rl
               JOIN okr_cards c ON rl.card_id = c.id
+              LEFT JOIN okr_statuses os ON c.result_status = os.id
               WHERE rl.id = $link_id AND c.deleted_at IS NULL";
     $result = mysqli_query($conn, $query);
     if (!$result || mysqli_num_rows($result) === 0) {
@@ -611,8 +619,12 @@ if ($action === 'deleteReferenceLink' && $_SERVER['REQUEST_METHOD'] === 'POST') 
         exit;
     }
     $row = mysqli_fetch_assoc($result);
-    if (!$requester_is_admin && (int)$row['issuer_staff_id'] !== $requester_id) {
-        echo json_encode(['success' => false, 'message' => 'Only the issuer can remove reference links.']);
+    if (!okrCanCollaborateOnCard($row, $requester_id, $requester_is_admin)) {
+        echo json_encode(['success' => false, 'message' => 'Only the issuer, owner, or admin can remove reference links.']);
+        exit;
+    }
+    if (!empty($row['is_suspended']) || $row['status_value'] === 'Failed' || $row['status_value'] === OKR_STATUS_FORCE_TERMINATED) {
+        echo json_encode(['success' => false, 'message' => 'This OKR is locked and can no longer be edited.']);
         exit;
     }
     if (okrCountReferenceLinks($conn, $row['card_id']) <= 1) {
@@ -657,7 +669,7 @@ if ($action === 'createKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT c.issuer_staff_id, c.is_suspended, os.value AS status_value
+    $check = mysqli_query($conn, "SELECT c.issuer_staff_id, c.owner_staff_id, c.owner2_staff_id, c.is_suspended, os.value AS status_value
                                    FROM okr_cards c LEFT JOIN okr_statuses os ON c.result_status = os.id
                                    WHERE c.id = $card_id AND c.deleted_at IS NULL");
     if (!$check || mysqli_num_rows($check) === 0) {
@@ -665,8 +677,8 @@ if ($action === 'createKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     $card = mysqli_fetch_assoc($check);
-    if (!$requester_is_admin && (int)$card['issuer_staff_id'] !== $requester_id) {
-        echo json_encode(['success' => false, 'message' => 'Only the issuer can add Key Results.']);
+    if (!okrCanCollaborateOnCard($card, $requester_id, $requester_is_admin)) {
+        echo json_encode(['success' => false, 'message' => 'Only the issuer, owner, or admin can add Key Results.']);
         exit;
     }
     if (!empty($card['is_suspended']) || $card['status_value'] === 'Failed' || $card['status_value'] === OKR_STATUS_FORCE_TERMINATED) {
@@ -727,7 +739,8 @@ if ($action === 'updateKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT kr.card_id, kr.parent_id, kr.atem_id, c.issuer_staff_id, c.is_suspended, os.value AS status_value
+    $check = mysqli_query($conn, "SELECT kr.card_id, kr.parent_id, kr.atem_id, kr.description, kr.start_date, kr.end_date,
+                                          c.issuer_staff_id, c.owner_staff_id, c.owner2_staff_id, c.is_suspended, os.value AS status_value
                                    FROM okr_key_results kr
                                    JOIN okr_cards c ON kr.card_id = c.id
                                    LEFT JOIN okr_statuses os ON c.result_status = os.id
@@ -737,8 +750,11 @@ if ($action === 'updateKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     $kr = mysqli_fetch_assoc($check);
-    if (!$requester_is_admin && (int)$kr['issuer_staff_id'] !== $requester_id) {
-        echo json_encode(['success' => false, 'message' => 'Only the issuer can edit Key Results.']);
+    // Owner/Owner2 gets the same full Key Result Progress access as
+    // issuer/admin (see okrCanCollaborateOnCard) - matches the parity
+    // already given for Attachments/Reference Links/create-delete above.
+    if (!okrCanCollaborateOnCard($kr, $requester_id, $requester_is_admin)) {
+        echo json_encode(['success' => false, 'message' => 'Only the issuer, owner, or admin can update this Key Result.']);
         exit;
     }
     if (!empty($kr['is_suspended']) || $kr['status_value'] === 'Failed' || $kr['status_value'] === OKR_STATUS_FORCE_TERMINATED) {
@@ -867,7 +883,7 @@ if ($action === 'deleteKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT kr.card_id, kr.parent_id, kr.description, c.issuer_staff_id, c.is_suspended, os.value AS status_value
+    $check = mysqli_query($conn, "SELECT kr.card_id, kr.parent_id, kr.description, c.issuer_staff_id, c.owner_staff_id, c.owner2_staff_id, c.is_suspended, os.value AS status_value
                                    FROM okr_key_results kr
                                    JOIN okr_cards c ON kr.card_id = c.id
                                    LEFT JOIN okr_statuses os ON c.result_status = os.id
@@ -877,8 +893,8 @@ if ($action === 'deleteKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     $kr = mysqli_fetch_assoc($check);
-    if (!$requester_is_admin && (int)$kr['issuer_staff_id'] !== $requester_id) {
-        echo json_encode(['success' => false, 'message' => 'Only the issuer can remove Key Results.']);
+    if (!okrCanCollaborateOnCard($kr, $requester_id, $requester_is_admin)) {
+        echo json_encode(['success' => false, 'message' => 'Only the issuer, owner, or admin can remove Key Results.']);
         exit;
     }
     if (!empty($kr['is_suspended']) || $kr['status_value'] === 'Failed' || $kr['status_value'] === OKR_STATUS_FORCE_TERMINATED) {
@@ -999,14 +1015,20 @@ if ($action === 'addAttachment' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT issuer_staff_id FROM okr_cards WHERE id = $id AND deleted_at IS NULL");
+    $check = mysqli_query($conn, "SELECT c.issuer_staff_id, c.owner_staff_id, c.owner2_staff_id, c.is_suspended, os.value AS status_value
+                                   FROM okr_cards c LEFT JOIN okr_statuses os ON c.result_status = os.id
+                                   WHERE c.id = $id AND c.deleted_at IS NULL");
     if (!$check || mysqli_num_rows($check) === 0) {
         echo json_encode(['success' => false, 'message' => 'Card not found.']);
         exit;
     }
     $card = mysqli_fetch_assoc($check);
-    if (!$requester_is_admin && (int)$card['issuer_staff_id'] !== $requester_id) {
-        echo json_encode(['success' => false, 'message' => 'Only the issuer can add attachments.']);
+    if (!okrCanCollaborateOnCard($card, $requester_id, $requester_is_admin)) {
+        echo json_encode(['success' => false, 'message' => 'Only the issuer, owner, or admin can add attachments.']);
+        exit;
+    }
+    if (!empty($card['is_suspended']) || $card['status_value'] === 'Failed' || $card['status_value'] === OKR_STATUS_FORCE_TERMINATED) {
+        echo json_encode(['success' => false, 'message' => 'This OKR is locked and can no longer be edited.']);
         exit;
     }
 
@@ -1054,9 +1076,11 @@ if ($action === 'deleteAttachment' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $query = "SELECT a.card_id, a.stored_name, a.original_name, c.issuer_staff_id
+    $query = "SELECT a.card_id, a.stored_name, a.original_name, c.issuer_staff_id, c.owner_staff_id, c.owner2_staff_id,
+                     c.is_suspended, os.value AS status_value
               FROM okr_card_attachments a
               JOIN okr_cards c ON a.card_id = c.id
+              LEFT JOIN okr_statuses os ON c.result_status = os.id
               WHERE a.id = $attachment_id AND c.deleted_at IS NULL";
     $result = mysqli_query($conn, $query);
     if (!$result || mysqli_num_rows($result) === 0) {
@@ -1064,8 +1088,12 @@ if ($action === 'deleteAttachment' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     $row = mysqli_fetch_assoc($result);
-    if (!$requester_is_admin && (int)$row['issuer_staff_id'] !== $requester_id) {
-        echo json_encode(['success' => false, 'message' => 'Only the issuer can remove attachments.']);
+    if (!okrCanCollaborateOnCard($row, $requester_id, $requester_is_admin)) {
+        echo json_encode(['success' => false, 'message' => 'Only the issuer, owner, or admin can remove attachments.']);
+        exit;
+    }
+    if (!empty($row['is_suspended']) || $row['status_value'] === 'Failed' || $row['status_value'] === OKR_STATUS_FORCE_TERMINATED) {
+        echo json_encode(['success' => false, 'message' => 'This OKR is locked and can no longer be edited.']);
         exit;
     }
 

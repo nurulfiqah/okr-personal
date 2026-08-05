@@ -2,6 +2,10 @@
     var CFG = window.OKR_VIEW_CONFIG || {};
     var referenceLinks = CFG.referenceLinks ? CFG.referenceLinks.slice() : [];
     var attachments = CFG.attachments ? CFG.attachments.slice() : [];
+    // Issuer/owner(s)/admin get add/remove access to Attachments and
+    // Reference Links right here (not just Key Result Progress status, see
+    // further below) - see okrCanCollaborateOnCard in lib.php.
+    var canCollaborate = !!CFG.canCollaborate;
 
     function setError(id, msg) {
         var el = document.getElementById(id + '-error');
@@ -27,7 +31,9 @@
     }
 
     // ---------------------------------------------------------------
-    // Reference links (display only; set at creation, not editable here)
+    // Reference links - read-only unless canCollaborate (issuer/owner(s)/
+    // admin), who get an Add button + modal (mirrors js/edit.js) and a
+    // remove control per row.
     // ---------------------------------------------------------------
     var reflinkListEl = document.getElementById('okr-reflink-list');
 
@@ -41,15 +47,98 @@
         referenceLinks.forEach(function (link) {
             var row = document.createElement('div');
             row.className = 'okr-reflink-row';
-            row.innerHTML = '<a href="' + link.url + '" target="_blank" rel="noopener">' + link.name + '</a>';
+            row.innerHTML = '<a href="' + link.url + '" target="_blank" rel="noopener">' + link.name + '</a>' +
+                (canCollaborate ? '<span class="okr-reflink-remove" data-id="' + link.id + '">&times;</span>' : '');
             reflinkListEl.appendChild(row);
         });
     }
 
     renderReferenceLinks();
 
+    if (canCollaborate && reflinkListEl) {
+        var reflinkModalEl = document.getElementById('okr-reflink-modal');
+        var reflinkModal = reflinkModalEl ? new bootstrap.Modal(reflinkModalEl) : null;
+
+        var addReflinkBtn = document.getElementById('okr-add-reflink-btn');
+        if (addReflinkBtn) {
+            addReflinkBtn.addEventListener('click', function () {
+                document.getElementById('reflink-name').value = '';
+                document.getElementById('reflink-url').value = '';
+                setError('reflink', '');
+                reflinkModal.show();
+            });
+        }
+
+        var reflinkSaveBtn = document.getElementById('reflink-save-btn');
+        if (reflinkSaveBtn) {
+            reflinkSaveBtn.addEventListener('click', function () {
+                var name = document.getElementById('reflink-name').value.trim();
+                var url = document.getElementById('reflink-url').value.trim();
+                if (!name || !url) {
+                    setError('reflink', 'Both name and URL are required.');
+                    return;
+                }
+
+                var body = new URLSearchParams();
+                body.set('action', 'addReferenceLink');
+                body.set('id', CFG.card.id);
+                body.set('name', name);
+                body.set('url', url);
+
+                reflinkSaveBtn.disabled = true;
+                fetch(CFG.apiUrl, { method: 'POST', body: body })
+                    .then(function (r) { return r.json(); })
+                    .then(function (res) {
+                        reflinkSaveBtn.disabled = false;
+                        if (res.success) {
+                            referenceLinks.push({ id: res.id, name: name, url: url });
+                            renderReferenceLinks();
+                            setError('reflink-section', '');
+                            reflinkModal.hide();
+                        } else {
+                            setError('reflink', res.message || 'Failed to save link.');
+                        }
+                    })
+                    .catch(function () {
+                        reflinkSaveBtn.disabled = false;
+                        setError('reflink', 'Network error. Please try again.');
+                    });
+            });
+        }
+
+        reflinkListEl.addEventListener('click', function (e) {
+            if (!e.target.classList.contains('okr-reflink-remove')) { return; }
+            var el = e.target;
+            var id = parseInt(el.getAttribute('data-id'), 10);
+            el.style.pointerEvents = 'none';
+            el.style.opacity = '0.4';
+            var body = new URLSearchParams();
+            body.set('action', 'deleteReferenceLink');
+            body.set('id', id);
+            fetch(CFG.apiUrl, { method: 'POST', body: body })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    if (res.success) {
+                        referenceLinks = referenceLinks.filter(function (l) { return l.id !== id; });
+                        renderReferenceLinks();
+                    } else {
+                        el.style.pointerEvents = '';
+                        el.style.opacity = '';
+                        setError('reflink-section', res.message || 'Failed to remove link.');
+                    }
+                })
+                .catch(function () {
+                    el.style.pointerEvents = '';
+                    el.style.opacity = '';
+                    setError('reflink-section', 'Network error. Please try again.');
+                });
+        });
+    }
+
     // ---------------------------------------------------------------
-    // Attachments (display only; set at creation, not editable here)
+    // Attachments - read-only unless canCollaborate (issuer/owner(s)/admin),
+    // who get the drag-and-drop uploader (mirrors js/edit.js) and a remove
+    // control per row.
     // ---------------------------------------------------------------
     var fileListEl = document.getElementById('okr-file-list');
 
@@ -64,12 +153,110 @@
             var row = document.createElement('div');
             row.className = 'okr-file-row';
             row.innerHTML = '<a class="okr-file-name" href="okr/download.php?id=' + file.id + '">' + file.original_name + '</a>' +
-                '<span class="okr-file-size">' + formatSize(file.size) + '</span>';
+                '<span class="okr-file-size">' + formatSize(file.size) + '</span>' +
+                (canCollaborate ? '<span class="okr-file-remove" data-id="' + file.id + '">&times;</span>' : '');
             fileListEl.appendChild(row);
         });
     }
 
     renderAttachments();
+
+    if (canCollaborate && fileListEl) {
+        var dropzoneEl = document.getElementById('okr-dropzone');
+        var fileInputEl = document.getElementById('okr-file-input');
+
+        function uploadFile(file) {
+            setError('okr-file', '');
+            var body = new FormData();
+            body.set('action', 'addAttachment');
+            body.set('id', CFG.card.id);
+            body.set('file', file);
+
+            var pendingRow = document.createElement('div');
+            pendingRow.className = 'okr-file-row';
+            pendingRow.innerHTML = '<span class="okr-file-name">Uploading ' + file.name + '...</span>';
+            if (fileListEl.querySelector('.okr-empty-state')) { fileListEl.innerHTML = ''; }
+            fileListEl.appendChild(pendingRow);
+
+            fetch(CFG.apiUrl, { method: 'POST', body: body })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    pendingRow.remove();
+                    if (res.success) {
+                        attachments.push({ id: res.id, original_name: file.name, size: file.size, mime_type: file.type });
+                        renderAttachments();
+                    } else {
+                        renderAttachments();
+                        setError('okr-file', res.message || 'Failed to upload file.');
+                    }
+                })
+                .catch(function () {
+                    pendingRow.remove();
+                    renderAttachments();
+                    setError('okr-file', 'Network error while uploading. Please try again.');
+                });
+        }
+
+        function handleFiles(fileList) {
+            Array.prototype.forEach.call(fileList, uploadFile);
+        }
+
+        if (dropzoneEl && fileInputEl) {
+            dropzoneEl.addEventListener('click', function () { fileInputEl.click(); });
+            var filePickEl = document.getElementById('okr-file-pick');
+            if (filePickEl) {
+                filePickEl.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    fileInputEl.click();
+                });
+            }
+            fileInputEl.addEventListener('change', function () {
+                handleFiles(fileInputEl.files);
+                fileInputEl.value = '';
+            });
+            dropzoneEl.addEventListener('dragover', function (e) {
+                e.preventDefault();
+                dropzoneEl.classList.add('okr-dropzone-active');
+            });
+            dropzoneEl.addEventListener('dragleave', function () {
+                dropzoneEl.classList.remove('okr-dropzone-active');
+            });
+            dropzoneEl.addEventListener('drop', function (e) {
+                e.preventDefault();
+                dropzoneEl.classList.remove('okr-dropzone-active');
+                handleFiles(e.dataTransfer.files);
+            });
+        }
+
+        fileListEl.addEventListener('click', function (e) {
+            if (!e.target.classList.contains('okr-file-remove')) { return; }
+            var el = e.target;
+            var id = parseInt(el.getAttribute('data-id'), 10);
+            el.style.pointerEvents = 'none';
+            el.style.opacity = '0.4';
+            var body = new URLSearchParams();
+            body.set('action', 'deleteAttachment');
+            body.set('id', id);
+            fetch(CFG.apiUrl, { method: 'POST', body: body })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    if (res.success) {
+                        attachments = attachments.filter(function (f) { return f.id !== id; });
+                        renderAttachments();
+                    } else {
+                        el.style.pointerEvents = '';
+                        el.style.opacity = '';
+                        setError('okr-file', res.message || 'Failed to remove file.');
+                    }
+                })
+                .catch(function () {
+                    el.style.pointerEvents = '';
+                    el.style.opacity = '';
+                    setError('okr-file', 'Network error. Please try again.');
+                });
+        });
+    }
 
     // ---------------------------------------------------------------
     // Key Result Progress (read-only list, no edit controls)
@@ -93,6 +280,12 @@
     if (krListEl) {
         var krList = CFG.keyResults ? CFG.keyResults.slice() : [];
         var atemMap = {};
+        // Owner/Owner2 get the same full Key Result Progress access as
+        // issuer/admin right here on view.php (add/edit/delete/status) - see
+        // okrCanCollaborateOnCard in lib.php. Link ATEM stays edit.php-only
+        // (an existing linked row still shows its read-only ATEM badge here).
+        var canEditKrProgress = !!CFG.canCollaborate;
+        var krStatusOptions = CFG.keyResultStatuses || [];
 
         var krRowHtml = function (row, index, isSubtask) {
             var atemCell = '<span class="okr-kr-col-value okr-kr-col-value--muted">&mdash;</span>';
@@ -112,7 +305,30 @@
                 ? '<span class="okr-kr-col-value">' + formatKrDate(row.end_date) + '</span>'
                 : '<span class="okr-kr-col-value okr-kr-col-value--muted">&mdash;</span>';
 
-            return '<div class="okr-kr-row' + (isSubtask ? ' okr-kr-row--subtask' : '') + '">'
+            var statusCell;
+            if (canEditKrProgress) {
+                var options = krStatusOptions.map(function (s) {
+                    return '<option value="' + s.id + '"' + (Number(s.id) === Number(row.status_id) ? ' selected' : '') + '>' + escapeHtml(s.value) + '</option>';
+                }).join('');
+                statusCell = '<select class="form-select form-select-sm okr-kr-status-select" data-kr-id="' + row.id + '">' + options + '</select>'
+                    + '<div class="okr-form-error" id="kr-status-' + row.id + '-error"></div>';
+            } else {
+                statusCell = '<span class="okr-pill ' + row.pill_class + '">' + escapeHtml(row.status_value) + '</span>';
+            }
+
+            var actionsCell = '';
+            if (canEditKrProgress) {
+                actionsCell = '<div class="okr-kr-actions">'
+                    + '<span class="okr-kr-col-label">Actions</span>'
+                    + '<div class="okr-kr-actions-buttons">'
+                    + '<button type="button" class="okr-kr-icon-btn okr-kr-icon-btn--edit okr-kr-edit" title="Edit"><i class="bi bi-pencil"></i></button>'
+                    + '<button type="button" class="okr-kr-icon-btn okr-kr-icon-btn--delete okr-kr-delete" title="Delete"><i class="bi bi-x-lg"></i></button>'
+                    + (isSubtask ? '' : '<button type="button" class="okr-kr-icon-btn okr-kr-icon-btn--add okr-kr-add-sub" title="Add Subtask"><i class="bi bi-plus-lg"></i></button>')
+                    + '</div>'
+                    + '</div>';
+            }
+
+            return '<div class="okr-kr-row' + (isSubtask ? ' okr-kr-row--subtask' : '') + '" data-id="' + row.id + '">'
                 + '<div class="okr-kr-num">' + index + '</div>'
                 + '<div class="okr-kr-body">'
                 + '<div class="okr-kr-action-cell">'
@@ -123,12 +339,56 @@
                 + '<div class="okr-kr-col"><span class="okr-kr-col-label">From</span>' + fromValue + '</div>'
                 + '<div class="okr-kr-col"><span class="okr-kr-col-label">To</span>' + toValue + '</div>'
                 + '<div class="okr-kr-col"><span class="okr-kr-col-label">ATEM</span>' + atemCell + '</div>'
-                + '<div class="okr-kr-col"><span class="okr-kr-col-label">Status</span><span class="okr-pill ' + row.pill_class + '">' + escapeHtml(row.status_value) + '</span></div>'
+                + '<div class="okr-kr-col"><span class="okr-kr-col-label">Status</span>' + statusCell + '</div>'
                 + '</div>'
+                + actionsCell
                 + '</div>';
         };
 
-        function renderKeyResultsReadOnly() {
+        function submitKrStatus(sel) {
+            var id = sel.getAttribute('data-kr-id');
+            var row = krList.filter(function (r) { return String(r.id) === String(id); })[0];
+            if (!row) { return; }
+            var newStatusId = sel.value;
+            var previousStatusId = row.status_id;
+            sel.disabled = true;
+            setError('kr-status-' + id, '');
+
+            var payload = new URLSearchParams();
+            payload.set('action', 'updateKeyResult');
+            payload.set('id', id);
+            payload.set('description', row.description || '');
+            payload.set('start_date', row.start_date || '');
+            payload.set('end_date', row.end_date || '');
+            payload.set('status_id', newStatusId);
+
+            fetch(CFG.apiUrl, { method: 'POST', body: payload })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    sel.disabled = false;
+                    if (res && res.success) {
+                        row.status_id = Number(newStatusId);
+                        row.status_value = res.status_value;
+                        row.pill_class = res.pill_class;
+                    } else {
+                        sel.value = previousStatusId;
+                        setError('kr-status-' + id, (res && res.message) || 'Could not update status.');
+                    }
+                })
+                .catch(function () {
+                    sel.disabled = false;
+                    sel.value = previousStatusId;
+                    setError('kr-status-' + id, 'Network error - could not update status.');
+                });
+        }
+
+        function bindKrStatusHandlers() {
+            Array.prototype.forEach.call(krListEl.querySelectorAll('.okr-kr-status-select'), function (sel) {
+                sel.addEventListener('change', function () { submitKrStatus(sel); });
+            });
+        }
+
+        function renderKeyResults() {
             var topLevel = krList.filter(function (r) { return !r.parent_id; });
             if (topLevel.length === 0) {
                 krListEl.innerHTML = '<div class="okr-kr-empty">No Key Results added yet.</div>';
@@ -142,23 +402,158 @@
                 });
             });
             krListEl.innerHTML = html;
+            if (canEditKrProgress) { bindKrStatusHandlers(); }
         }
 
-        if (krList.some(function (r) { return r.atem_id; })) {
-            fetch(CFG.atemApiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'list-atems' })
-            })
+        function loadKeyResultsAndRender() {
+            if (krList.some(function (r) { return r.atem_id; })) {
+                fetch(CFG.atemApiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'list-atems' })
+                })
+                    .then(function (r) { return r.json(); })
+                    .then(function (res) {
+                        var items = (res && res.success) ? (res.data || []) : [];
+                        items.forEach(function (a) { atemMap[a.id] = a; });
+                        renderKeyResults();
+                    })
+                    .catch(function () { renderKeyResults(); });
+            } else {
+                renderKeyResults();
+            }
+        }
+
+        loadKeyResultsAndRender();
+
+        function reloadKeyResults() {
+            var body = new URLSearchParams();
+            body.set('action', 'listKeyResults');
+            body.set('id', CFG.card.id);
+            fetch(CFG.apiUrl + '?' + body.toString())
                 .then(function (r) { return r.json(); })
                 .then(function (res) {
-                    var items = (res && res.success) ? (res.data || []) : [];
-                    items.forEach(function (a) { atemMap[a.id] = a; });
-                    renderKeyResultsReadOnly();
+                    if (!res.success) {
+                        setError('okr-kr', res.message || 'Failed to load Key Results.');
+                        return;
+                    }
+                    krList = res.data || [];
+                    loadKeyResultsAndRender();
                 })
-                .catch(function () { renderKeyResultsReadOnly(); });
-        } else {
-            renderKeyResultsReadOnly();
+                .catch(function () {
+                    setError('okr-kr', 'Network error while loading Key Results.');
+                });
+        }
+
+        // ---------------------------------------------------------------
+        // Add/Edit/Delete (issuer/owner(s)/admin only) - mirrors js/edit.js's
+        // own Key Result modal, minus the Link ATEM piece (stays edit.php-only).
+        // ---------------------------------------------------------------
+        if (canEditKrProgress) {
+            var krModalEl = document.getElementById('okr-kr-modal');
+            var krModal = krModalEl ? new bootstrap.Modal(krModalEl) : null;
+            var krStartInput = document.getElementById('okr-kr-start');
+            var krEndInput = document.getElementById('okr-kr-end');
+            var krStatusSelect = document.getElementById('okr-kr-status');
+            var krCreatedByInput = document.getElementById('okr-kr-created-by');
+
+            function openKrModal(opts) {
+                setError('okr-kr-modal', '');
+                document.getElementById('okr-kr-id').value = opts.id || '';
+                document.getElementById('okr-kr-parent-id').value = opts.parent_id || '';
+                document.getElementById('okr-kr-desc').value = opts.description || '';
+                krStartInput.value = opts.start_date || '';
+                krEndInput.value = opts.end_date || '';
+                if (opts.status_id) { krStatusSelect.value = opts.status_id; }
+                else { krStatusSelect.selectedIndex = 0; }
+                krCreatedByInput.value = opts.id ? (opts.creatorName || '') : (CFG.currentUserName || '');
+                document.getElementById('okr-kr-modal-title').textContent = opts.parent_id ? (opts.id ? 'Edit Subtask' : 'Add Subtask') : (opts.id ? 'Edit Key Result' : 'Add Key Result');
+                krModal.show();
+            }
+
+            var krAddBtn = document.getElementById('okr-kr-add-btn');
+            if (krAddBtn) {
+                krAddBtn.addEventListener('click', function () { openKrModal({}); });
+            }
+
+            krListEl.addEventListener('click', function (e) {
+                var row = e.target.closest ? e.target.closest('.okr-kr-row') : null;
+                if (!row) { return; }
+                var id = parseInt(row.getAttribute('data-id'), 10);
+                var data = krList.filter(function (r) { return r.id === id; })[0];
+                if (!data) { return; }
+
+                if (e.target.closest('.okr-kr-add-sub')) {
+                    openKrModal({ parent_id: id });
+                } else if (e.target.closest('.okr-kr-edit')) {
+                    openKrModal({
+                        id: data.id,
+                        parent_id: data.parent_id,
+                        description: data.description,
+                        start_date: data.start_date,
+                        end_date: data.end_date,
+                        creatorName: data.creator_name,
+                        status_id: data.status_id
+                    });
+                } else if (e.target.closest('.okr-kr-delete')) {
+                    if (!window.confirm('Delete this ' + (data.parent_id ? 'Subtask' : 'Key Result') + '? This cannot be undone.')) { return; }
+                    var body = new URLSearchParams();
+                    body.set('action', 'deleteKeyResult');
+                    body.set('id', id);
+                    fetch(CFG.apiUrl, { method: 'POST', body: body })
+                        .then(function (r) { return r.json(); })
+                        .then(function (res) {
+                            if (res.success) { reloadKeyResults(); }
+                            else { setError('okr-kr', res.message || 'Failed to delete.'); }
+                        })
+                        .catch(function () { setError('okr-kr', 'Network error. Please try again.'); });
+                }
+            });
+
+            var krSaveBtn = document.getElementById('okr-kr-save-btn');
+            if (krSaveBtn) {
+                krSaveBtn.addEventListener('click', function () {
+                    setError('okr-kr-modal', '');
+                    var description = document.getElementById('okr-kr-desc').value.trim();
+                    if (!description) {
+                        setError('okr-kr-modal', 'Action Details is required.');
+                        return;
+                    }
+
+                    var id = document.getElementById('okr-kr-id').value;
+                    var parentId = document.getElementById('okr-kr-parent-id').value;
+
+                    var body = new URLSearchParams();
+                    body.set('action', id ? 'updateKeyResult' : 'createKeyResult');
+                    if (id) {
+                        body.set('id', id);
+                    } else {
+                        body.set('card_id', CFG.card.id);
+                        if (parentId) { body.set('parent_id', parentId); }
+                    }
+                    body.set('description', description);
+                    body.set('start_date', krStartInput.value);
+                    body.set('end_date', krEndInput.value);
+                    body.set('status_id', krStatusSelect.value);
+
+                    krSaveBtn.disabled = true;
+                    fetch(CFG.apiUrl, { method: 'POST', body: body })
+                        .then(function (r) { return r.json(); })
+                        .then(function (res) {
+                            krSaveBtn.disabled = false;
+                            if (res.success) {
+                                krModal.hide();
+                                reloadKeyResults();
+                            } else {
+                                setError('okr-kr-modal', res.message || 'Failed to save.');
+                            }
+                        })
+                        .catch(function () {
+                            krSaveBtn.disabled = false;
+                            setError('okr-kr-modal', 'Network error. Please try again.');
+                        });
+                });
+            }
         }
     }
 
