@@ -452,6 +452,11 @@
                 setError('okr-closure-date', 'Closure Date is required.');
                 return;
             }
+            if (CFG.isAdmin && CFG.currentStaffId && CFG.card.issuer_staff_id !== CFG.currentStaffId) {
+                var warn = 'You are ADMIN and about to overwrite the Closure Date of an OKR issued by ' +
+                    (CFG.card.issuer_name || 'another staff member') + ', not yourself. Continue?';
+                if (!window.confirm(warn)) { return; }
+            }
 
             var payload = new URLSearchParams();
             payload.set('action', 'updateClosureDate');

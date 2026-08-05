@@ -1139,14 +1139,18 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     // Once an OKR has been extended, it can no longer go back to Draft/Active/
     // Extended or be marked Completed with Excellence — every subsequent edit
     // must actually resolve it as Completed (stored as Completed with
-    // Extension) or Failed. Applies to everyone, admins included - no bypass.
-    if ((bool)$card['extended'] && !in_array($status, okrPostExtensionResolvableStatuses(), true)) {
+    // Extension) or Failed. Admin is exempt and may set any assignable
+    // status regardless (part of admin's full override authority).
+    if (!$requester_is_admin && (bool)$card['extended'] && !in_array($status, okrPostExtensionResolvableStatuses(), true)) {
         echo json_encode(['success' => false, 'message' => 'This OKR has been extended, so it can now only resolve as Completed with Extension or Failed.']);
         exit;
     }
-    // Extension is once-only and cannot be undone: once set, the flag and
-    // its date are locked to whatever was already saved.
-    if ((bool)$card['extended']) {
+    // Extension is once-only and cannot be undone for a normal issuer: once
+    // set, the flag and its date are locked to whatever was already saved.
+    // Admin may still overwrite the flag/date (full override authority) -
+    // the posted values are used as-is instead of being forced back to the
+    // card's saved values.
+    if ((bool)$card['extended'] && !$requester_is_admin) {
         $extended = true;
         $extended_date = $card['extended_date'];
     } elseif ($extended) {
@@ -1251,7 +1255,7 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $changes['closure_date'] = [$card['closed_at'] ? substr($card['closed_at'], 0, 10) : null, $closure_date_posted];
         }
         if ($card['status_value'] !== $final_status) { $changes['result_status'] = [$card['status_value'], $final_status]; }
-        if (!(bool)$card['extended'] && $extended) { $changes['extended'] = [false, true]; }
+        if ((bool)$card['extended'] !== $extended) { $changes['extended'] = [(bool)$card['extended'], $extended]; }
         if ((string)$card['extended_date'] !== $extended_date) { $changes['extended_date'] = [$card['extended_date'], $extended_date]; }
         if ((string)$card['remarks'] !== $remarks) { $changes['remarks'] = [$card['remarks'], $remarks]; }
         if (!empty($changes)) {

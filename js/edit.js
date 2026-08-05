@@ -323,7 +323,11 @@
         refreshFinalDue();
     }
 
-    if (!card.extended) {
+    // Extended is normally once-only and locked once set - admin is exempt
+    // (full override authority, see backend.php's updateCard) and keeps the
+    // checkbox/date editable even after the card is already extended.
+    var canEditExtended = !!CFG.isAdmin || !card.extended;
+    if (canEditExtended) {
         extendedDateInput.disabled = !extendedCheckbox.checked;
         extendedCheckbox.addEventListener('change', function () {
             applyExtendedToggle(extendedCheckbox.checked);
@@ -2438,12 +2442,11 @@
         }
 
         // Ticking Extended + setting an Extended Date without also updating
-        // Status leaves an inconsistent record (e.g. still "Active"). Applies
-        // to everyone, including admins - there is no admin bypass on this
-        // rule (nor on the dropdown filtering below it once already extended).
-        //
-        // Two different allowed sets, matching okrPostExtensionResolvableStatuses
-        // in lib.php:
+        // Status leaves an inconsistent record (e.g. still "Active"). Admin
+        // is exempt (full override authority, matches the server-side bypass
+        // in backend.php's updateCard) - everyone else must follow one of
+        // the two allowed sets below, matching
+        // okrPostExtensionResolvableStatuses in lib.php:
         // - card.extended was already true when this page loaded (a
         //   subsequent edit of an already-extended card): Status must
         //   actually resolve it now - Completed (stored as Completed with
@@ -2453,7 +2456,7 @@
         //   time, this session): Status may still be left as "Extended" (an
         //   ongoing, not-yet-resolved state), or resolved immediately as
         //   Completed/Failed.
-        if (extendedCheckbox.checked && extendedDateInput.value) {
+        if (!CFG.isAdmin && extendedCheckbox.checked && extendedDateInput.value) {
             var allowedOnceExtended = card.extended ? ['Completed', 'Failed'] : ['Extended', 'Completed', 'Failed'];
             if (allowedOnceExtended.indexOf(statusSelect.value) === -1) {
                 var msg = card.extended
@@ -2522,6 +2525,14 @@
         if (!validate()) {
             scrollToFirstError();
             return;
+        }
+        // Admin editing an OKR they didn't issue is a full override of the
+        // normal issuer-only edit gate - make sure that's an intentional
+        // action, not an accidental save while browsing someone else's card.
+        if (CFG.isAdmin && CFG.currentStaffId && card.issuer_staff_id !== CFG.currentStaffId) {
+            var warn = 'You are ADMIN and about to overwrite an OKR issued by ' + (card.issuer_name || 'another staff member') +
+                ', not yourself. This bypasses normal edit restrictions (including the once-only Extended lock) and cannot be undone.\n\nContinue?';
+            if (!window.confirm(warn)) { return; }
         }
         submitSave();
     });
