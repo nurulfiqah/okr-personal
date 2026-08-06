@@ -577,6 +577,7 @@
             atemCell = '<div class="okr-kr-atem-badge">'
                 + '<i class="bi bi-link-45deg"></i> '
                 + '<a href="' + CFG.atemViewUrl + '?id=' + row.atem_id + '" target="_blank" rel="noopener">' + atemLabel + '</a>'
+                + '<span class="okr-kr-atem-unlink" data-id="' + row.id + '" title="Unlink ATEM">&times;</span>'
                 + '</div>';
         }
 
@@ -592,7 +593,7 @@
             + '<div class="okr-kr-num">' + dragHandle + index + '</div>'
             + '<div class="okr-kr-body">'
             + '<div class="okr-kr-action-cell">'
-            + '<span class="okr-kr-col-label">Action</span>'
+            + '<span class="okr-kr-col-label">' + (isSubtask ? 'Action' : 'Key Result') + '</span>'
             + '<div class="okr-kr-action-title">' + escapeHtml(row.description) + '</div>'
             + '<div class="okr-kr-action-creator">' + escapeHtml(row.creator_name || '') + '</div>'
             + '</div>'
@@ -836,7 +837,24 @@
         var data = krList.filter(function (r) { return r.id === id; })[0];
         if (!data) { return; }
 
-        if (e.target.closest('.okr-kr-add-atem')) {
+        if (e.target.closest('.okr-kr-atem-unlink')) {
+            confirmAction(
+                'Unlink this ATEM? The Key Result itself is not affected.',
+                function () {
+                    var body = new URLSearchParams();
+                    body.set('action', 'unlinkKeyResultAtem');
+                    body.set('id', id);
+                    return fetch(CFG.apiUrl, { method: 'POST', body: body })
+                        .then(function (r) { return r.json(); })
+                        .then(function (res) {
+                            if (res.success) { loadKeyResults(); }
+                            else { setError('okr-kr', res.message || 'Failed to unlink ATEM.'); }
+                        })
+                        .catch(function () { setError('okr-kr', 'Network error. Please try again.'); });
+                },
+                'Unlink', 'btn-danger'
+            );
+        } else if (e.target.closest('.okr-kr-add-atem')) {
             openAtemModal(id, data.description);
         } else if (e.target.closest('.okr-kr-add-sub')) {
             openKrModal({ parent_id: id });
@@ -2468,6 +2486,16 @@
         }
 
         if (ownerState.length === 0) { setError('okr-owner', 'An owner is required.'); ok = false; }
+
+        // Mirrors backend.php's updateCard server-side guard: the OKR can't
+        // resolve as Completed/Completed with Excellence while any of its own
+        // Key Results/Subtasks are still open. Applies to everyone, including
+        // admin - a data-integrity check, not a permission gate.
+        if ((statusSelect.value === 'Completed' || statusSelect.value === 'Completed with Excellence')
+            && krList.some(function (r) { return ['Completed', 'Completed with Excellence'].indexOf(r.status_value) === -1; })) {
+            setError('okr-status', 'All Key Results/Subtasks must be Completed before this OKR can be marked ' + statusSelect.value + '.');
+            ok = false;
+        }
 
         refreshKrDateBounds();
         if (krDateWarningEl && krDateWarningEl.style.display !== 'none') {

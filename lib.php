@@ -418,6 +418,23 @@ function okrRemoveStagedKeyResult($token) {
     return true;
 }
 
+// Updates a staged top-level Key Result's own fields in place, keeping its
+// token (and therefore its nested 'subtasks' map) intact. Editing must never
+// go through remove-then-re-stage (okrRemoveStagedKeyResult followed by a
+// fresh okrStageKeyResult) - removing drops the whole session entry,
+// including every staged Subtask nested inside it, as an unintended side
+// effect of what's meant to be a plain text/date/status edit.
+function okrUpdateStagedKeyResult($token, $description, $start_date, $end_date, $status_id) {
+    if (!isset($_SESSION['okr_draft_keyresults'][$token])) {
+        return false;
+    }
+    $_SESSION['okr_draft_keyresults'][$token]['description'] = $description;
+    $_SESSION['okr_draft_keyresults'][$token]['start_date']  = $start_date ?: null;
+    $_SESSION['okr_draft_keyresults'][$token]['end_date']    = $end_date ?: null;
+    $_SESSION['okr_draft_keyresults'][$token]['status_id']   = $status_id;
+    return true;
+}
+
 // Subtasks of a staged Key Result can't reference a real parent_id yet, so
 // they nest inside their parent's session entry instead, keyed by their own
 // token - flattened into real rows (with the parent's real id) once
@@ -441,6 +458,19 @@ function okrRemoveStagedKeyResultSubtask($parent_token, $sub_token) {
         return false;
     }
     unset($_SESSION['okr_draft_keyresults'][$parent_token]['subtasks'][$sub_token]);
+    return true;
+}
+
+// Same in-place-update rationale as okrUpdateStagedKeyResult above, one
+// level down for a staged Subtask.
+function okrUpdateStagedKeyResultSubtask($parent_token, $sub_token, $description, $start_date, $end_date, $status_id) {
+    if (!isset($_SESSION['okr_draft_keyresults'][$parent_token]['subtasks'][$sub_token])) {
+        return false;
+    }
+    $_SESSION['okr_draft_keyresults'][$parent_token]['subtasks'][$sub_token]['description'] = $description;
+    $_SESSION['okr_draft_keyresults'][$parent_token]['subtasks'][$sub_token]['start_date']  = $start_date ?: null;
+    $_SESSION['okr_draft_keyresults'][$parent_token]['subtasks'][$sub_token]['end_date']    = $end_date ?: null;
+    $_SESSION['okr_draft_keyresults'][$parent_token]['subtasks'][$sub_token]['status_id']   = $status_id;
     return true;
 }
 

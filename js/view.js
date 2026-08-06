@@ -332,7 +332,7 @@
                 + '<div class="okr-kr-num">' + index + '</div>'
                 + '<div class="okr-kr-body">'
                 + '<div class="okr-kr-action-cell">'
-                + '<span class="okr-kr-col-label">Action</span>'
+                + '<span class="okr-kr-col-label">' + (isSubtask ? 'Action' : 'Key Result') + '</span>'
                 + '<div class="okr-kr-action-title">' + escapeHtml(row.description) + '</div>'
                 + '<div class="okr-kr-action-creator">' + escapeHtml(row.creator_name || '') + '</div>'
                 + '</div>'

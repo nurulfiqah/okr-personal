@@ -486,6 +486,48 @@ if ($action === 'removeStagedKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST'
     exit;
 }
 
+// Edits an already-staged top-level Key Result in place (same token, so its
+// nested staged Subtasks stay attached) - see okrUpdateStagedKeyResult.
+if ($action === 'updateStagedKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if ($requester_grade < 3 && !$requester_is_admin) {
+        echo json_encode(['success' => false, 'message' => 'Unauthorized.']);
+        exit;
+    }
+    $token = $_POST['token'] ?? '';
+    $description = trim($_POST['description'] ?? '');
+    if ($token === '' || $description === '') {
+        echo json_encode(['success' => false, 'message' => 'Action details are required.']);
+        exit;
+    }
+    $start_date = trim($_POST['start_date'] ?? '') ?: null;
+    $end_date   = trim($_POST['end_date'] ?? '') ?: null;
+    $status_id  = (int)($_POST['status_id'] ?? 0);
+    $allowed_statuses = okrKeyResultAssignableStatuses($conn);
+    $allowed_ids = array_column($allowed_statuses, 'id');
+    if (!in_array($status_id, $allowed_ids, true)) {
+        echo json_encode(['success' => false, 'message' => 'Select a valid status.']);
+        exit;
+    }
+    $status_value = array_column($allowed_statuses, 'value', 'id')[$status_id];
+
+    if (!okrUpdateStagedKeyResult($token, $description, $start_date, $end_date, $status_id)) {
+        echo json_encode(['success' => false, 'message' => 'Key Result not found.']);
+        exit;
+    }
+
+    echo json_encode([
+        'success'      => true,
+        'token'        => $token,
+        'description'  => $description,
+        'start_date'   => $start_date,
+        'end_date'     => $end_date,
+        'status_id'    => $status_id,
+        'status_value' => $status_value,
+        'pill_class'   => okrPillClass($status_value),
+    ]);
+    exit;
+}
+
 // Stages a Subtask under a still-staged top-level Key Result (create form,
 // before the card - and its Key Results - exist yet). Mirrors createKeyResult's
 // real-row version, but nests inside the parent's session entry instead of a
@@ -541,6 +583,50 @@ if ($action === 'removeStagedKeyResultSubtask' && $_SERVER['REQUEST_METHOD'] ===
     exit;
 }
 
+// Edits an already-staged Subtask in place (same token) - see
+// okrUpdateStagedKeyResultSubtask.
+if ($action === 'updateStagedKeyResultSubtask' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if ($requester_grade < 3 && !$requester_is_admin) {
+        echo json_encode(['success' => false, 'message' => 'Unauthorized.']);
+        exit;
+    }
+    $parent_token = $_POST['parent_token'] ?? '';
+    $token = $_POST['token'] ?? '';
+    $description = trim($_POST['description'] ?? '');
+    if ($parent_token === '' || $token === '' || $description === '') {
+        echo json_encode(['success' => false, 'message' => 'Parent Key Result and action details are required.']);
+        exit;
+    }
+    $start_date = trim($_POST['start_date'] ?? '') ?: null;
+    $end_date   = trim($_POST['end_date'] ?? '') ?: null;
+    $status_id  = (int)($_POST['status_id'] ?? 0);
+    $allowed_statuses = okrKeyResultAssignableStatuses($conn);
+    $allowed_ids = array_column($allowed_statuses, 'id');
+    if (!in_array($status_id, $allowed_ids, true)) {
+        echo json_encode(['success' => false, 'message' => 'Select a valid status.']);
+        exit;
+    }
+    $status_value = array_column($allowed_statuses, 'value', 'id')[$status_id];
+
+    if (!okrUpdateStagedKeyResultSubtask($parent_token, $token, $description, $start_date, $end_date, $status_id)) {
+        echo json_encode(['success' => false, 'message' => 'Subtask not found.']);
+        exit;
+    }
+
+    echo json_encode([
+        'success'      => true,
+        'token'        => $token,
+        'parent_token' => $parent_token,
+        'description'  => $description,
+        'start_date'   => $start_date,
+        'end_date'     => $end_date,
+        'status_id'    => $status_id,
+        'status_value' => $status_value,
+        'pill_class'   => okrPillClass($status_value),
+    ]);
+    exit;
+}
+
 // Links an existing or newly-created ATEM card against a still-staged
 // top-level Key Result. atem_id is a bare int reference only - the frontend
 // picks/creates the ATEM by calling atem/api.php directly (same session,
@@ -553,6 +639,22 @@ if ($action === 'stageKeyResultAtemLink' && $_SERVER['REQUEST_METHOD'] === 'POST
         exit;
     }
     if (!okrSetStagedKeyResultAtem($token, $atem_id)) {
+        echo json_encode(['success' => false, 'message' => 'Key Result not found.']);
+        exit;
+    }
+    echo json_encode(['success' => true]);
+    exit;
+}
+
+// Clears a staged Key Result/Subtask's atem_id - mirrors unlinkKeyResultAtem
+// above, one level down for a still-staged (create form) row.
+if ($action === 'removeStagedKeyResultAtemLink' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $token = $_POST['token'] ?? '';
+    if ($token === '') {
+        echo json_encode(['success' => false, 'message' => 'Invalid Key Result.']);
+        exit;
+    }
+    if (!okrSetStagedKeyResultAtem($token, null)) {
         echo json_encode(['success' => false, 'message' => 'Key Result not found.']);
         exit;
     }
@@ -950,6 +1052,44 @@ if ($action === 'linkKeyResultAtem' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
+// Clears a Key Result/Subtask's atem_id (e.g. the wrong ATEM was linked by
+// mistake) without touching the Key Result row itself or the ATEM card on
+// the other end - same "plain reference, no FK" rule as linkKeyResultAtem
+// above, just in reverse. Same gate as linkKeyResultAtem (issuer or admin).
+if ($action === 'unlinkKeyResultAtem' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $id = (int)($_POST['id'] ?? 0);
+    if ($id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Invalid Key Result.']);
+        exit;
+    }
+
+    $check = mysqli_query($conn, "SELECT kr.card_id, c.issuer_staff_id, c.is_suspended, os.value AS status_value
+                                   FROM okr_key_results kr
+                                   JOIN okr_cards c ON kr.card_id = c.id
+                                   LEFT JOIN okr_statuses os ON c.result_status = os.id
+                                   WHERE kr.id = $id AND c.deleted_at IS NULL");
+    if (!$check || mysqli_num_rows($check) === 0) {
+        echo json_encode(['success' => false, 'message' => 'Key Result not found.']);
+        exit;
+    }
+    $kr = mysqli_fetch_assoc($check);
+    if (!$requester_is_admin && (int)$kr['issuer_staff_id'] !== $requester_id) {
+        echo json_encode(['success' => false, 'message' => 'Only the issuer can unlink ATEM.']);
+        exit;
+    }
+    if (!empty($kr['is_suspended']) || $kr['status_value'] === 'Failed' || $kr['status_value'] === OKR_STATUS_FORCE_TERMINATED) {
+        echo json_encode(['success' => false, 'message' => 'This OKR is locked and can no longer be edited.']);
+        exit;
+    }
+
+    if (mysqli_query($conn, "UPDATE okr_key_results SET atem_id = NULL WHERE id = $id")) {
+        echo json_encode(['success' => true]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Database error: ' . mysqli_error($conn)]);
+    }
+    exit;
+}
+
 // Persists a drag-to-reorder of Subtasks under one Key Result (modeled after
 // iidas's project_detail.js drag-and-drop, which POSTs a full {id: order}
 // map after every drop rather than a single moved-item delta). Every id in
@@ -1163,6 +1303,21 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!in_array($status, okrTimelineAssignableStatuses($conn), true)) {
         echo json_encode(['success' => false, 'message' => 'Invalid status.']);
         exit;
+    }
+    // The OKR itself can't be resolved as Completed/Completed with Excellence
+    // while any of its own Key Results/Subtasks are still open - mirrors
+    // updateKeyResult's own "Key Result can't be Completed while a Subtask is
+    // still Active" rule, one level up. Applies to everyone, including admin
+    // (a data-integrity guard, not a permission gate - no override here).
+    if ($status === OKR_STATUS_COMPLETED || $status === 'Completed with Excellence') {
+        $incomplete_kr = mysqli_query($conn, "SELECT kr.id FROM okr_key_results kr
+                                               JOIN okr_statuses os ON kr.status_id = os.id
+                                               WHERE kr.card_id = $id AND os.value NOT IN ('Completed', 'Completed with Excellence')
+                                               LIMIT 1");
+        if ($incomplete_kr && mysqli_num_rows($incomplete_kr) > 0) {
+            echo json_encode(['success' => false, 'message' => 'All Key Results/Subtasks must be Completed before this OKR can be marked ' . $status . '.']);
+            exit;
+        }
     }
     // Once an OKR has been extended, it can no longer go back to Draft/Active/
     // Extended or be marked Completed with Excellence — every subsequent edit

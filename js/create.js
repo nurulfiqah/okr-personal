@@ -540,6 +540,7 @@
             atemCell = '<div class="okr-kr-atem-badge">'
                 + '<i class="bi bi-link-45deg"></i> '
                 + '<a href="' + CFG.atemViewUrl + '?id=' + row.atem_id + '" target="_blank" rel="noopener">' + escapeHtml(atemLabel) + '</a>'
+                + '<span class="okr-kr-atem-unlink" data-token="' + row.token + '" title="Unlink ATEM">&times;</span>'
                 + '</div>';
         }
 
@@ -554,7 +555,7 @@
             + '<div class="okr-kr-num">' + index + '</div>'
             + '<div class="okr-kr-body">'
             + '<div class="okr-kr-action-cell">'
-            + '<span class="okr-kr-col-label">Action</span>'
+            + '<span class="okr-kr-col-label">' + (isSubtask ? 'Action' : 'Key Result') + '</span>'
             + '<div class="okr-kr-action-title">' + escapeHtml(row.description) + '</div>'
             + '<div class="okr-kr-action-creator">' + escapeHtml(row.creator_name || '') + '</div>'
             + '</div>'
@@ -632,21 +633,43 @@
         var editingToken = krTokenInput.value;
         var parentToken = krParentTokenInput.value;
 
-        function stageIt() {
-            var body = new URLSearchParams();
+        var body = new URLSearchParams();
+        if (editingToken) {
+            // Update the existing staged entry in place (same token) - never
+            // remove-then-re-stage here, since removing a staged top-level Key
+            // Result also drops every staged Subtask nested inside it, which
+            // would silently discard them for what's meant to be a plain
+            // text/date/status edit (see okrUpdateStagedKeyResult in lib.php).
+            body.set('action', parentToken ? 'updateStagedKeyResultSubtask' : 'updateStagedKeyResult');
+            body.set('token', editingToken);
+            if (parentToken) { body.set('parent_token', parentToken); }
+        } else {
             body.set('action', parentToken ? 'stageKeyResultSubtask' : 'stageKeyResult');
             if (parentToken) { body.set('parent_token', parentToken); }
-            body.set('description', description);
-            body.set('start_date', krStartInput.value);
-            body.set('end_date', krEndInput.value);
-            body.set('status_id', krStatusSelect.value);
+        }
+        body.set('description', description);
+        body.set('start_date', krStartInput.value);
+        body.set('end_date', krEndInput.value);
+        body.set('status_id', krStatusSelect.value);
 
-            fetch(CFG.apiUrl, { method: 'POST', body: body })
-                .then(function (r) { return r.json(); })
-                .then(function (res) {
-                    restoreButton(krSaveBtn);
-                    if (res.success) {
-                        var newRow = {
+        setButtonLoading(krSaveBtn, 'Saving...');
+        fetch(CFG.apiUrl, { method: 'POST', body: body })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                restoreButton(krSaveBtn);
+                if (res.success) {
+                    if (editingToken) {
+                        var idx = keyResults.findIndex(function (r) { return r.token === editingToken; });
+                        if (idx !== -1) {
+                            keyResults[idx].description = res.description;
+                            keyResults[idx].start_date = res.start_date;
+                            keyResults[idx].end_date = res.end_date;
+                            keyResults[idx].status_id = res.status_id;
+                            keyResults[idx].status_value = res.status_value;
+                            keyResults[idx].pill_class = res.pill_class;
+                        }
+                    } else {
+                        keyResults.push({
                             token: res.token,
                             parent_token: parentToken || null,
                             description: res.description,
@@ -657,48 +680,19 @@
                             status_id: res.status_id,
                             status_value: res.status_value,
                             pill_class: res.pill_class
-                        };
-                        if (editingToken) {
-                            var idx = keyResults.findIndex(function (r) { return r.token === editingToken; });
-                            if (idx !== -1) {
-                                newRow.atem_id = keyResults[idx].atem_id;
-                                keyResults[idx] = newRow;
-                            } else {
-                                keyResults.push(newRow);
-                            }
-                        } else {
-                            keyResults.push(newRow);
-                        }
-                        markChanged();
-                        renderKeyResults();
-                        krModal.hide();
-                    } else {
-                        setError('okr-kr-modal', res.message || 'Failed to save Key Result.');
+                        });
                     }
-                })
-                .catch(function () {
-                    restoreButton(krSaveBtn);
-                    setError('okr-kr-modal', 'Network error. Please try again.');
-                });
-        }
-
-        setButtonLoading(krSaveBtn, 'Saving...');
-        if (editingToken) {
-            // Editing re-stages under a new token (staged rows have no id to
-            // update in place yet) - remove the old one first, then replace it.
-            var removeBody = new URLSearchParams();
-            if (parentToken) {
-                removeBody.set('action', 'removeStagedKeyResultSubtask');
-                removeBody.set('parent_token', parentToken);
-                removeBody.set('token', editingToken);
-            } else {
-                removeBody.set('action', 'removeStagedKeyResult');
-                removeBody.set('token', editingToken);
-            }
-            fetch(CFG.apiUrl, { method: 'POST', body: removeBody }).then(stageIt).catch(stageIt);
-        } else {
-            stageIt();
-        }
+                    markChanged();
+                    renderKeyResults();
+                    krModal.hide();
+                } else {
+                    setError('okr-kr-modal', res.message || 'Failed to save Key Result.');
+                }
+            })
+            .catch(function () {
+                restoreButton(krSaveBtn);
+                setError('okr-kr-modal', 'Network error. Please try again.');
+            });
     });
 
     krListEl.addEventListener('click', function (e) {
@@ -707,6 +701,26 @@
         var token = row.getAttribute('data-token');
         var data = keyResults.filter(function (r) { return r.token === token; })[0];
         if (!data) { return; }
+
+        if (e.target.closest('.okr-kr-atem-unlink')) {
+            if (!window.confirm('Unlink this ATEM? The Key Result itself is not affected.')) { return; }
+            var unlinkBody = new URLSearchParams();
+            unlinkBody.set('action', 'removeStagedKeyResultAtemLink');
+            unlinkBody.set('token', token);
+            fetch(CFG.apiUrl, { method: 'POST', body: unlinkBody })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    if (res.success) {
+                        data.atem_id = null;
+                        markChanged();
+                        renderKeyResults();
+                    } else {
+                        setError('okr-kr', res.message || 'Failed to unlink ATEM.');
+                    }
+                })
+                .catch(function () { setError('okr-kr', 'Network error. Please try again.'); });
+            return;
+        }
 
         if (e.target.closest('.okr-kr-add-atem')) {
             openAtemModal(token, data.description);
