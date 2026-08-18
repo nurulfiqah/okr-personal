@@ -1577,11 +1577,14 @@ if ($action === 'suspendCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     // Suspend no longer touches result_status - the card keeps showing
     // whatever status it already had (see okrFormatCard's is_suspended
     // comment in lib.php). Closure Date is "written off" (cleared) rather
-    // than stamped, since a suspend is a pause, not a completion.
-    $reason_e = mysqli_real_escape_string($conn, $reason);
+    // than stamped, since a suspend is a pause, not a completion. The
+    // reason itself goes only into the audit log below (which is what
+    // view.php's/edit.php's CEO Action "Reason" display actually reads) -
+    // it must not also overwrite okr_cards.remarks, a separate free-text
+    // field the issuer uses for their own outcome notes on the Timeline card.
     $update = "UPDATE okr_cards SET is_suspended = 1, suspended_by = $requester_id, suspended_at = NOW(),
                closed_by = NULL, closed_at = NULL,
-               remarks = '$reason_e', appeal_justification = NULL, appealed_at = NULL WHERE id = $id";
+               appeal_justification = NULL, appealed_at = NULL WHERE id = $id";
     if (mysqli_query($conn, $update)) {
         okrLogAudit($conn, $id, $requester_id, 'suspended',
             ['is_suspended' => [false, true]], 'Suspended by CEO: ' . $reason);
@@ -1741,11 +1744,13 @@ if ($action === 'forceTerminateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     // is_suspended/suspended_by/suspended_at are cleared, since the card is
     // no longer "currently suspended", it's now a resolved, terminal outcome.
     $status_id = okrStatusIdByValue($conn, OKR_STATUS_FORCE_TERMINATED);
-    $remark_e  = mysqli_real_escape_string($conn, $remark);
+    // Same rule as suspendCard above: the remark goes only into the audit
+    // log below, never into okr_cards.remarks (the issuer's own separate
+    // Timeline notes field).
     $update = "UPDATE okr_cards SET result_status = $status_id, force_terminated = 1,
                is_suspended = 0, suspended_by = NULL, suspended_at = NULL,
                closed_by = $requester_id, closed_at = NOW(),
-               remarks = '$remark_e', appeal_justification = NULL, appealed_at = NULL WHERE id = $id";
+               appeal_justification = NULL, appealed_at = NULL WHERE id = $id";
     if (mysqli_query($conn, $update)) {
         okrLogAudit($conn, $id, $requester_id, 'force_terminated',
             ['result_status' => [$card['status_value'], OKR_STATUS_FORCE_TERMINATED]], 'Force terminated by CEO: ' . $remark);
