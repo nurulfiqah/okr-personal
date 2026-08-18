@@ -7,6 +7,26 @@
     // further below) - see okrCanCollaborateOnCard in lib.php.
     var canCollaborate = !!CFG.canCollaborate;
 
+    // Grows a textarea to fit its content instead of staying stuck at a
+    // fixed 3-row height - there's no real character limit on Suspend
+    // Reason/Appeal Justification (both save into TEXT columns), that fixed
+    // row count just made it look capped. Growth stops at OKR_AUTOGROW_MAX
+    // px, after which it scrolls internally like a normal textarea instead
+    // of growing the page indefinitely for a very long reason. Re-measured
+    // on every keystroke and once at page load for any pre-filled value.
+    var OKR_AUTOGROW_MAX = 260;
+    function autoGrowTextarea(el) {
+        el.style.height = 'auto';
+        var h = Math.min(el.scrollHeight + 2, OKR_AUTOGROW_MAX);
+        el.style.height = h + 'px';
+        el.style.overflowY = (el.scrollHeight + 2 > OKR_AUTOGROW_MAX) ? 'auto' : 'hidden';
+    }
+    Array.prototype.forEach.call(document.querySelectorAll('textarea.okr-autogrow'), function (el) {
+        el.style.overflowY = 'hidden';
+        el.addEventListener('input', function () { autoGrowTextarea(el); });
+        autoGrowTextarea(el);
+    });
+
     function setError(id, msg) {
         var el = document.getElementById(id + '-error');
         if (el) el.textContent = msg || '';
@@ -673,6 +693,7 @@
             setError('okr-suspend', '');
             suspendReasonWrap.style.display = 'block';
             suspendBtn.style.display = 'none';
+            if (suspendReasonInput) { autoGrowTextarea(suspendReasonInput); }
         });
     }
 
@@ -800,6 +821,7 @@
             setError('okr-appeal', '');
             appealWrap.style.display = 'block';
             appealBtn.style.display = 'none';
+            if (appealJustificationInput) { autoGrowTextarea(appealJustificationInput); }
         });
     }
 

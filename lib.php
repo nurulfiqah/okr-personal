@@ -555,8 +555,20 @@ function okrFinalizeStagedReferenceLinks($conn, $card_id, $added_by) {
 // Writes one immutable audit trail row (mirrors ATEM's atem_audit_logs).
 // $changes is an associative array of field => [old, new], or null.
 function okrLogAudit($conn, $card_id, $actor_id, $event, $changes, $summary) {
-    $event_e   = mysqli_real_escape_string($conn, $event);
-    $summary_e = mysqli_real_escape_string($conn, (string)$summary);
+    $event_e = mysqli_real_escape_string($conn, $event);
+    // summary is TEXT (up to 65,535 bytes) - several callers splice in
+    // free-text user input (Suspend/Appeal reasons) that view.php later
+    // reads back verbatim as the sole historical record of that reason (see
+    // "Legacy data"/CEO Action note in CLAUDE.md: okr_cards.remarks/
+    // appeal_justification only hold the *current* cycle, so full-length
+    // history lives only in this column) - it must never be silently cut
+    // short. This cap is purely a defensive backstop against a pathological
+    // payload, not a normal-use limit.
+    $summary = (string)$summary;
+    if (mb_strlen($summary) > 20000) {
+        $summary = mb_substr($summary, 0, 19997) . '...';
+    }
+    $summary_e = mysqli_real_escape_string($conn, $summary);
     $changes_sql = 'NULL';
     if ($changes !== null) {
         $changes_sql = "'" . mysqli_real_escape_string($conn, json_encode($changes)) . "'";

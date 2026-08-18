@@ -416,7 +416,7 @@ $okr_view_config = [
                 </div>
                 <div class="col-12">
                     <label class="form-label">Reason</label>
-                    <div style="font-size:13px;white-space:pre-wrap;"><?php echo htmlspecialchars($suspend_reason_text); ?></div>
+                    <div class="okr-reason-box"><?php echo htmlspecialchars($suspend_reason_text); ?></div>
                 </div>
             </div>
             <?php endforeach; ?>
@@ -464,7 +464,7 @@ $okr_view_config = [
                 OKR</button>
             <div id="okr-suspend-reason-wrap" style="display:none;" class="mt-2">
                 <label for="okr-suspend-reason" class="form-label">Reason <span class="okr-req">*</span></label>
-                <textarea class="form-control" id="okr-suspend-reason" rows="3"
+                <textarea class="form-control okr-autogrow" id="okr-suspend-reason" rows="5"
                     placeholder="Why is this OKR being suspended?"></textarea>
                 <div class="okr-form-error" id="okr-suspend-reason-error"></div>
                 <button type="button" class="btn btn-danger btn-sm mt-2" id="okr-suspend-confirm-btn">Suspend
@@ -492,7 +492,7 @@ $okr_view_config = [
                 </div>
                 <div class="col-12">
                     <label class="form-label">Appeal Reason</label>
-                    <div style="font-size:13px;white-space:pre-wrap;"><?php echo htmlspecialchars($appeal_reason_text); ?></div>
+                    <div class="okr-reason-box"><?php echo htmlspecialchars($appeal_reason_text); ?></div>
                 </div>
             </div>
             <?php endforeach; ?>
@@ -504,7 +504,7 @@ $okr_view_config = [
             <div id="okr-appeal-wrap" style="display:none;" class="mt-2">
                 <label for="okr-appeal-justification" class="form-label">Justification <span
                         class="okr-req">*</span></label>
-                <textarea class="form-control" id="okr-appeal-justification" rows="3"
+                <textarea class="form-control okr-autogrow" id="okr-appeal-justification" rows="5"
                     placeholder="Why should this suspension be reversed?"></textarea>
                 <div class="okr-form-error" id="okr-appeal-justification-error"></div>
                 <button type="button" class="btn btn-primary mt-2" id="okr-appeal-confirm-btn">Submit

@@ -621,6 +621,20 @@ textarea.form-control {
   color: #6c757d;
 }
 
+/* Read-only Suspend/Appeal Reason display (view.php's CEO Action/Appeal
+   Suspension cards, edit.php's mirror of the same) - a long reason scrolls
+   inside this box instead of stretching the whole card down the page. */
+.okr-reason-box {
+  font-size: 13px;
+  white-space: pre-wrap;
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  background-color: #f9f9fb;
+}
+
 /* Inline form error (small red text instead of system dialogs) */
 .okr-form-error {
   font-size: 12px;

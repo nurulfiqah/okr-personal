@@ -557,7 +557,7 @@ $okr_config = [
                 </div>
                 <div class="col-12">
                     <label class="form-label">Reason</label>
-                    <div style="font-size:13px;white-space:pre-wrap;"><?php echo htmlspecialchars($suspend_reason_text); ?></div>
+                    <div class="okr-reason-box"><?php echo htmlspecialchars($suspend_reason_text); ?></div>
                 </div>
             </div>
             <?php endforeach; ?>
@@ -633,7 +633,7 @@ $okr_config = [
                 </div>
                 <div class="col-12">
                     <label class="form-label">Appeal Reason</label>
-                    <div style="font-size:13px;white-space:pre-wrap;"><?php echo htmlspecialchars($appeal_reason_text); ?></div>
+                    <div class="okr-reason-box"><?php echo htmlspecialchars($appeal_reason_text); ?></div>
                 </div>
             </div>
             <?php endforeach; ?>

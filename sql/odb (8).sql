@@ -33,7 +33,7 @@ CREATE TABLE `okr_audit_logs` (
   `event` varchar(80) NOT NULL,
   `actor_staff_id` int NOT NULL,
   `changes` text,
-  `summary` varchar(500) DEFAULT NULL,
+  `summary` text,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ;
 
