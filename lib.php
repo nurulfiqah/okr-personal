@@ -709,14 +709,13 @@ function okrChatMessageEditable($conn, $message_id, $requester_id) {
 }
 
 // ---------------------------------------------------------------
-// Suspend / Appeal / Force Terminate notifications - grade-5 (CEO/Board) and
-// SuperAdmin, the same population already allowed to suspend/unsuspend/force
-// terminate a card, is who receives the Appeal email. Union of staff.okr and
-// staff.atem mirrors the SuperAdmin flag used everywhere else in this repo.
+// Appeal notification recipients - CEO (grade 5) only. An Appeal is
+// specifically addressed to the CEO who can Unsuspend/Force Terminate, not
+// the wider SuperAdmin set that can also suspend/unsuspend/force terminate.
 function okrCeoRecipients($conn) {
     $recipients = [];
     $result = mysqli_query($conn, "SELECT id, nama_staff, email FROM staff
-                                    WHERE recycle != 1 AND (grade = 5 OR okr = 1 OR atem = 1)");
+                                    WHERE recycle != 1 AND grade = 5");
     if ($result) {
         while ($row = mysqli_fetch_assoc($result)) {
             $recipients[] = [
