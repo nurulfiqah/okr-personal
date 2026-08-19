@@ -493,6 +493,27 @@ function okrSetStagedKeyResultAtem($token, $atem_id) {
     return false;
 }
 
+// Links an ATEM back to a just-finalized (real, non-staged) Key Result row
+// via atem-api's PATCH /atem/{id}/okr-link, mirroring okr/backend.php's
+// linkKeyResultAtem gate but only ever called here with a real KR id already
+// known server-side - see okrFinalizeStagedKeyResults below. Loads atem/api.php
+// as a library (same pattern documented in atem's CLAUDE.md) purely for its
+// JWT bridge helpers; best-effort only, same tolerance as the rest of this
+// staged-finalize flow - the KR<->ATEM link (okr_key_results.atem_id) is
+// already durable at this point regardless of whether this call succeeds.
+function okrBackfillAtemOkrLink($conn, $atem_id, $key_result_id, $actor_id) {
+    if (empty($atem_id) || empty($key_result_id)) {
+        return;
+    }
+    if (!function_exists('linkAtemOkrKeyResult')) {
+        if (!defined('API_JWT_INCLUDED')) {
+            define('API_JWT_INCLUDED', 1);
+        }
+        require_once __DIR__ . '/../atem/api.php';
+    }
+    linkAtemOkrKeyResult((int)$atem_id, (int)$key_result_id, (int)$actor_id, (int)$actor_id);
+}
+
 function okrFinalizeStagedKeyResults($conn, $card_id, $created_by) {
     if (empty($_SESSION['okr_draft_keyresults'])) {
         return;
@@ -507,6 +528,9 @@ function okrFinalizeStagedKeyResults($conn, $card_id, $created_by) {
             (card_id, parent_id, description, atem_id, status_id, start_date, end_date, created_by)
             VALUES ($card_id, NULL, '$desc_e', $atem_sql, $status_id, $start_sql, $end_sql, " . (int)$created_by . ")");
         $parent_id = mysqli_insert_id($conn);
+        if (!empty($kr['atem_id'])) {
+            okrBackfillAtemOkrLink($conn, $kr['atem_id'], $parent_id, $created_by);
+        }
 
         foreach (($kr['subtasks'] ?? []) as $sub) {
             $sub_desc_e = mysqli_real_escape_string($conn, $sub['description']);
@@ -517,6 +541,9 @@ function okrFinalizeStagedKeyResults($conn, $card_id, $created_by) {
             mysqli_query($conn, "INSERT INTO okr_key_results
                 (card_id, parent_id, description, atem_id, status_id, start_date, end_date, created_by)
                 VALUES ($card_id, $parent_id, '$sub_desc_e', $sub_atem_sql, $sub_status_id, $sub_start_sql, $sub_end_sql, " . (int)$created_by . ")");
+            if (!empty($sub['atem_id'])) {
+                okrBackfillAtemOkrLink($conn, $sub['atem_id'], mysqli_insert_id($conn), $created_by);
+            }
         }
     }
     $_SESSION['okr_draft_keyresults'] = [];

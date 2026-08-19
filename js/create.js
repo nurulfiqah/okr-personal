@@ -788,7 +788,9 @@
     // ---------------------------------------------------------------
     // Delete a staged Key Result / Subtask when an ATEM is linked. Unlike
     // edit.js there's no reverse-link to unlink here - create.php's Link
-    // ATEM never sets the ATEM's okr_id (no real card id exists yet), so
+    // ATEM never sets the ATEM's okr_key_result_id itself (no real KR id
+    // exists yet - okrBackfillAtemOkrLink in lib.php sets it server-side
+    // once createCard finalizes the staged Key Results), so
     // "Delete Key Result Only" just drops the staged row same as any other
     // delete. "Delete Key Result & ATEM" is still gated the same way -
     // requester must be the ATEM's Issuer and it must still be Draft/Active.
@@ -2320,25 +2322,6 @@
         dirty = true;
     }
 
-    // Any Key Result/Subtask linked to an ATEM while still staging (no real
-    // card id existed yet, so the reverse okr_id link on the ATEM side was
-    // never set - see AtemLink's applyLinkedAtem) gets that link backfilled
-    // here once createCard hands back a real id. Best-effort: a failure here
-    // doesn't block navigation, same tolerance as the "ATEM created but
-    // failed to link" case elsewhere - the KR<->ATEM link itself (atem_id)
-    // is already durable via okrFinalizeStagedKeyResults regardless.
-    function linkStagedAtemsToNewCard(newCardId) {
-        var targets = keyResults.filter(function (r) { return r.atem_id; });
-        if (targets.length === 0) { return Promise.resolve(); }
-        return Promise.all(targets.map(function (r) {
-            return fetch(CFG.atemApiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'link-atem-okr', id: r.atem_id, okr_id: newCardId })
-            }).then(function (resp) { return resp.json(); }).catch(function () { return { success: false }; });
-        }));
-    }
-
     function saveOkr(mode, navUrl) {
         if (!validate(mode)) { scrollToFirstError(); return; }
         setError('okr-save', '');
@@ -2368,9 +2351,11 @@
             .then(function (res) {
                 if (res.success) {
                     leaving = true;
-                    linkStagedAtemsToNewCard(res.id).then(function () {
-                        window.location.href = navUrl || 'okr/list.php';
-                    });
+                    // Any Key Result/Subtask linked to an ATEM while still staging is
+                    // backfilled server-side (okrBackfillAtemOkrLink via
+                    // okrFinalizeStagedKeyResults, lib.php) as part of createCard itself -
+                    // no separate client round trip needed once the real card/KR ids exist.
+                    window.location.href = navUrl || 'okr/list.php';
                 } else {
                     setError('okr-save', res.message || 'Failed to save OKR.');
                     scrollToFirstError();

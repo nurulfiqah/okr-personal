@@ -894,14 +894,14 @@
             .catch(function () { setError('okr-kr', 'Network error. Please try again.'); });
     }
 
-    // Reverse-unlink (ATEM -> OKR): clears atems.okr_id, mirrors linkAtemOkrReverse
-    // in the AtemLink IIFE below but reachable from this scope (delete flow
-    // isn't nested inside that IIFE).
+    // Reverse-unlink (ATEM -> OKR): clears atems.okr_key_result_id, mirrors
+    // linkAtemOkrReverse in the AtemLink IIFE below but reachable from this
+    // scope (delete flow isn't nested inside that IIFE).
     function unlinkAtemFromOkr(atemId) {
         return fetch(CFG.atemApiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'link-atem-okr', id: atemId, okr_id: null })
+            body: JSON.stringify({ action: 'link-atem-okr', id: atemId, okr_key_result_id: null })
         }).then(function (r) { return r.json(); });
     }
 
@@ -1170,14 +1170,17 @@
             renderAtemOptions(items);
         });
 
-        // Reverse link (ATEM -> OKR): sets/clears atems.okr_id via atem-api's
-        // dedicated okr-link endpoint. Only relevant when linking an existing
-        // ATEM - Create New sets okr_id directly at creation time instead.
+        // Reverse link (ATEM -> OKR): sets/clears atems.okr_key_result_id via
+        // atem-api's dedicated okr-link endpoint, scoped to the specific Key
+        // Result this modal was opened against (not just the card) so one
+        // ATEM never gets ambiguously shared across a card's many Key
+        // Results. Only relevant when linking an existing ATEM - Create New
+        // sets okr_key_result_id directly at creation time instead.
         function linkAtemOkrReverse(atemId) {
             return fetch(CFG.atemApiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'link-atem-okr', id: atemId, okr_id: card.id })
+                body: JSON.stringify({ action: 'link-atem-okr', id: atemId, okr_key_result_id: parseInt(atemTargetIdInput.value, 10) })
             }).then(function (r) { return r.json(); });
         }
 
@@ -2187,7 +2190,7 @@
                 end_date: $('tl-end').value || null,
                 arci: flattenArci(),
                 reference_links: reflinks,
-                okr_id: card.id,
+                okr_key_result_id: parseInt(atemTargetIdInput.value, 10),
                 mode: 'final'
             };
         }
