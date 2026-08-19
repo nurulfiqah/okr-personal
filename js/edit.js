@@ -841,14 +841,29 @@
             confirmAction(
                 'Unlink this ATEM? The Key Result itself is not affected.',
                 function () {
+                    var atemId = data.atem_id;
                     var body = new URLSearchParams();
                     body.set('action', 'unlinkKeyResultAtem');
                     body.set('id', id);
                     return fetch(CFG.apiUrl, { method: 'POST', body: body })
                         .then(function (r) { return r.json(); })
                         .then(function (res) {
-                            if (res.success) { loadKeyResults(); }
-                            else { setError('okr-kr', res.message || 'Failed to unlink ATEM.'); }
+                            if (!res.success) {
+                                setError('okr-kr', res.message || 'Failed to unlink ATEM.');
+                                return;
+                            }
+                            // Clear the mirror on the ATEM side too (atems.okr_key_result_id) -
+                            // otherwise it's left pointing at a Key Result that no longer
+                            // claims it, the same one-sided-link bug this whole reconciliation
+                            // effort exists to fix, just via the delete path instead of create.
+                            // Best-effort: the KR-side unlink already succeeded and is reflected
+                            // below regardless of whether this second call does.
+                            return unlinkAtemFromOkr(atemId).then(function (okrLinkRes) {
+                                if (!okrLinkRes.success) {
+                                    setError('okr-kr', okrLinkRes.message || 'ATEM unlinked from Key Result, but failed to clear the link on the ATEM side.');
+                                }
+                                loadKeyResults();
+                            });
                         })
                         .catch(function () { setError('okr-kr', 'Network error. Please try again.'); });
                 },
