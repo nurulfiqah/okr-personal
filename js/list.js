@@ -291,6 +291,58 @@
         return card.issuer_staff_id === CFG.requesterId && card.result_status === 'Draft';
     }
 
+    // Client-side pagination over the filtered/sorted list, mirroring
+    // atem/js/view.js's own pager exactly (same perPage options, same
+    // sliding-window page-button layout, same "clamp down but don't force
+    // back to page 1 on filter change" behavior).
+    var pagerEl = document.getElementById('okr-pager');
+    var pagerState = { page: 1, perPage: 15 };
+
+    function pageBtn(currentPage, p) {
+        return '<button type="button" class="okr-pager-btn' + (p === currentPage ? ' active' : '') + '" data-page="' + p + '">' + p + '</button>';
+    }
+
+    function renderPager(total, pages, startIdx, shown) {
+        if (!pagerEl) { return; }
+        if (total === 0) { pagerEl.innerHTML = ''; return; }
+
+        var opts = [10, 15, 30, 50, 100];
+        var selHtml = '<select class="okr-perpage-select">';
+        for (var oi = 0; oi < opts.length; oi++) {
+            selHtml += '<option value="' + opts[oi] + '"' + (pagerState.perPage === opts[oi] ? ' selected' : '') + '>' + opts[oi] + '</option>';
+        }
+        selHtml += '</select>';
+        var leftHtml = '<div class="okr-pager-left">Show ' + selHtml + ' entries</div>';
+
+        var info = '<span class="okr-pager-info">Showing ' + (startIdx + 1) + ' to ' + (startIdx + shown) + ' of ' + total + ' entries</span>';
+        var btns = '<button type="button" class="okr-pager-btn" data-page="' + (pagerState.page - 1) + '"' + (pagerState.page <= 1 ? ' disabled' : '') + '>Previous</button>';
+
+        var win = 2, from = Math.max(1, pagerState.page - win), to = Math.min(pages, pagerState.page + win);
+        if (from > 1) { btns += pageBtn(pagerState.page, 1) + (from > 2 ? '<span class="okr-pager-gap">...</span>' : ''); }
+        for (var p = from; p <= to; p++) { btns += pageBtn(pagerState.page, p); }
+        if (to < pages) { btns += (to < pages - 1 ? '<span class="okr-pager-gap">...</span>' : '') + pageBtn(pagerState.page, pages); }
+        btns += '<button type="button" class="okr-pager-btn" data-page="' + (pagerState.page + 1) + '"' + (pagerState.page >= pages ? ' disabled' : '') + '>Next</button>';
+
+        var rightHtml = '<div class="d-flex align-items-center gap-2">' + info + '<div class="okr-pager-bar">' + btns + '</div></div>';
+        pagerEl.innerHTML = leftHtml + rightHtml;
+    }
+
+    if (pagerEl) {
+        pagerEl.addEventListener('click', function (e) {
+            var btn = e.target.closest ? e.target.closest('.okr-pager-btn') : null;
+            if (!btn || btn.disabled) { return; }
+            var p = parseInt(btn.getAttribute('data-page'), 10);
+            if (p >= 1) { pagerState.page = p; render(); }
+        });
+        pagerEl.addEventListener('change', function (e) {
+            if (e.target.classList.contains('okr-perpage-select')) {
+                pagerState.perPage = parseInt(e.target.value, 10);
+                pagerState.page = 1;
+                render();
+            }
+        });
+    }
+
     function render() {
         var search = searchFilter.value.trim().toLowerCase();
         var statuses = getSelectedStatuses('okr-filter-status');
@@ -350,10 +402,17 @@
         rows = sortRows(rows);
         updateSortIndicators();
 
+        var total = rows.length;
+        var pages = Math.max(1, Math.ceil(total / pagerState.perPage));
+        if (pagerState.page > pages) { pagerState.page = pages; }
+        var startIdx = (pagerState.page - 1) * pagerState.perPage;
+        var pageRows = rows.slice(startIdx, startIdx + pagerState.perPage);
+
         tbody.innerHTML = '';
         emptyState.style.display = rows.length === 0 ? 'block' : 'none';
+        renderPager(total, pages, startIdx, pageRows.length);
 
-        rows.forEach(function (card) {
+        pageRows.forEach(function (card) {
             var tr = document.createElement('tr');
             if (card.deleted_at) { tr.classList.add('okr-row-deleted'); }
             // One primary action per row instead of separate View/Edit icons -

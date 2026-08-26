@@ -235,6 +235,7 @@ $okr_list_config = [
         </table>
         <div class="okr-empty-state" id="okr-empty-state" style="display:none;">No OKR cards to show.</div>
     </div>
+    <div class="okr-pager" id="okr-pager"></div>
 </div>
 
 <div class="modal fade" id="okr-delete-modal" tabindex="-1" aria-labelledby="okr-delete-modal-title" aria-hidden="true">
