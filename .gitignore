@@ -2,3 +2,4 @@
 /mail_config.local.php
 /.env
 /logs
+/nas_config.php
