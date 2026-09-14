@@ -9,7 +9,7 @@ $extra_css = '<link href="atem/css/style.css?v=' . time() . '" rel="stylesheet">
 include('header.php');
 require_once(__DIR__ . '/lib.php');
 
-if ($okr_permission < 3 && !$okr_is_admin) {
+if ($okr_permission < 3 && !$okr_is_admin && !in_array((int)($struct ?? 0), [4, 5], true)) {
     header('Location: /odb/okr/list.php');
     exit;
 }

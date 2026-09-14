@@ -56,7 +56,11 @@ if (isset($_SESSION['okr_dev_role_override'])) {
     $okr_is_admin = false;
 }
 
-if ($okr_permission === 0 && !$okr_is_admin) {
+// Same qualifying rule as the ATEM-side OKR nav link/switch-dashboard button
+// (atem/navbar.php, atem/index.php): grade 3+, or struct 4/5 (covers non-graded
+// staff who sit at a qualifying structural level), or SuperAdmin.
+$okr_struct = (int)($struct ?? 0);
+if (!($okr_permission >= 3 || in_array($okr_struct, [4, 5], true) || $okr_is_admin)) {
     if (isset($_SESSION['okr_dev_role_override'])) {
         unset($_SESSION['okr_dev_role_override']);
         header('Location: /odb/okr/index.php');

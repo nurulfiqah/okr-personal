@@ -26,7 +26,7 @@ if (!isset($conn)) {
 }
 
 $username    = mysqli_real_escape_string($conn, $_SESSION['myusername']);
-$auth_result = mysqli_query($conn, "SELECT id, nama_staff, grade, department, okr, atem FROM staff WHERE username = '$username' AND recycle != 1");
+$auth_result = mysqli_query($conn, "SELECT id, nama_staff, grade, struct, department, okr, atem FROM staff WHERE username = '$username' AND recycle != 1");
 if (!$auth_result || mysqli_num_rows($auth_result) === 0) {
     echo json_encode(['error' => 'Unauthorized']);
     exit;
@@ -35,6 +35,7 @@ $auth_row          = mysqli_fetch_assoc($auth_result);
 $requester_id      = (int)$auth_row['id'];
 $requester_name    = $auth_row['nama_staff'];
 $requester_grade   = (int)$auth_row['grade'];
+$requester_struct  = (int)$auth_row['struct'];
 // SuperAdmin is the union of staff.okr and staff.atem.
 $requester_is_admin = ((int)$auth_row['okr'] === 1 || (int)$auth_row['atem'] === 1);
 $requester_dept_ids = [];
@@ -44,6 +45,9 @@ foreach (explode(',', $auth_row['department']) as $_d) {
         $requester_dept_ids[] = $_d;
     }
 }
+// Same "qualifies for create-level access" rule used by create.php/header.php:
+// grade 3+, or struct 4/5, or SuperAdmin.
+$requester_can_create = ($requester_grade >= 3 || in_array($requester_struct, [4, 5], true) || $requester_is_admin);
 
 if ($requester_grade < 1 && !$requester_is_admin) {
     echo json_encode(['error' => 'Unauthorized']);
@@ -232,7 +236,7 @@ if ($action === 'getCard' && $_SERVER['REQUEST_METHOD'] === 'GET') {
 // client-side) so a refresh/reopen restores it, mirrors ATEM's draft-save.
 // Never touches the database - just scratch state for this user's session.
 if ($action === 'saveDraftState' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    if ($requester_grade < 3 && !$requester_is_admin) {
+    if (!$requester_can_create) {
         echo json_encode(['success' => false, 'message' => 'Unauthorized.']);
         exit;
     }
@@ -252,7 +256,7 @@ if ($action === 'clearDraftState' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 if ($action === 'createCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    if ($requester_grade < 3 && !$requester_is_admin) {
+    if (!$requester_can_create) {
         echo json_encode(['success' => false, 'message' => 'Only senior management or above can issue an OKR.']);
         exit;
     }
@@ -381,7 +385,7 @@ if ($action === 'createCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 // Stages a file (for the create form, before the card exists yet) in the
 // session so it can be linked once createCard succeeds.
 if ($action === 'stageAttachment' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    if ($requester_grade < 3 && !$requester_is_admin) {
+    if (!$requester_can_create) {
         echo json_encode(['success' => false, 'message' => 'Unauthorized.']);
         exit;
     }
@@ -417,7 +421,7 @@ if ($action === 'removeStagedAttachment' && $_SERVER['REQUEST_METHOD'] === 'POST
 
 // Stages a reference link (for the create form, before the card exists yet).
 if ($action === 'stageReferenceLink' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    if ($requester_grade < 3 && !$requester_is_admin) {
+    if (!$requester_can_create) {
         echo json_encode(['success' => false, 'message' => 'Unauthorized.']);
         exit;
     }
@@ -443,7 +447,7 @@ if ($action === 'removeStagedReferenceLink' && $_SERVER['REQUEST_METHOD'] === 'P
 // yet). Subtasks can also be staged against its token below - see
 // stageKeyResultSubtask.
 if ($action === 'stageKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    if ($requester_grade < 3 && !$requester_is_admin) {
+    if (!$requester_can_create) {
         echo json_encode(['success' => false, 'message' => 'Unauthorized.']);
         exit;
     }
@@ -489,7 +493,7 @@ if ($action === 'removeStagedKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST'
 // Edits an already-staged top-level Key Result in place (same token, so its
 // nested staged Subtasks stay attached) - see okrUpdateStagedKeyResult.
 if ($action === 'updateStagedKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    if ($requester_grade < 3 && !$requester_is_admin) {
+    if (!$requester_can_create) {
         echo json_encode(['success' => false, 'message' => 'Unauthorized.']);
         exit;
     }
@@ -533,7 +537,7 @@ if ($action === 'updateStagedKeyResult' && $_SERVER['REQUEST_METHOD'] === 'POST'
 // real-row version, but nests inside the parent's session entry instead of a
 // real parent_id.
 if ($action === 'stageKeyResultSubtask' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    if ($requester_grade < 3 && !$requester_is_admin) {
+    if (!$requester_can_create) {
         echo json_encode(['success' => false, 'message' => 'Unauthorized.']);
         exit;
     }
@@ -586,7 +590,7 @@ if ($action === 'removeStagedKeyResultSubtask' && $_SERVER['REQUEST_METHOD'] ===
 // Edits an already-staged Subtask in place (same token) - see
 // okrUpdateStagedKeyResultSubtask.
 if ($action === 'updateStagedKeyResultSubtask' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    if ($requester_grade < 3 && !$requester_is_admin) {
+    if (!$requester_can_create) {
         echo json_encode(['success' => false, 'message' => 'Unauthorized.']);
         exit;
     }
