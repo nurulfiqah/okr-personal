@@ -274,6 +274,17 @@
     // still editable - e.g. a Completed card - rather than jumping straight
     // into edit mode for something that's already been decided).
     var TERMINAL_STATUSES = ['Completed', 'Completed with Excellence', 'Completed with Extension', 'Failed', 'Force Terminated'];
+    // Overdue is derived, not a status: an Active or Extended card whose
+    // final_due_date (End Date, or the Extended Date once extended) is
+    // already before today. Mirrors ATEM's isRowOverdue in js/view.js and
+    // backend.php's own dashboardStats overdue_count calc.
+    function isRowOverdue(card) {
+        if (card.result_status !== 'Active' && card.result_status !== 'Extended') { return false; }
+        var due = String(card.final_due_date || card.end_date || '').slice(0, 10);
+        var today = new Date().toISOString().slice(0, 10);
+        return due !== '' && due < today;
+    }
+
     function isTerminalStatus(card) {
         // A suspended card is NOT treated as terminal here - edit.php stays
         // reachable while suspended (locked down to the Objective field
@@ -387,13 +398,7 @@
             if (closureEnd && (!card.closure_date || card.closure_date > closureEnd)) return false;
             if (deepLinkDateFrom && (!card.start_date || card.start_date < deepLinkDateFrom)) return false;
             if (deepLinkDateTo && (!card.start_date || card.start_date > deepLinkDateTo)) return false;
-            if (deepLinkOverdueOnly) {
-                var today = new Date().toISOString().slice(0, 10);
-                var dueDate = card.final_due_date || card.end_date;
-                var isOverdue = dueDate && dueDate < today
-                    && (card.result_status === 'Active' || card.result_status === 'Extended');
-                if (!isOverdue) return false;
-            }
+            if (deepLinkOverdueOnly && !isRowOverdue(card)) return false;
             if (search) {
                 var searchHay = ('okr' + card.id + ' ' + (card.objective || '')).toLowerCase();
                 if (searchHay.indexOf(search) === -1) return false;
@@ -449,6 +454,13 @@
                 statusCell = '<span class="okr-pill okr-pill-suspended"><i class="bi bi-pause-circle"></i> Suspended</span>';
             } else {
                 statusCell = '<span class="okr-pill ' + card.pill_class + '">' + escapeHtml(card.result_status) + '</span>';
+            }
+            // Mirrors ATEM's list row (atem/js/view.js's buildHqRowHtml/
+            // buildOutletRowHtml): a small red italic "Overdue" remark under
+            // the Status pill for any still-open card past its final due date.
+            if (!card.deleted_at && !card.is_suspended && isRowOverdue(card)) {
+                statusCell = '<span style="display:inline-flex;flex-direction:column;align-items:center;">' + statusCell
+                    + '<span style="color:#dc3545;font-style:italic;font-size:11px;margin-top:3px;">Overdue</span></span>';
             }
             tr.innerHTML =
                 '<td><span class="okr-id">#OKR' + card.id + '</span></td>' +
