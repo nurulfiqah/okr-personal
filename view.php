@@ -60,11 +60,13 @@ $can_force_terminate = $is_ceo_or_admin && !$is_terminal_failed;
 $can_appeal = ($card['issuer_staff_id'] === (int)$id_user
     && $card['is_suspended'] && empty($card['appealed_at']));
 
-// Same edit gate as edit.php itself (issuer or admin, and not currently
-// suspended/Failed/Force Terminated) - shown here so the user doesn't have
-// to go back to list.php just to reach the Edit icon there.
+// Same edit gate as edit.php itself (issuer or admin, and not Failed/Force
+// Terminated) - shown here so the user doesn't have to go back to list.php
+// just to reach the Edit icon there. A suspended card still shows this link:
+// edit.php stays reachable while suspended, just locked down to the
+// Objective field only (see edit.php's gate + js/edit.js's suspended lock).
 $can_edit_card = ($okr_is_admin || $card['issuer_staff_id'] === (int)$id_user)
-    && !$card['is_suspended'] && !$is_terminal_failed;
+    && !$is_terminal_failed;
 
 // Owner/Owner2 get inline Key Result Progress status editing, and
 // Attachment/Reference Link add-remove, right here on view.php (they can't

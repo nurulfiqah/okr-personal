@@ -1483,6 +1483,16 @@ textarea.form-control {
   color: #664d03;
 }
 
+/* Locks a whole edit.php section (Attachment/Reference Link/Key Result
+   Progress/Owner(s)/Timeline) while the OKR is suspended - only the
+   Objective field stays editable. Mirrors ATEM's suspended-edit lock
+   (atem/js/edit.js's applyReadMode), applied per-section instead of the
+   whole form since Objective must stay interactive. */
+.okr-suspend-locked {
+  pointer-events: none;
+  opacity: 0.55;
+}
+
 .okr-alert-notice-meta {
   display: block;
   font-size: 12px;

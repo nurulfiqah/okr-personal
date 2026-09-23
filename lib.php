@@ -95,11 +95,13 @@ function okrFormatCard($row) {
         'rating'            => $row['rating'] !== null ? (float)$row['rating'] : null,
         'rated_by_name'     => $row['rated_by_name'] ?? null,
         'rated_at'          => $row['rated_at'] ?? null,
-        // Final Due Date never mirrors the Extended Date target — it's
-        // End Date until the OKR is actually resolved (closed_at set),
-        // at which point it follows that closure date.
-        'final_due_date'    => (!empty($row['extended']) && $row['closed_at'])
-            ? substr($row['closed_at'], 0, 10)
+        // Final Due Date mirrors ATEM's own rule (atem/api.php's overdue
+        // calc): End Date, or the Extended Date once the card is extended —
+        // not the Closure Date. This is what makes an extended card stop
+        // counting as overdue the moment it's extended, rather than only
+        // once it's actually closed.
+        'final_due_date'    => (!empty($row['extended']) && !empty($row['extended_date']))
+            ? $row['extended_date']
             : $row['end_date'],
         // Closure Date is now an independently user-settable field (see
         // okrCanEditClosureDate() below and backend.php's updateCard) - a

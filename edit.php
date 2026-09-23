@@ -33,13 +33,16 @@ $row  = mysqli_fetch_assoc($result);
 $card = okrFormatCard($row);
 
 $can_edit = ($okr_is_admin || $card['issuer_staff_id'] === (int)$id_user);
-// Currently-suspended cards are locked pending Unsuspend/Force Terminate
-// (see view.php's CEO Action) - is_suspended is now independent of
-// result_status (see backend.php's suspendCard), so this checks the flag,
-// not a status value. Failed and Force Terminated (see backend.php's
-// forceTerminateCard) are locked for everyone, admins included, same as a
-// currently-suspended card.
-if (!$can_edit || $card['is_suspended'] || $card['result_status'] === 'Failed'
+// Failed and Force Terminated (see backend.php's forceTerminateCard) are
+// terminal - locked for everyone, admins included. A currently-suspended
+// card is NOT redirected away (mirrors ATEM's suspended-edit behaviour,
+// atem/js/edit.js's applySuspendedIssuerUnlock): the issuer/admin may still
+// reach this page and fix up the Objective text (see the dedicated
+// updateSuspendedObjective action in backend.php and the lock/unlock logic
+// in js/edit.js), but every other field stays disabled until Unsuspend -
+// updateCard itself still refuses the full-form save outright while
+// is_suspended is set.
+if (!$can_edit || $card['result_status'] === 'Failed'
     || $card['result_status'] === OKR_STATUS_FORCE_TERMINATED) {
     header('Location: /odb/okr/view.php?id=' . $card_id);
     exit;
@@ -47,10 +50,8 @@ if (!$can_edit || $card['is_suspended'] || $card['result_status'] === 'Failed'
 
 // Same CEO Action / Appeal Suspension gating as view.php, so the CEO/admin
 // doesn't have to leave the edit form to suspend an OKR - see view.php for
-// the full rationale on each variable. A currently-suspended (or Failed/
-// Force Terminated) card can never reach this page (redirected above), so
-// the Unsuspend/Force-Terminate-while-Suspended and appeal-submission
-// branches below never actually render here; they're kept identical to
+// the full rationale on each variable. These branches are now live here too
+// (a suspended card reaches this page, see above), kept identical to
 // view.php's so both pages stay in sync if the rule ever changes, and so
 // past suspend/appeal history still displays.
 $is_ceo_or_admin = ($okr_is_admin || $okr_permission === 5);
@@ -307,6 +308,12 @@ $okr_config = [
                     class="okr-pill <?php echo okrPillClass($card['result_status']); ?>"><?php echo htmlspecialchars($card['result_status']); ?></span>
             </div>
             <p class="okr-card-hint">Fields marked <span class="okr-req">*</span> are required.</p>
+            <?php if ($card['is_suspended']): ?>
+            <div class="okr-alert-notice mb-2">
+                <i class="bi bi-exclamation-triangle"></i> This OKR is currently suspended - only the Objective can
+                be edited here. Unsuspend (below) to make other changes.
+            </div>
+            <?php endif; ?>
             <div class="row g-3 mt-1">
                 <div class="col-12">
                     <label for="okr-objective" class="form-label">Objective <span class="okr-req">*</span></label>
@@ -328,7 +335,7 @@ $okr_config = [
         </div>
     </div>
 
-    <div class="okr-bento-item okr-span-4">
+    <div class="okr-bento-item okr-span-4<?php echo $card['is_suspended'] ? ' okr-suspend-locked' : ''; ?>">
         <div class="okr-card mb-3">
             <h6 class="okr-card-title"><i class="bi bi-paperclip"></i> Attachment</h6>
             <p class="okr-card-hint">Upload supporting files (max 10MB each).</p>
@@ -357,7 +364,7 @@ $okr_config = [
         </div>
     </div>
 
-    <div class="okr-bento-item okr-span-12">
+    <div class="okr-bento-item okr-span-12<?php echo $card['is_suspended'] ? ' okr-suspend-locked' : ''; ?>">
         <div class="okr-card">
             <div class="okr-card-title-row">
                 <h6 class="okr-card-title"><i class="bi bi-list-task"></i> Key Result Progress</h6>
@@ -374,7 +381,7 @@ $okr_config = [
         </div>
     </div>
 
-    <div class="okr-bento-item okr-span-12">
+    <div class="okr-bento-item okr-span-12<?php echo $card['is_suspended'] ? ' okr-suspend-locked' : ''; ?>">
         <div class="okr-card">
             <h6 class="okr-card-title"><i class="bi bi-people"></i> Owner(s)</h6>
             <p class="okr-card-hint">Tag the owner(s). A (Accountable) supports up to 2 members. A 2nd owner is only for
@@ -416,7 +423,7 @@ $okr_config = [
         </div>
     </div>
 
-    <div class="okr-bento-item okr-span-12">
+    <div class="okr-bento-item okr-span-12<?php echo $card['is_suspended'] ? ' okr-suspend-locked' : ''; ?>">
         <div class="okr-card">
             <h6 class="okr-card-title"><i class="bi bi-calendar-range"></i> Timeline</h6>
             <p class="okr-card-hint">Schedule, status, extensions and closure for this OKR.</p>
@@ -533,7 +540,7 @@ $okr_config = [
 </div>
 <div class="okr-save-bar">
     <a href="okr/view.php?id=<?php echo $card_id; ?>" class="btn btn-outline-secondary">Cancel</a>
-    <button type="button" class="btn btn-primary" id="okr-save-btn">Save Changes</button>
+    <button type="button" class="btn btn-primary" id="okr-save-btn"><?php echo $card['is_suspended'] ? 'Save Objective' : 'Save Changes'; ?></button>
 </div>
 
 <?php if ($latest_suspend_log || $is_ceo_or_admin || $can_appeal): ?>

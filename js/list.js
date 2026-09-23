@@ -261,10 +261,10 @@
     }
 
     function canEdit(card) {
-        // Suspending no longer changes result_status - check the flag
-        // directly (see is_suspended in lib.php/backend.php's suspendCard),
-        // not a status value that a suspended card would never actually have.
-        return !card.deleted_at && !card.is_suspended && card.result_status !== 'Failed'
+        // A suspended card still opens in edit.php - it just locks down to
+        // the Objective field only there (see edit.php/js/edit.js). Failed/
+        // Force Terminated stay fully blocked (terminal, no exception).
+        return !card.deleted_at && card.result_status !== 'Failed'
             && card.result_status !== 'Force Terminated'
             && (CFG.requesterIsAdmin || card.issuer_staff_id === CFG.requesterId);
     }
@@ -275,11 +275,12 @@
     // into edit mode for something that's already been decided).
     var TERMINAL_STATUSES = ['Completed', 'Completed with Excellence', 'Completed with Extension', 'Failed', 'Force Terminated'];
     function isTerminalStatus(card) {
-        // Suspended is no longer a result_status value a card can hold (see
-        // is_suspended) - treat currently-suspended as terminal here too
-        // (locked pending Unsuspend/Force Terminate), regardless of its real
-        // underlying status.
-        return card.is_suspended || TERMINAL_STATUSES.indexOf(card.result_status) !== -1;
+        // A suspended card is NOT treated as terminal here - edit.php stays
+        // reachable while suspended (locked down to the Objective field
+        // only, see edit.php/js/edit.js), so an editor's row still opens
+        // straight into edit.php rather than falling back to read-only
+        // view.php.
+        return TERMINAL_STATUSES.indexOf(card.result_status) !== -1;
     }
 
     // Admin can delete any card; the issuer can only delete their own card
@@ -388,7 +389,8 @@
             if (deepLinkDateTo && (!card.start_date || card.start_date > deepLinkDateTo)) return false;
             if (deepLinkOverdueOnly) {
                 var today = new Date().toISOString().slice(0, 10);
-                var isOverdue = card.end_date && card.end_date < today
+                var dueDate = card.final_due_date || card.end_date;
+                var isOverdue = dueDate && dueDate < today
                     && (card.result_status === 'Active' || card.result_status === 'Extended');
                 if (!isOverdue) return false;
             }

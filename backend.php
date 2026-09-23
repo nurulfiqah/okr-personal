@@ -94,7 +94,7 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     }
 
     $query = "SELECT c.id, os.value AS result_status, c.force_terminated, c.is_suspended,
-                     c.start_date, c.end_date, c.issuer_staff_id,
+                     c.start_date, c.end_date, c.extended, c.extended_date, c.issuer_staff_id,
                      iss.nama_staff AS issuer_name, iss.department AS issuer_department
               FROM okr_cards c
               LEFT JOIN okr_statuses os ON c.result_status = os.id
@@ -134,7 +134,11 @@ if ($action === 'dashboardStats' && $_SERVER['REQUEST_METHOD'] === 'GET') {
             if ($is_complete) { $complete++; }
             if ($status === 'Completed with Excellence') { $excellence++; }
             if ($status === 'Failed') { $failed++; }
-            if (($status === OKR_STATUS_ACTIVE || $status === 'Extended') && $row['end_date'] < $today) { $overdue++; }
+            // Same "final due date" rule as okrFormatCard()/ATEM: End Date, or
+            // the Extended Date once the card is extended - an extended card
+            // stops counting as overdue the moment it's extended.
+            $final_due_date = (!empty($row['extended']) && !empty($row['extended_date'])) ? $row['extended_date'] : $row['end_date'];
+            if (($status === OKR_STATUS_ACTIVE || $status === 'Extended') && $final_due_date < $today) { $overdue++; }
 
             $dept_ids = okrDeptIdsFromCsv($row['issuer_department']);
             $dept_id  = !empty($dept_ids) ? $dept_ids[0] : 0;
@@ -1447,6 +1451,48 @@ if ($action === 'updateCard' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         if ((string)$card['remarks'] !== $remarks) { $changes['remarks'] = [$card['remarks'], $remarks]; }
         if (!empty($changes)) {
             okrLogAudit($conn, $id, $requester_id, 'updated', $changes, 'OKR details updated.');
+        }
+        echo json_encode(['success' => true]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Database error: ' . mysqli_error($conn)]);
+    }
+    exit;
+}
+
+// Mirrors ATEM's update-atem-suspended action: while a card is suspended,
+// updateCard above refuses the write entirely (is_suspended check at the top
+// of that action), but the issuer/admin may still fix up the Objective text
+// itself - everything else (dates, owners, status, ...) stays frozen until
+// Unsuspend. This is the one exception to "no edits while suspended".
+if ($action === 'updateSuspendedObjective' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $id = (int)($_POST['id'] ?? 0);
+    if ($id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Invalid card id.']);
+        exit;
+    }
+    $check = mysqli_query($conn, "SELECT issuer_staff_id, objective, is_suspended FROM okr_cards WHERE id = $id AND deleted_at IS NULL");
+    if (!$check || mysqli_num_rows($check) === 0) {
+        echo json_encode(['success' => false, 'message' => 'Card not found.']);
+        exit;
+    }
+    $card = mysqli_fetch_assoc($check);
+    if (!$requester_is_admin && (int)$card['issuer_staff_id'] !== $requester_id) {
+        echo json_encode(['success' => false, 'message' => 'Only the issuer can edit this OKR.']);
+        exit;
+    }
+    if (empty($card['is_suspended'])) {
+        echo json_encode(['success' => false, 'message' => 'This OKR is not suspended.']);
+        exit;
+    }
+    $objective = trim($_POST['objective'] ?? '');
+    if ($objective === '') {
+        echo json_encode(['success' => false, 'message' => 'Objective is required.']);
+        exit;
+    }
+    $objective_e = mysqli_real_escape_string($conn, $objective);
+    if (mysqli_query($conn, "UPDATE okr_cards SET objective = '$objective_e' WHERE id = $id")) {
+        if ($card['objective'] !== $objective) {
+            okrLogAudit($conn, $id, $requester_id, 'updated', ['objective' => [$card['objective'], $objective]], 'Objective updated while suspended.');
         }
         echo json_encode(['success' => true]);
     } else {

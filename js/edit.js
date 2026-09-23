@@ -2,6 +2,19 @@
     var CFG = window.OKR_EDIT_CONFIG || { staff: [], departments: [], levels: [] };
     var card = CFG.card || {};
 
+    // Mirrors ATEM's suspended-edit lock (atem/js/edit.js's applyReadMode/
+    // applySuspendedIssuerUnlock): while suspended, only the Objective field
+    // stays editable - every other section is CSS-locked via the
+    // .okr-suspend-locked class edit.php applies server-side. This only
+    // covers keyboard/programmatic access for controls already in the DOM at
+    // load - pointer-events:none on the section handles everything else,
+    // including rows rendered later (owner tags, Key Results, attachments).
+    if (card.is_suspended) {
+        document.querySelectorAll('.okr-suspend-locked input, .okr-suspend-locked select, .okr-suspend-locked textarea, .okr-suspend-locked button').forEach(function (el) {
+            el.setAttribute('disabled', 'disabled');
+        });
+    }
+
     // Bootstrap 5 popovers need explicit JS init - data-bs-toggle="popover"
     // alone (the OKR Type field's info icon) does nothing without this.
     document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function (el) {
@@ -2567,7 +2580,46 @@
             });
     }
 
+    // While suspended, Save Changes only writes the Objective (via the
+    // dedicated updateSuspendedObjective action) - the normal full-form
+    // validate()/submitSave() path is skipped entirely, since every other
+    // field is locked/disabled and updateCard itself would refuse the write.
+    function submitSuspendedObjectiveSave() {
+        var objective = document.getElementById('okr-objective').value.trim();
+        if (!objective) {
+            setError('okr-objective', 'Objective is required.');
+            scrollToFirstError();
+            return;
+        }
+        var payload = new URLSearchParams();
+        payload.set('action', 'updateSuspendedObjective');
+        payload.set('id', card.id);
+        payload.set('objective', objective);
+
+        var saveBtn = document.getElementById('okr-save-btn');
+        setButtonLoading(saveBtn, 'Saving...');
+        fetch(CFG.apiUrl, { method: 'POST', body: payload })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (res.success) {
+                    leaving = true;
+                    window.location.href = 'okr/view.php?id=' + card.id;
+                } else {
+                    restoreButton(saveBtn);
+                    setError('okr-save', res.message || 'Failed to save Objective.');
+                }
+            })
+            .catch(function () {
+                restoreButton(saveBtn);
+                setError('okr-save', 'Network error. Please try again.');
+            });
+    }
+
     document.getElementById('okr-save-btn').addEventListener('click', function () {
+        if (card.is_suspended) {
+            submitSuspendedObjectiveSave();
+            return;
+        }
         if (!validate()) {
             scrollToFirstError();
             return;
@@ -2586,10 +2638,11 @@
     // ---------------------------------------------------------------
     // CEO Action (Suspend/Unsuspend/Force Terminate) + Appeal Suspension -
     // same markup/actions as view.php's, so the CEO/admin doesn't have to
-    // leave the edit form just to suspend an OKR. Unsuspend/Force-Terminate-
-    // while-Suspended and appeal-submission never actually render here
-    // (edit.php redirects away once a card is Suspended/Failed), but this
-    // mirrors view.js's handlers exactly so both stay in sync.
+    // leave the edit form just to suspend an OKR. A suspended card now stays
+    // reachable here too (see edit.php's gate), so the Unsuspend/Force-
+    // Terminate-while-Suspended and appeal-submission branches genuinely
+    // render/run on this page as well - this mirrors view.js's handlers
+    // exactly so both stay in sync.
     // ---------------------------------------------------------------
     var suspendBtn = document.getElementById('okr-suspend-btn');
     var suspendReasonWrap = document.getElementById('okr-suspend-reason-wrap');
