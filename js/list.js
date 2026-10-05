@@ -464,7 +464,7 @@
             }
             tr.innerHTML =
                 '<td><span class="okr-id">#OKR' + card.id + '</span></td>' +
-                '<td>' + escapeHtml(card.objective).slice(0, 80) + '</td>' +
+                '<td style="white-space:normal;min-width:260px;">' + escapeHtml(card.objective) + '</td>' +
                 '<td>' + issuerCell(card) + '</td>' +
                 '<td>' + ownerCell(card) + '</td>' +
                 '<td>' + escapeHtml(card.start_date) + '</td>' +
